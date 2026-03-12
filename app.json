@@ -1,0 +1,70 @@
+{
+  "expo": {
+    "name": "Nome do App",
+    "slug": "app-cobrancas",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2563EB"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.suaempresa.cobrancas",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Este app precisa de acesso à câmera para escanear códigos.",
+        "NSLocationWhenInUseUsageDescription": "Este app precisa de acesso à localização para mostrar endereços no mapa."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2563EB"
+      },
+      "package": "com.suaempresa.cobrancas",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-sqlite",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "API_URL": "https://api.suaempresa.com.br",
+      "USE_MOCK": "true",
+      "APP_VERSION": "1.0.0",
+      "APP_NAME": "Nome do App",
+      "DEBUG": "true",
+      "SYNC_INTERVAL": "15",
+      "MAX_RECORDS_PER_SYNC": "100",
+      "TIMEOUT": "30000"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/your-project-id"
+    },
+    "runtimeVersion": "1.0.0"
+  }
+}

@@ -1,0 +1,639 @@
+/**
+ * SyncContext.tsx
+ * Contexto para gerenciamento de sincronização offline-first
+ * Integração: DatabaseService + ApiService + Tipos
+ */
+
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { 
+  SyncMetadata, 
+  SyncStatus, 
+  SyncConflict, 
+  ChangeLog,
+  ConflictResolutionStrategy,
+  Equipamento
+} from '../types';
+import { databaseService } from '../services/DatabaseService';
+import { apiService } from '../services/ApiService';
+
+// ============================================================================
+// INTERFACES E TIPOS
+// ============================================================================
+
+export interface SyncState {
+  // Status atual
+  status: SyncStatus;
+  isSyncing: boolean;
+  lastSyncAt: string | null;
+  lastSyncMessage: string;
+  
+  // Progresso
+  progress: {
+    current: number;
+    total: number;
+    stage: 'push' | 'pull' | 'complete';
+    message: string;
+  } | null;
+  
+  // Conflitos
+  conflitosPendentes: SyncConflict[];
+  totalConflitos: number;
+  
+  // Mudanças pendentes
+  mudancasPendentes: number;
+  
+  // Dispositivo
+  dispositivo: {
+    id: string;
+    nome: string;
+    chave: string;
+    registrado: boolean;  } | null;
+  
+  // Erros
+  erro: string | null;
+  ultimoErro: string | null;
+}
+
+export interface SyncContextData extends SyncState {
+  // Inicialização
+  inicializar: () => Promise<void>;
+  
+  // Sincronização
+  sincronizar: (forca?: boolean) => Promise<void>;
+  cancelarSincronizacao: () => void;
+  
+  // Dispositivo
+  registrarDispositivo: (nome: string, chave: string) => Promise<boolean>;
+  atualizarDispositivo: (dados: Partial<Equipamento>) => Promise<void>;
+  
+  // Conflitos
+  resolverConflito: (conflitoId: string, estrategia: ConflictResolutionStrategy) => Promise<void>;
+  resolverTodosConflitos: (estrategia: ConflictResolutionStrategy) => Promise<void>;
+  ignorarConflitos: () => void;
+  
+  // Utilitários
+  verificarConexao: () => Promise<boolean>;
+  getMudancasPendentes: () => Promise<ChangeLog[]>;
+  limparErros: () => void;
+  
+  // Configurações
+  ativarAutoSync: (ativo: boolean) => void;
+  setAutoSyncInterval: (minutos: number) => void;
+}
+
+export interface SyncConfig {
+  autoSyncEnabled: boolean;
+  autoSyncInterval: number; // minutos
+  syncOnAppStart: boolean;
+  syncOnAppResume: boolean;
+  warnBeforeLargeSync: boolean;
+  maxRecordsPerSync: number;
+}
+
+// ============================================================================
+// CONFIGURAÇÃO PADRÃO
+// ============================================================================
+
+const DEFAULT_SYNC_CONFIG: SyncConfig = {
+  autoSyncEnabled: true,
+  autoSyncInterval: 15, // 15 minutos  syncOnAppStart: true,
+  syncOnAppResume: true,
+  warnBeforeLargeSync: true,
+  maxRecordsPerSync: 100,
+};
+
+// ============================================================================
+// CRIAÇÃO DO CONTEXT
+// ============================================================================
+
+const SyncContext = createContext<SyncContextData | undefined>(undefined);
+
+// ============================================================================
+// PROVIDER
+// ============================================================================
+
+interface SyncProviderProps {
+  children: ReactNode;
+  config?: Partial<SyncConfig>;
+}
+
+export function SyncProvider({ children, config }: SyncProviderProps) {
+  // Configurações
+  const [syncConfig, setSyncConfig] = useState<SyncConfig>({
+    ...DEFAULT_SYNC_CONFIG,
+    ...config,
+  });
+
+  // Estado de sincronização
+  const [status, setStatus] = useState<SyncStatus>('pending');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+  const [lastSyncMessage, setLastSyncMessage] = useState('');
+  
+  const [progress, setProgress] = useState<SyncState['progress']>(null);
+  const [conflitosPendentes, setConflitosPendentes] = useState<SyncConflict[]>([]);
+  const [mudancasPendentes, setMudancasPendentes] = useState(0);
+  
+  const [dispositivo, setDispositivo] = useState<SyncState['dispositivo']>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [ultimoErro, setUltimoErro] = useState<string | null>(null);
+
+  // Timer para auto sync
+  const [autoSyncTimer, setAutoSyncTimer] = useState<NodeJS.Timeout | null>(null);
+
+  // ==========================================================================
+  // INICIALIZAÇÃO
+  // ==========================================================================
+
+  /**   * Inicializa o contexto de sincronização
+   */
+  const inicializar = useCallback(async () => {
+    console.log('[SyncContext] Inicializando...');
+    
+    try {
+      // Inicializar banco de dados
+      await databaseService.initialize();
+      
+      // Carregar metadata de sync
+      const metadata = await databaseService.getSyncMetadata();
+      
+      setLastSyncAt(metadata.lastSyncAt !== new Date(0).toISOString() ? metadata.lastSyncAt : null);
+      
+      // Carregar informações do dispositivo
+      setDispositivo({
+        id: metadata.deviceId || '',
+        nome: metadata.deviceName || '',
+        chave: metadata.deviceKey || '',
+        registrado: !!metadata.deviceId,
+      });
+      
+      // Contar mudanças pendentes
+      const changes = await databaseService.getPendingChanges();
+      setMudancasPendentes(changes.length);
+      
+      setStatus('synced');
+      setLastSyncMessage('Sincronização inicializada');
+      
+      console.log('[SyncContext] Inicializado com sucesso');
+      
+      // Sync automático ao iniciar (se configurado)
+      if (syncConfig.syncOnAppStart && metadata.deviceId) {
+        await sincronizar();
+      }
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : 'Erro ao inicializar sync';
+      setErro(mensagem);
+      setUltimoErro(mensagem);
+      setStatus('error');
+      console.error('[SyncContext] Erro na inicialização:', error);
+    }
+  }, [syncConfig.syncOnAppStart]);
+
+  // ==========================================================================
+  // SINCRONIZAÇÃO
+  // ==========================================================================
+
+  /**
+   * Executa sincronização completa (push + pull)   */
+  const sincronizar = useCallback(async (forca: boolean = false) => {
+    if (isSyncing) {
+      console.log('[SyncContext] Sincronização já em andamento');
+      return;
+    }
+
+    // Verificar se dispositivo está registrado
+    if (!dispositivo?.registrado && !forca) {
+      setErro('Dispositivo não registrado. Registre antes de sincronizar.');
+      return;
+    }
+
+    setIsSyncing(true);
+    setStatus('pending');
+    setErro(null);
+    setLastSyncMessage('Iniciando sincronização...');
+
+    try {
+      // 1. Push - Enviar mudanças locais
+      setProgress({
+        current: 0,
+        total: 2,
+        stage: 'push',
+        message: 'Enviando mudanças locais...',
+      });
+
+      const mudancasLocais = await databaseService.getPendingChanges();
+      
+      if (mudancasLocais.length > 0) {
+        console.log(`[SyncContext] Enviando ${mudancasLocais.length} mudanças...`);
+        
+        const pushResponse = await apiService.pushChanges({
+          deviceId: dispositivo?.id || '',
+          deviceKey: dispositivo?.chave || '',
+          lastSyncAt: lastSyncAt || new Date(0).toISOString(),
+          changes: mudancasLocais,
+        });
+
+        if (!pushResponse.success) {
+          throw new Error(pushResponse.errors?.[0] || 'Falha ao enviar mudanças');
+        }
+
+        // Marcar mudanças como sincronizadas
+        for (const change of mudancasLocais) {
+          await databaseService.markAsSynced(change.id);
+        }
+
+        setLastSyncMessage(`${mudancasLocais.length} mudanças enviadas`);
+      } else {        setLastSyncMessage('Nenhuma mudança local para enviar');
+      }
+
+      // 2. Pull - Buscar mudanças remotas
+      setProgress({
+        current: 1,
+        total: 2,
+        stage: 'pull',
+        message: 'Baixando mudanças do servidor...',
+      });
+
+      const pullResponse = await apiService.pullChanges({
+        deviceId: dispositivo?.id || '',
+        deviceKey: dispositivo?.chave || '',
+        lastSyncAt: lastSyncAt || new Date(0).toISOString(),
+      });
+
+      if (pullResponse.success) {
+        // Verificar conflitos
+        if (pullResponse.conflicts && pullResponse.conflicts.length > 0) {
+          setConflitosPendentes(pullResponse.conflicts);
+          setLastSyncMessage(`${pullResponse.conflicts.length} conflitos detectados`);
+          setStatus('conflict');
+        } else {
+          // Aplicar mudanças remotas
+          await databaseService.applyRemoteChanges(pullResponse);
+          setLastSyncMessage('Sincronização concluída com sucesso');
+          setStatus('synced');
+        }
+
+        // Atualizar metadata
+        setLastSyncAt(pullResponse.lastSyncAt);
+        await databaseService.updateSyncMetadata({
+          lastSyncAt: pullResponse.lastSyncAt,
+          lastPullAt: new Date().toISOString(),
+        });
+      }
+
+      // 3. Completar
+      setProgress({
+        current: 2,
+        total: 2,
+        stage: 'complete',
+        message: 'Sincronização concluída',
+      });
+
+      // Atualizar contagem de mudanças pendentes
+      const restantes = await databaseService.getPendingChanges();
+      setMudancasPendentes(restantes.length);
+      // Limpar progresso após 2 segundos
+      setTimeout(() => setProgress(null), 2000);
+
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : 'Erro durante sincronização';
+      setErro(mensagem);
+      setUltimoErro(mensagem);
+      setStatus('error');
+      setLastSyncMessage(`Erro: ${mensagem}`);
+      console.error('[SyncContext] Erro na sincronização:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [isSyncing, dispositivo, lastSyncAt]);
+
+  /**
+   * Cancela sincronização em andamento
+   */
+  const cancelarSincronizacao = useCallback(() => {
+    // TODO: Implementar cancelamento via ApiService (AbortController)
+    setIsSyncing(false);
+    setProgress(null);
+    setLastSyncMessage('Sincronização cancelada');
+  }, []);
+
+  // ==========================================================================
+  // DISPOSITIVO
+  // ==========================================================================
+
+  /**
+   * Registra dispositivo no servidor
+   */
+  const registrarDispositivo = useCallback(async (nome: string, chave: string): Promise<boolean> => {
+    try {
+      setLastSyncMessage('Registrando dispositivo...');
+
+      // Gerar ID único para o dispositivo
+      const deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Registrar no servidor
+      const response = await apiService.registrarEquipamento({
+        id: deviceId,
+        nome,
+        chave,
+        tipo: 'Celular',
+        dataCadastro: new Date().toISOString(),
+      });
+
+      if (!response.success) {
+        throw new Error(response.error || 'Falha ao registrar dispositivo');      }
+
+      // Salvar metadata local
+      await databaseService.setDeviceId(deviceId, nome, chave);
+
+      // Atualizar estado
+      setDispositivo({
+        id: deviceId,
+        nome,
+        chave,
+        registrado: true,
+      });
+
+      setLastSyncMessage('Dispositivo registrado com sucesso');
+      setStatus('synced');
+
+      console.log('[SyncContext] Dispositivo registrado:', deviceId);
+      return true;
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : 'Erro ao registrar dispositivo';
+      setErro(mensagem);
+      setUltimoErro(mensagem);
+      setLastSyncMessage(mensagem);
+      console.error('[SyncContext] Erro ao registrar dispositivo:', error);
+      return false;
+    }
+  }, []);
+
+  /**
+   * Atualiza informações do dispositivo
+   */
+  const atualizarDispositivo = useCallback(async (dados: Partial<Equipamento>) => {
+    if (!dispositivo) return;
+
+    try {
+      await apiService.atualizarEquipamento({
+        ...dispositivo,
+        ...dados,
+      });
+
+      setDispositivo({
+        ...dispositivo,
+        ...dados,
+      });
+
+      console.log('[SyncContext] Dispositivo atualizado');
+    } catch (error) {
+      console.error('[SyncContext] Erro ao atualizar dispositivo:', error);
+    }
+  }, [dispositivo]);
+  // ==========================================================================
+  // CONFLITOS
+  // ==========================================================================
+
+  /**
+   * Resolve um conflito específico
+   */
+  const resolverConflito = useCallback(async (
+    conflitoId: string,
+    estrategia: ConflictResolutionStrategy
+  ) => {
+    try {
+      const conflito = conflitosPendentes.find(c => c.entityId === conflitoId);
+      if (!conflito) return;
+
+      setLastSyncMessage(`Resolvendo conflito: ${estrategia}...`);
+
+      // Aplicar estratégia de resolução
+      let versaoFinal: any;
+      
+      switch (estrategia) {
+        case 'local':
+          versaoFinal = conflito.localVersion;
+          break;
+        case 'remote':
+          versaoFinal = conflito.remoteVersion;
+          break;
+        case 'newest':
+          const localDate = new Date(conflito.localVersion.updatedAt);
+          const remoteDate = new Date(conflito.remoteVersion.updatedAt);
+          versaoFinal = localDate > remoteDate ? conflito.localVersion : conflito.remoteVersion;
+          break;
+        case 'manual':
+          // TODO: Implementar tela de resolução manual
+          setErro('Resolução manual deve ser feita pela interface');
+          return;
+      }
+
+      // Salvar versão final no banco local
+      await databaseService.save(conflito.entityType, versaoFinal);
+
+      // Remover da lista de conflitos
+      setConflitosPendentes(prev => prev.filter(c => c.entityId !== conflitoId));
+
+      // Sincronizar resolução com servidor
+      await apiService.resolverConflito({
+        conflitoId,
+        estrategia,
+        versaoFinal,      });
+
+      setLastSyncMessage('Conflito resolvido');
+      
+      // Se não houver mais conflitos, marcar como synced
+      if (conflitosPendentes.length <= 1) {
+        setStatus('synced');
+        await sincronizar();
+      }
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : 'Erro ao resolver conflito';
+      setErro(mensagem);
+      console.error('[SyncContext] Erro ao resolver conflito:', error);
+    }
+  }, [conflitosPendentes, sincronizar]);
+
+  /**
+   * Resolve todos os conflitos com uma estratégia
+   */
+  const resolverTodosConflitos = useCallback(async (estrategia: ConflictResolutionStrategy) => {
+    for (const conflito of conflitosPendentes) {
+      await resolverConflito(conflito.entityId, estrategia);
+    }
+  }, [conflitosPendentes, resolverConflito]);
+
+  /**
+   * Ignora conflitos (mantém versão local)
+   */
+  const ignorarConflitos = useCallback(() => {
+    setConflitosPendentes([]);
+    setStatus('synced');
+    setLastSyncMessage('Conflitos ignorados (versão local mantida)');
+  }, []);
+
+  // ==========================================================================
+  // UTILITÁRIOS
+  // ==========================================================================
+
+  /**
+   * Verifica se há conexão com a internet
+   */
+  const verificarConexao = useCallback(async (): Promise<boolean> => {
+    try {
+      const response = await apiService.healthCheck();
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }, []);
+  /**
+   * Busca mudanças pendentes do banco local
+   */
+  const getMudancasPendentes = useCallback(async (): Promise<ChangeLog[]> => {
+    return await databaseService.getPendingChanges();
+  }, []);
+
+  /**
+   * Limpa erros do estado
+   */
+  const limparErros = useCallback(() => {
+    setErro(null);
+  }, []);
+
+  // ==========================================================================
+  // CONFIGURAÇÕES DE AUTO SYNC
+  // ==========================================================================
+
+  /**
+   * Ativa ou desativa auto sync
+   */
+  const ativarAutoSync = useCallback((ativo: boolean) => {
+    setSyncConfig(prev => ({
+      ...prev,
+      autoSyncEnabled: ativo,
+    }));
+
+    // Limpar timer existente
+    if (autoSyncTimer) {
+      clearInterval(autoSyncTimer);
+      setAutoSyncTimer(null);
+    }
+
+    // Criar novo timer se ativo
+    if (ativo) {
+      const timer = setInterval(() => {
+        console.log('[SyncContext] Auto sync executando...');
+        sincronizar();
+      }, syncConfig.autoSyncInterval * 60 * 1000);
+
+      setAutoSyncTimer(timer);
+    }
+  }, [autoSyncTimer, syncConfig.autoSyncInterval, sincronizar]);
+
+  /**
+   * Define intervalo do auto sync
+   */
+  const setAutoSyncInterval = useCallback((minutos: number) => {
+    setSyncConfig(prev => ({
+      ...prev,      autoSyncInterval: minutos,
+    }));
+
+    // Reiniciar timer com novo intervalo
+    if (syncConfig.autoSyncEnabled) {
+      ativarAutoSync(true);
+    }
+  }, [syncConfig.autoSyncEnabled, ativarAutoSync]);
+
+  // ==========================================================================
+  // EFFECTS
+  // ==========================================================================
+
+  // Inicializar ao montar
+  useEffect(() => {
+    inicializar();
+
+    // Cleanup
+    return () => {
+      if (autoSyncTimer) {
+        clearInterval(autoSyncTimer);
+      }
+    };
+  }, [inicializar]);
+
+  // Auto sync quando configuração mudar
+  useEffect(() => {
+    if (syncConfig.autoSyncEnabled && dispositivo?.registrado) {
+      ativarAutoSync(true);
+    }
+  }, [syncConfig.autoSyncEnabled, dispositivo?.registrado]);
+
+  // ==========================================================================
+  // ESTADO DO CONTEXT
+  // ==========================================================================
+
+  const contextValue: SyncContextData = {
+    // Estado
+    status,
+    isSyncing,
+    lastSyncAt,
+    lastSyncMessage,
+    progress,
+    conflitosPendentes,
+    totalConflitos: conflitosPendentes.length,
+    mudancasPendentes,
+    dispositivo,
+    erro,
+    ultimoErro,
+    // Inicialização
+    inicializar,
+
+    // Sincronização
+    sincronizar,
+    cancelarSincronizacao,
+
+    // Dispositivo
+    registrarDispositivo,
+    atualizarDispositivo,
+
+    // Conflitos
+    resolverConflito,
+    resolverTodosConflitos,
+    ignorarConflitos,
+
+    // Utilitários
+    verificarConexao,
+    getMudancasPendentes,
+    limparErros,
+
+    // Configurações
+    ativarAutoSync,
+    setAutoSyncInterval,
+  };
+
+  return (
+    <SyncContext.Provider value={contextValue}>
+      {children}
+    </SyncContext.Provider>
+  );
+}
+
+// ============================================================================
+// HOOK PERSONALIZADO
+// ============================================================================
+
+export function useSync(): SyncContextData {
+  const context = useContext(SyncContext);
+
+  if (context === undefined) {
+    throw new Error('useSync deve ser usado dentro de um SyncProvider');
+  }
+
+  return context;
+}
+
+// ============================================================================
+// EXPORTAÇÃO PADRÃO
+// ============================================================================
+export default SyncContext;
