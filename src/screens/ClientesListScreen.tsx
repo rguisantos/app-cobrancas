@@ -82,17 +82,20 @@ export default function ClientesListScreen() {
           c.cpfCnpj?.toLowerCase().includes(termo) ||
           c.cidade.toLowerCase().includes(termo)
       );
-    }
+  
+  }
 
     // Filtro por rota (respeita permissões)
     if (filtroRota) {
       filtrados = filtrados.filter(c => String(c.rotaId) === filtroRota);
-    }
+  
+  }
 
     // Filtro por permissão de rota
     if (user?.tipoPermissao !== 'Administrador') {
-      filtrados = filtrados.filter(c => canAccessRota(c.rotaId));
-    }
+      filtrados = filtrados.filter(c => c.rotaId !== undefined && canAccessRota(c.rotaId));
+  
+  }
 
     return filtrados;
   }, [clientes, searchTerm, filtroRota, user, canAccessRota]);
@@ -103,7 +106,7 @@ export default function ClientesListScreen() {
   const renderCliente = useCallback(({ item }: { item: ClienteListItem }) => (
     <TouchableOpacity
       style={styles.card}
-      onPress={() => navigateCliente.toDetail(item.id, item)}
+      onPress={() => navigateCliente.toDetail(String(item.id), item)}
       activeOpacity={0.7}
     >
       <View style={styles.cardHeader}>
@@ -199,6 +202,7 @@ export default function ClientesListScreen() {
         <Text style={styles.loadingText}>Carregando clientes...</Text>
       </View>
     );
+
   }
 
   return (
@@ -229,7 +233,8 @@ export default function ClientesListScreen() {
             colors={['#2563EB']}
             tintColor="#2563EB"
           />
-        }
+      
+  }
         showsVerticalScrollIndicator={false}
       />
 

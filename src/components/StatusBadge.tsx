@@ -47,7 +47,8 @@ const statusConfig: Record<StatusType, { color: string; bg: string; icon: string
 // COMPONENTE PRINCIPAL
 // ============================================================================
 
-export default function StatusBadge({  status,
+export default function StatusBadge({
+  status,
   label,
   variant = 'soft',
   size = 'medium',
@@ -96,7 +97,8 @@ export default function StatusBadge({  status,
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    alignItems: 'center',    gap: 4,
+    alignItems: 'center',
+    gap: 4,
     borderRadius: 12,
     alignSelf: 'flex-start',
   },

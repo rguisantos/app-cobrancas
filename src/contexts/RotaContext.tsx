@@ -55,7 +55,8 @@ export function RotaProvider({ children }: RotaProviderProps) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar rotas');
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, []);
 
   const selecionarRota = useCallback(async (id: string | number) => {
@@ -67,7 +68,8 @@ export function RotaProvider({ children }: RotaProviderProps) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar rota');
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, []);
 
   const limparSelecao = useCallback(() => {
@@ -85,7 +87,8 @@ export function RotaProvider({ children }: RotaProviderProps) {
       return null;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, [carregarRotas]);
 
   const refresh = useCallback(async () => {
@@ -114,6 +117,7 @@ export function useRota(): RotaContextData {
   const context = useContext(RotaContext);
   if (context === undefined) {
     throw new Error('useRota deve ser usado dentro de um RotaProvider');
+
   }
   return context;
 }

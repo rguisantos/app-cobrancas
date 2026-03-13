@@ -31,7 +31,8 @@ export const validators = {
     let sum = 0;
     for (let i = 0; i < 9; i++) {
       sum += parseInt(cleanCPF.charAt(i)) * (10 - i);
-    }
+  
+  }
     let remainder = 11 - (sum % 11);
     if (remainder > 9) remainder = 0;
     if (remainder !== parseInt(cleanCPF.charAt(9))) return false;
@@ -40,7 +41,8 @@ export const validators = {
     sum = 0;
     for (let i = 0; i < 10; i++) {
       sum += parseInt(cleanCPF.charAt(i)) * (11 - i);
-    }
+  
+  }
     remainder = 11 - (sum % 11);
     if (remainder > 9) remainder = 0;
     if (remainder !== parseInt(cleanCPF.charAt(10))) return false;
@@ -67,7 +69,8 @@ export const validators = {
       sum += parseInt(cleanCNPJ.charAt(i)) * weight;
       weight++;
       if (weight > 9) weight = 2;
-    }
+  
+  }
     let remainder = sum % 11;
     let digit = remainder < 2 ? 0 : 11 - remainder;
     if (digit !== parseInt(cleanCNPJ.charAt(12))) return false;
@@ -79,7 +82,8 @@ export const validators = {
       sum += parseInt(cleanCNPJ.charAt(i)) * weight;
       weight++;
       if (weight > 9) weight = 2;
-    }
+  
+  }
     remainder = sum % 11;
     digit = remainder < 2 ? 0 : 11 - remainder;
     if (digit !== parseInt(cleanCNPJ.charAt(13))) return false;

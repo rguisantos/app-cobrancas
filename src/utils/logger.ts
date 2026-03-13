@@ -35,10 +35,12 @@ class Logger {
   constructor() {
     this.enabled = ENV.DEBUG;
     this.minLevel = 'debug';
+
   }
 
   private getTimestamp(): string {
     return new Date().toISOString();
+
   }
 
   private shouldLog(level: LogLevel): boolean {
@@ -51,6 +53,7 @@ class Logger {
     };
 
     return levels[level] >= levels[this.minLevel];
+
   }
 
   private formatMessage(level: LogLevel, message: string, data?: any): string {
@@ -58,6 +61,7 @@ class Logger {
     const levelTag = `[${level.toUpperCase()}]`;
     const dataString = data ? ` ${JSON.stringify(data)}` : '';
     return `${timestamp} ${levelTag} ${message}${dataString}`;
+
   }
 
   private storeLog(level: LogLevel, message: string, data?: any, source?: string) {
@@ -74,7 +78,9 @@ class Logger {
     // Manter apenas últimos 1000 logs
     if (this.logs.length > 1000) {
       this.logs = this.logs.slice(-1000);
-    }
+  
+  }
+
   }
 
   // ============================================================================
@@ -85,27 +91,35 @@ class Logger {
     if (this.shouldLog('debug')) {
       console.log(this.formatMessage('debug', message, data));
       this.storeLog('debug', message, data, source);
-    }
+  
+  }
+
   }
 
   info(message: string, data?: any, source?: string) {
     if (this.shouldLog('info')) {
       console.log(this.formatMessage('info', message, data));
       this.storeLog('info', message, data, source);
-    }
+  
+  }
+
   }
 
   warn(message: string, data?: any, source?: string) {
     if (this.shouldLog('warn')) {      console.warn(this.formatMessage('warn', message, data));
       this.storeLog('warn', message, data, source);
-    }
+  
+  }
+
   }
 
   error(message: string, error?: any, source?: string) {
     if (this.shouldLog('error')) {
       console.error(this.formatMessage('error', message, error));
       this.storeLog('error', message, error, source);
-    }
+  
+  }
+
   }
 
   // ============================================================================
@@ -117,6 +131,7 @@ class Logger {
    */
   setEnabled(enabled: boolean) {
     this.enabled = enabled;
+
   }
 
   /**
@@ -124,6 +139,7 @@ class Logger {
    */
   setMinLevel(level: LogLevel) {
     this.minLevel = level;
+
   }
 
   /**
@@ -132,8 +148,10 @@ class Logger {
   getLogs(filter?: LogLevel): LogEntry[] {
     if (filter) {
       return this.logs.filter(log => log.level === filter);
-    }
+  
+  }
     return this.logs;
+
   }
 
   /**
@@ -141,6 +159,7 @@ class Logger {
    */
   clearLogs() {
     this.logs = [];
+
   }
 
   /**
@@ -149,6 +168,7 @@ class Logger {
     return this.logs
       .map(log => `${log.timestamp} [${log.level.toUpperCase()}] ${log.message}${log.data ? ' ' + JSON.stringify(log.data) : ''}`)
       .join('\n');
+
   }
 
   /**
@@ -156,6 +176,7 @@ class Logger {
    */
   navigation(screen: string, params?: any) {
     this.info(`Navigation: ${screen}`, params, 'Navigation');
+
   }
 
   /**
@@ -167,7 +188,9 @@ class Logger {
       this.error(message, error, 'API');
     } else {
       this.info(message, undefined, 'API');
-    }
+  
+  }
+
   }
 
   /**
@@ -179,7 +202,9 @@ class Logger {
       this.error(message, error, 'Sync');
     } else {
       this.info(message, undefined, 'Sync');
-    }
+  
+  }
+
   }
 }
 

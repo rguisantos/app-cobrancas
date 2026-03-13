@@ -69,7 +69,8 @@ export default function FormDatePicker({
   const handleOpenPicker = useCallback(() => {
     if (!disabled) {
       setShowPicker(true);
-    }
+  
+  }
   }, [disabled]);
 
   const handleClosePicker = useCallback(() => {
@@ -81,7 +82,8 @@ export default function FormDatePicker({
       setShowPicker(Platform.OS === 'ios');
       if (selectedDate) {
         onValueChange(selectedDate);
-      }
+    
+  }
     },
     [onValueChange]
   );
@@ -210,7 +212,10 @@ export function FormTimePicker({
   value,
   onValueChange,
   ...props
-}: Omit<FormDatePickerProps, 'value' | 'onValueChange' | 'mode'>) {
+}: Omit<FormDatePickerProps, 'value' | 'onValueChange' | 'mode'> & {
+  value: Date | null | undefined;
+  onValueChange: (date: Date) => void;
+}) {
   const formatTime = useCallback((date: Date): string => {
     return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   }, []);
@@ -219,7 +224,8 @@ export function FormTimePicker({
     (_event: any, selectedTime?: Date) => {
       if (selectedTime) {
         onValueChange(selectedTime);
-      }
+    
+  }
     },
     [onValueChange]
   );

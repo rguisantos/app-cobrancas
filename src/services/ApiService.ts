@@ -9,7 +9,8 @@ import {
   SyncResponse, 
   ChangeLog,
   Equipamento,
-  SyncMetadata
+  SyncMetadata,
+  SyncConflict
 } from '../types';
 
 // ============================================================================
@@ -78,6 +79,7 @@ class ApiService {
 
   constructor() {
     this.baseURL = API_CONFIG.baseURL;
+
   }
 
   // ==========================================================================
@@ -89,6 +91,7 @@ class ApiService {
    */
   setToken(token: string | null): void {
     this.token = token;
+
   }
 
   /**
@@ -96,6 +99,7 @@ class ApiService {
    */
   setBaseURL(url: string): void {
     this.baseURL = url;
+
   }
   /**
    * Cancela requisição em andamento
@@ -104,7 +108,9 @@ class ApiService {
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -121,15 +127,16 @@ class ApiService {
     const url = `${this.baseURL}${endpoint}`;
     
     // Configurar headers
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...(options.headers as Record<string, string>),
     };
 
     // Adicionar token se existir
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
-    }
+  
+  }
 
     // Criar AbortController para esta requisição
     this.abortController = new AbortController();
@@ -148,7 +155,8 @@ class ApiService {
           success: false,          error: data.message || `Erro ${response.status}`,
           statusCode: response.status,
         };
-      }
+    
+  }
 
       return {
         success: true,
@@ -162,7 +170,8 @@ class ApiService {
           success: false,
           error: 'Requisição cancelada',
         };
-      }
+    
+  }
 
       // Erro de rede
       return {
@@ -171,7 +180,9 @@ class ApiService {
       };
     } finally {
       this.abortController = null;
-    }
+  
+  }
+
   }
 
   /**
@@ -183,9 +194,11 @@ class ApiService {
     if (params) {
       const queryString = new URLSearchParams(params).toString();
       url = `${endpoint}?${queryString}`;
-    }
+  
+  }
 
     return this.request<T>(url, { method: 'GET' });
+
   }
 
   /**
@@ -195,6 +208,7 @@ class ApiService {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: JSON.stringify(body),    });
+
   }
 
   /**
@@ -205,6 +219,7 @@ class ApiService {
       method: 'PUT',
       body: JSON.stringify(body),
     });
+
   }
 
   /**
@@ -212,6 +227,7 @@ class ApiService {
    */
   private async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, { method: 'DELETE' });
+
   }
 
   // ==========================================================================
@@ -238,9 +254,11 @@ class ApiService {
         conflicts: [],
         errors: [response.error || 'Falha ao enviar mudanças'],
       };
-    }
+  
+  }
 
     return response.data!;
+
   }
 
   /**   * Busca mudanças do servidor (PULL)
@@ -262,9 +280,11 @@ class ApiService {
         conflicts: [],
         errors: [response.error || 'Falha ao buscar mudanças'],
       };
-    }
+  
+  }
 
     return response.data!;
+
   }
 
   /**
@@ -278,9 +298,11 @@ class ApiService {
         ok: false,
         timestamp: new Date().toISOString(),
       };
-    }
+  
+  }
 
     return response.data || { ok: false, timestamp: new Date().toISOString() };
+
   }
 
   // ==========================================================================
@@ -292,12 +314,14 @@ class ApiService {
    */
   async registrarEquipamento(dados: RegistrarEquipamentoRequest): Promise<ApiResponse<{ success: boolean; id: string }>> {
     return this.post('/api/equipamentos', dados);
+
   }
   /**
    * Atualiza informações do equipamento
    */
   async atualizarEquipamento(dados: Partial<Equipamento> & { id: string }): Promise<ApiResponse<{ success: boolean }>> {
     return this.put(`/api/equipamentos/${dados.id}`, dados);
+
   }
 
   /**
@@ -305,6 +329,7 @@ class ApiService {
    */
   async getEquipamentos(): Promise<ApiResponse<Equipamento[]>> {
     return this.get('/api/equipamentos');
+
   }
 
   /**
@@ -312,6 +337,7 @@ class ApiService {
    */
   async removerEquipamento(id: string): Promise<ApiResponse<{ success: boolean }>> {
     return this.delete(`/api/equipamentos/${id}`);
+
   }
 
   // ==========================================================================
@@ -323,6 +349,7 @@ class ApiService {
    */
   async resolverConflito(dados: ResolverConflitoRequest): Promise<ApiResponse<{ success: boolean }>> {
     return this.post('/api/sync/conflict/resolve', dados);
+
   }
 
   /**
@@ -330,6 +357,7 @@ class ApiService {
    */
   async getConflitosPendentes(deviceId: string): Promise<ApiResponse<SyncConflict[]>> {
     return this.get(`/api/sync/conflicts?deviceId=${deviceId}`);
+
   }
 
   // ==========================================================================
@@ -341,13 +369,15 @@ class ApiService {
    */
   async getClientes(rotaId?: string): Promise<ApiResponse<any[]>> {
     const params = rotaId ? { rotaId } : undefined;
-    return this.get('/api/clientes', params);  }
+    return this.get('/api/clientes', params);
+  }
 
   /**
    * Busca cliente por ID
    */
   async getCliente(id: string): Promise<ApiResponse<any>> {
     return this.get(`/api/clientes/${id}`);
+
   }
 
   // ==========================================================================
@@ -360,6 +390,7 @@ class ApiService {
   async getProdutos(status?: string): Promise<ApiResponse<any[]>> {
     const params = status ? { status } : undefined;
     return this.get('/api/produtos', params);
+
   }
 
   /**
@@ -367,6 +398,7 @@ class ApiService {
    */
   async getProduto(id: string): Promise<ApiResponse<any>> {
     return this.get(`/api/produtos/${id}`);
+
   }
 
   // ==========================================================================
@@ -378,6 +410,7 @@ class ApiService {
    */
   async getLocacoesPorCliente(clienteId: string): Promise<ApiResponse<any[]>> {
     return this.get(`/api/locacoes`, { clienteId });
+
   }
 
   /**
@@ -385,6 +418,7 @@ class ApiService {
    */
   async getLocacoesAtivas(): Promise<ApiResponse<any[]>> {
     return this.get('/api/locativas/ativas');
+
   }
 
   // ==========================================================================
@@ -398,6 +432,7 @@ class ApiService {
     if (clienteId) params.clienteId = clienteId;
     if (produtoId) params.produtoId = produtoId;
     return this.get('/api/cobrancas', params);
+
   }
 
   /**
@@ -405,6 +440,7 @@ class ApiService {
    */
   async registrarCobranca(dados: any): Promise<ApiResponse<any>> {
     return this.post('/api/cobrancas', dados);
+
   }
 
   // ==========================================================================
@@ -417,6 +453,7 @@ class ApiService {
   async getRotas(status?: string): Promise<ApiResponse<any[]>> {
     const params = status ? { status } : undefined;
     return this.get('/api/rotas', params);
+
   }
 
   // ==========================================================================
@@ -428,6 +465,7 @@ class ApiService {
    */
   async login(email: string, senha: string): Promise<ApiResponse<{ token: string; usuario: any }>> {
     return this.post('/api/auth/login', { email, senha });
+
   }
 
   /**
@@ -435,12 +473,14 @@ class ApiService {
    */
   async logout(): Promise<ApiResponse<{ success: boolean }>> {
     return this.post('/api/auth/logout', {});
+
   }
 
   /**
    * Busca dados do usuário autenticado
    */  async getUsuarioAtual(): Promise<ApiResponse<any>> {
     return this.get('/api/auth/me');
+
   }
 
   /**
@@ -448,6 +488,7 @@ class ApiService {
    */
   async alterarSenha(senhaAtual: string, novaSenha: string): Promise<ApiResponse<{ success: boolean }>> {
     return this.post('/api/auth/change-password', { senhaAtual, novaSenha });
+
   }
 
   // ==========================================================================
@@ -459,6 +500,7 @@ class ApiService {
    */
   async getDashboardMobile(): Promise<ApiResponse<any>> {
     return this.get('/api/dashboard/mobile');
+
   }
 
   /**
@@ -466,6 +508,7 @@ class ApiService {
    */
   async getDashboardWeb(filtros?: any): Promise<ApiResponse<any>> {
     return this.get('/api/dashboard/web', filtros);
+
   }
 
   // ==========================================================================
@@ -477,6 +520,7 @@ class ApiService {
    */
   async getRelatorioFinanceiro(dataInicio: string, dataFim: string): Promise<ApiResponse<any>> {
     return this.get('/api/relatorios/financeiro', { dataInicio, dataFim });
+
   }
 
   /**
@@ -484,6 +528,7 @@ class ApiService {
    */
   async getRelatorioProdutos(status?: string): Promise<ApiResponse<any>> {
     return this.get('/api/relatorios/produtos', { status });
+
   }
 
   // ==========================================================================
@@ -495,6 +540,7 @@ class ApiService {
   async isConnected(): Promise<boolean> {
     const response = await this.healthCheck();
     return response.ok;
+
   }
 
   /**
@@ -507,9 +553,11 @@ class ApiService {
       
       // Aguarda antes de próxima tentativa
       await new Promise(resolve => setTimeout(resolve, API_CONFIG.retryDelay));
-    }
+  
+  }
     
     return false;
+
   }
 }
 

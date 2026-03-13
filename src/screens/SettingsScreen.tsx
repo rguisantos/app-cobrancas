@@ -20,6 +20,8 @@ import {
   Switch,
   TouchableOpacity,
   Alert,
+  Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -97,7 +99,8 @@ export default function SettingsScreen() {
     
     // Aplicar configurações de sync
     if (key === 'autoSync') {      ativarAutoSync(value);
-    }
+  
+  }
   }, [ativarAutoSync]);
 
   const handleSyncNow = useCallback(async () => {
@@ -106,7 +109,8 @@ export default function SettingsScreen() {
       Alert.alert('Sincronização', 'Sincronização iniciada com sucesso');
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível sincronizar');
-    }
+  
+  }
   }, [sincronizar]);
 
   const handleClearData = useCallback(() => {
@@ -126,7 +130,8 @@ export default function SettingsScreen() {
             } catch (error) {
               Alert.alert('Erro', 'Não foi possível limpar os dados');
               logger.error('Erro ao limpar dados locais', error, 'Settings');
-            }
+          
+  }
           },
         },
       ]
@@ -161,7 +166,8 @@ export default function SettingsScreen() {
   const handleSupport = useCallback(() => {
     if (supportEmail) {
       Linking.openURL(`mailto:${supportEmail}`);
-    }
+  
+  }
   }, [supportEmail]);
 
   // ==========================================================================

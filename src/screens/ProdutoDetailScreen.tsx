@@ -20,6 +20,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -92,7 +93,8 @@ export default function ProdutoDetailScreen() {
   const handleEnviarEstoque = useCallback(() => {
     if (produtoSelecionado?.locacaoAtiva) {
       navigateProduto.toEnviarEstoque(produtoSelecionado.locacaoAtiva.locacaoId, route.params.produtoId);
-    }
+  
+  }
   }, [navigateProduto, produtoSelecionado, route.params.produtoId]);
 
   const handleExcluir = useCallback(() => {
@@ -110,7 +112,8 @@ export default function ProdutoDetailScreen() {
               Alert.alert('Sucesso', 'Produto excluído');
             } else {
               Alert.alert('Erro', 'Não foi possível excluir o produto');
-            }
+          
+  }
           },
         },
       ]
@@ -169,6 +172,7 @@ export default function ProdutoDetailScreen() {
         <Text style={styles.loadingText}>Carregando produto...</Text>
       </View>
     );
+
   }
 
   if (!produtoSelecionado) {
@@ -181,6 +185,7 @@ export default function ProdutoDetailScreen() {
         </TouchableOpacity>
       </View>
     );
+
   }
 
   const canEdit = user?.tipoPermissao === 'Administrador' || hasPermission('todosCadastros', 'mobile');
@@ -206,7 +211,8 @@ export default function ProdutoDetailScreen() {
             colors={['#2563EB']}
             tintColor="#2563EB"
           />
-        }
+      
+  }
       >
         {/* ========================================================================== */}
         {/* HEADER - IDENTIFICAÇÃO DO PRODUTO */}

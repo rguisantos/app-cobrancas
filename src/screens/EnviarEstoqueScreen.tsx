@@ -79,11 +79,13 @@ export default function EnviarEstoqueScreen() {
 
     if (!estabelecimento) {
       newErrors.estabelecimento = 'Estabelecimento é obrigatório';
-    }
+  
+  }
 
     if (!motivo.trim()) {
       newErrors.motivo = 'Motivo é obrigatório';
-    }
+  
+  }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -96,14 +98,17 @@ export default function EnviarEstoqueScreen() {
   const handleSelectEstabelecimento = useCallback((id: string) => {
     setEstabelecimento(id);
     if (errors.estabelecimento) {
-      setErrors(prev => ({ ...prev, estabelecimento: undefined }));    }
+      const { estabelecimento: _, ...rest } = errors;
+      setErrors(rest as Record<string, string>);  
+  }
   }, [errors.estabelecimento]);
 
   const handleSubmit = useCallback(async () => {
     if (!validateForm()) {
       Alert.alert('Erro', 'Por favor, preencha os campos obrigatórios');
       return;
-    }
+  
+  }
 
     // Confirmar ação
     Alert.alert(
@@ -120,13 +125,13 @@ export default function EnviarEstoqueScreen() {
               // 1. Finalizar locação
               const locacaoFinalizada = await finalizarLocacao(
                 locacaoId,
-                'Envio para estoque',
-                motivo
+                `Envio para estoque: ${motivo}`
               );
 
               if (!locacaoFinalizada) {
                 throw new Error('Não foi possível finalizar a locação');
-              }
+            
+  }
 
               // 2. Atualizar produto para estoque
               const estabelecimentoNome = ESTABELECIMENTOS.find(e => e.id === estabelecimento)?.nome;
@@ -150,7 +155,8 @@ export default function EnviarEstoqueScreen() {
                 );
               } else {
                 throw new Error('Não foi possível atualizar o produto');
-              }
+            
+  }
             } catch (error) {
               Alert.alert(
                 'Erro',
@@ -158,7 +164,8 @@ export default function EnviarEstoqueScreen() {
               );
             } finally {
               setCarregando(false);
-            }
+          
+  }
           },
         },
       ]
@@ -257,8 +264,10 @@ export default function EnviarEstoqueScreen() {
                 onChangeText={(value) => {
                   setMotivo(value);
                   if (errors.motivo) {
-                    setErrors(prev => ({ ...prev, motivo: undefined }));
-                  }
+                    const { motivo: _, ...rest } = errors;
+                    setErrors(rest as Record<string, string>);
+                
+  }
                 }}
                 multiline
                 numberOfLines={3}

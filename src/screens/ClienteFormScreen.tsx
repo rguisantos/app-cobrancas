@@ -95,7 +95,8 @@ export default function ClienteFormScreen() {
         contatos: clienteSelecionado.contatos || [],
       });
       setTipoPessoa(clienteSelecionado.tipoPessoa || 'Fisica');
-    }
+  
+  }
   }, [modo, clienteId, clienteSelecionado]);
   // ==========================================================================
   // VALIDAÇÕES
@@ -107,7 +108,8 @@ export default function ClienteFormScreen() {
     // Nome
     if (!formData.nomeExibicao?.trim()) {
       newErrors.nomeExibicao = 'Nome é obrigatório';
-    }
+  
+  }
 
     // CPF/CNPJ
     if (!formData.cpfCnpj?.trim()) {
@@ -116,36 +118,44 @@ export default function ClienteFormScreen() {
       newErrors.cpfCnpj = 'CPF inválido';
     } else if (tipoPessoa === 'Juridica' && !validators.isValidCNPJ(formData.cpfCnpj)) {
       newErrors.cpfCnpj = 'CNPJ inválido';
-    }
+  
+  }
 
     // Telefone
     if (!formData.telefonePrincipal?.trim()) {
       newErrors.telefonePrincipal = 'Telefone é obrigatório';
     } else if (formData.telefonePrincipal.replace(/\D/g, '').length < 10) {
       newErrors.telefonePrincipal = 'Telefone inválido';
-    }
+  
+  }
 
     // Rota
     if (!formData.rotaId) {
       newErrors.rotaId = 'Rota é obrigatória';
-    }
+  
+  }
 
     // Endereço
     if (!formData.logradouro?.trim()) {
       newErrors.logradouro = 'Logradouro é obrigatório';
-    }
+  
+  }
     if (!formData.numero?.trim()) {
       newErrors.numero = 'Número é obrigatório';
-    }
+  
+  }
     if (!formData.bairro?.trim()) {
       newErrors.bairro = 'Bairro é obrigatório';
-    }
+  
+  }
     if (!formData.cidade?.trim()) {
       newErrors.cidade = 'Cidade é obrigatória';
-    }
+  
+  }
     if (!formData.estado?.trim()) {
       newErrors.estado = 'Estado é obrigatório';
-    }
+  
+  }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -159,8 +169,11 @@ export default function ClienteFormScreen() {
     
     // Limpar erro do campo
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: undefined }));
-    }
+      const newErrors = { ...errors };
+      delete newErrors[field];
+      setErrors(newErrors);
+  
+  }
   }, [errors]);
 
   const handleCepBlur = useCallback(async () => {
@@ -179,13 +192,16 @@ export default function ClienteFormScreen() {
             cidade: data.localidade,
             estado: data.uf,
           }));
-        }
+      
+  }
       } catch (error) {
         console.error('Erro ao buscar CEP:', error);
       } finally {
         setBuscandoCep(false);
-      }
-    }
+    
+  }
+  
+  }
   }, [formData.cep]);
 
   const handleAddContato = useCallback(() => {
@@ -217,7 +233,8 @@ export default function ClienteFormScreen() {
     if (!validateForm()) {
       Alert.alert('Erro', 'Por favor, corrija os campos obrigatórios');
       return;
-    }
+  
+  }
 
     try {
       if (modo === 'criar') {
@@ -228,7 +245,8 @@ export default function ClienteFormScreen() {
           ]);
         } else {
           Alert.alert('Erro', 'Não foi possível cadastrar o cliente');
-        }
+      
+  }
       } else {
         const sucesso = await atualizarCliente({ ...formData, id: clienteId! });
         if (sucesso) {
@@ -237,11 +255,14 @@ export default function ClienteFormScreen() {
           ]);
         } else {
           Alert.alert('Erro', 'Não foi possível atualizar o cliente');
-        }
-      }
+      
+  }
+    
+  }
     } catch (error) {
       Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao salvar cliente');
-    }
+  
+  }
   }, [formData, modo, clienteId, salvarCliente, atualizarCliente, navigation]);
   // ==========================================================================
   // RENDERIZAÇÃO DE CAMPOS
@@ -395,7 +416,8 @@ export default function ClienteFormScreen() {
               {
                 keyboardType: 'numeric',
                 mask: tipoPessoa === 'Fisica' ? masks.cpf : masks.cnpj,
-              }
+            
+  }
             )}
 
             {renderInput(
@@ -416,7 +438,8 @@ export default function ClienteFormScreen() {
               {
                 keyboardType: 'phone-pad',
                 mask: masks.phone,
-              }
+            
+  }
             )}
 
             {renderInput(
@@ -425,7 +448,8 @@ export default function ClienteFormScreen() {
               'email@exemplo.com',
               {
                 keyboardType: 'email-address',
-              }
+            
+  }
             )}
 
             {/* Contatos Adicionais */}
@@ -456,7 +480,8 @@ export default function ClienteFormScreen() {
               {
                 keyboardType: 'numeric',
                 mask: masks.cep,
-              }
+            
+  }
             )}
 
             <View style={styles.row}>

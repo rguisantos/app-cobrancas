@@ -16,7 +16,9 @@ const RotasCobrancaScreen: React.FC = () => {
         data={cobrancasPendentes}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <Text style={styles.item}>{item.descricao} - R$ {item.valor.toFixed(2)}</Text>
+          <Text style={styles.item}>
+            {item.clienteNome} - {item.produtoIdentificador} - R$ {item.totalClientePaga.toFixed(2)}
+          </Text>
         )}
       />
     </View>

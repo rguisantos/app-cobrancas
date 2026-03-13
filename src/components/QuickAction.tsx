@@ -47,7 +47,8 @@ export interface QuickActionProps {
 
 export default function QuickAction({
   title,
-  icon,  color,
+  icon,
+  color,
   onPress,
   disabled = false,
   badge,
@@ -96,7 +97,8 @@ export default function QuickAction({
         style={[
           styles.iconContainer,
           {
-            width: currentSize.iconContainer,            height: currentSize.iconContainer,
+            width: currentSize.iconContainer,
+            height: currentSize.iconContainer,
             backgroundColor: color,
           },
         ]}
@@ -145,7 +147,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
@@ -194,6 +197,7 @@ const styles = StyleSheet.create({
 // ============================================================================
 // VARIANTES PRÉ-DEFINIDAS
 // ============================================================================
+
 export const QUICK_ACTION_COLORS = {
   blue: '#2563EB',
   green: '#16A34A',
@@ -220,5 +224,3 @@ export function QuickActionVariant({
 // ============================================================================
 // EXPORTAÇÃO
 // ============================================================================
-
-export default QuickAction;

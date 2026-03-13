@@ -80,7 +80,8 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
       console.error('[ClienteContext] Erro ao carregar clientes:', error);
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, []);
 
   const carregarCliente = useCallback(async (id: string) => {
@@ -93,13 +94,15 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
         setClienteSelecionado(cliente);
       } else {
         setErro('Cliente não encontrado');
-      }
+    
+  }
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao carregar cliente';
       setErro(mensagem);      console.error('[ClienteContext] Erro ao carregar cliente:', error);
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, []);
 
   // ==========================================================================
@@ -115,7 +118,8 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
       console.error('[ClienteContext] Erro ao selecionar cliente:', error);
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, []);
 
   const limparSelecao = useCallback(() => {
@@ -142,7 +146,8 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
       return null;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, [carregarClientes]);
 
   const atualizarCliente = useCallback(async (dados: Partial<Cliente> & { id: string }): Promise<boolean> => {    setCarregando(true);
@@ -154,7 +159,8 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
         await carregarClientes();
         console.log('[ClienteContext] Cliente atualizado:', dados.id);
         return true;
-      }
+    
+  }
       return false;
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao atualizar cliente';
@@ -163,7 +169,8 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
       return false;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, [carregarClientes]);
 
   const excluirCliente = useCallback(async (id: string): Promise<boolean> => {
@@ -176,7 +183,8 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
         await carregarClientes();
         console.log('[ClienteContext] Cliente excluído:', id);
         return true;
-      }
+    
+  }
       return false;
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao excluir cliente';
@@ -185,7 +193,8 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
       return false;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, [carregarClientes]);
 
   // ==========================================================================
@@ -197,7 +206,8 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
       return await clienteRepository.search(termo);    } catch (error) {
       console.error('[ClienteContext] Erro ao buscar cliente:', error);
       return [];
-    }
+  
+  }
   }, []);
 
   // ==========================================================================
@@ -263,6 +273,7 @@ export function useCliente(): ClienteContextData {
 
   if (context === undefined) {
     throw new Error('useCliente deve ser usado dentro de um ClienteProvider');
+
   }
 
   return context;

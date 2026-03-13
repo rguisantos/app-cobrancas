@@ -175,7 +175,7 @@ export function FormSubmitButton({
   onSubmit,
   loading = false,
   disabled = false,
-  label = 'Salvar',
+  submitLabel = 'Salvar',
   style,
 }: Omit<FormActionsProps, 'onCancel' | 'onSecondary' | 'showCancel' | 'showSecondary'>) {
   const { primaryColor } = useBranding();
@@ -196,7 +196,7 @@ export function FormSubmitButton({
         <ActivityIndicator color="#FFFFFF" />
       ) : (        <>
           <Ionicons name="save-outline" size={20} color="#FFFFFF" />
-          <Text style={stylesSubmit.text}>{label}</Text>
+          <Text style={stylesSubmit.text}>{submitLabel}</Text>
         </>
       )}
     </TouchableOpacity>

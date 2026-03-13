@@ -80,12 +80,14 @@ export default function CobrancasListScreen() {
     // Filtro por status
     if (filtroStatus !== 'todas') {
       filtradas = filtradas.filter(c => c.status === filtroStatus);
-    }
+  
+  }
 
     // Filtro por permissão de rota (se não for admin)
     if (user?.tipoPermissao !== 'Administrador') {
       // Implementar filtro por rota permitida
-    }
+  
+  }
 
     return filtradas;
   }, [cobrancas, filtroStatus, user]);
@@ -231,6 +233,7 @@ export default function CobrancasListScreen() {
         <Text style={styles.loadingText}>Carregando cobranças...</Text>
       </View>
     );
+
   }
 
   return (
@@ -260,7 +263,8 @@ export default function CobrancasListScreen() {
             colors={['#2563EB']}
             tintColor="#2563EB"
           />
-        }
+      
+  }
         showsVerticalScrollIndicator={false}
       />
 

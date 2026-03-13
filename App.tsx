@@ -12,34 +12,34 @@
  */
 
 import React from 'react';
-import { StatusBar, LogBox } from 'react-native';
+import { StatusBar, LogBox, View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 // Navigation
-import AppNavigator from './navigation/AppNavigator';
+import AppNavigator from './src/navigation/AppNavigator';
 
 // Contexts
-import { AuthProvider } from './contexts/AuthContext';
-import { SyncProvider } from './contexts/SyncContext';
-import { DashboardProvider } from './contexts/DashboardContext';
-import { LocacaoProvider } from './contexts/LocacaoContext';
-import { ClienteProvider } from './contexts/ClienteContext';
-import { ProdutoProvider } from './contexts/ProdutoContext';
-import { CobrancaProvider } from './contexts/CobrancaContext';
-import { RotaProvider } from './contexts/RotaContext';
+import { AuthProvider } from './src/contexts/AuthContext';
+import { SyncProvider } from './src/contexts/SyncContext';
+import { DashboardProvider } from './src/contexts/DashboardContext';
+import { LocacaoProvider } from './src/contexts/LocacaoContext';
+import { ClienteProvider } from './src/contexts/ClienteContext';
+import { ProdutoProvider } from './src/contexts/ProdutoContext';
+import { CobrancaProvider } from './src/contexts/CobrancaContext';
+import { RotaProvider } from './src/contexts/RotaContext';
 
 // White Label
-import { BrandingProvider } from './components/BrandingProvider';
-import { getBrandingConfig } from './config/branding';
+import { BrandingProvider } from './src/components/BrandingProvider';
+import { getBrandingConfig } from './src/config/branding';
 
 // Services
-import { apiService } from './services/ApiService';
-import { databaseService } from './services/DatabaseService';
-import logger from './utils/logger';
+import { apiService } from './src/services/ApiService';
+import logger from './src/utils/logger';
 
 // Config
-import { ENV } from './config/env';
+import { ENV } from './src/config/env';
 
 // ============================================================================
 // CONFIGURAÇÕES GLOBAIS
@@ -243,7 +243,8 @@ export default function App() {
   }, []);
 
   // Obter clientId dinamicamente (ex: do AsyncStorage ou API)
-  // Em produção, busque do perfil do usuário ou configuração remota  const clientId = undefined; // ou: await AsyncStorage.getItem('@app:clientId')
+  // Em produção, busque do perfil do usuário ou configuração remota
+  const clientId = undefined; // ou: await AsyncStorage.getItem('@app:clientId')
 
   return (
     <ErrorBoundary>

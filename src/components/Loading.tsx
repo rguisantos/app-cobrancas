@@ -47,7 +47,8 @@ export default function Loading({
       visible={visible}
       transparent={transparent}
       animationType="fade"
-      onRequestClose={onRequestClose}    >
+      onRequestClose={onRequestClose}
+    >
       <View style={styles.overlay}>
         <View style={styles.container}>
           <ActivityIndicator size="large" color={primaryColor} />
@@ -96,7 +97,8 @@ export function LoadingInline({ size = 'small' }: { size?: 'small' | 'large' }) 
   const { primaryColor } = useBranding();
 
   return (
-    <View style={styles.inlineContainer}>      <ActivityIndicator size={size} color={primaryColor} />
+    <View style={stylesInline.inlineContainer}>
+      <ActivityIndicator size={size} color={primaryColor} />
     </View>
   );
 }

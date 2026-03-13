@@ -21,6 +21,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -111,7 +112,8 @@ export default function ClienteDetailScreen() {
               Alert.alert('Sucesso', 'Cliente excluído');
             } else {
               Alert.alert('Erro', 'Não foi possível excluir o cliente');
-            }
+          
+  }
           },
         },
       ]
@@ -160,6 +162,7 @@ export default function ClienteDetailScreen() {
         <Text style={styles.loadingText}>Carregando cliente...</Text>
       </View>
     );
+
   }
 
   if (!clienteSelecionado) {
@@ -172,6 +175,7 @@ export default function ClienteDetailScreen() {
         </TouchableOpacity>
       </View>
     );
+
   }
 
   // Verificar permissão de acesso à rota
@@ -186,6 +190,7 @@ export default function ClienteDetailScreen() {
         </TouchableOpacity>
       </View>
     );
+
   }
 
   const canEdit = user?.tipoPermissao === 'Administrador' || hasPermission('todosCadastros', 'mobile');
@@ -201,7 +206,8 @@ export default function ClienteDetailScreen() {
             colors={['#2563EB']}
             tintColor="#2563EB"
           />
-        }
+      
+  }
       >
         {/* ========================================================================== */}
         {/* HEADER - PERFIL DO CLIENTE */}
@@ -317,7 +323,7 @@ export default function ClienteDetailScreen() {
           <View style={styles.sectionCard}>
             {clienteSelecionado.cpfCnpj && (
               <View style={styles.infoRow}>
-                <Ionicons name="fingerprint-outline" size={20} color="#64748B" />
+                <Ionicons name="finger-print" size={20} color="#64748B" />
                 <View style={styles.infoContent}>
                   <Text style={styles.infoLabel}>
                     {clienteSelecionado.tipoPessoa === 'Fisica' ? 'CPF' : 'CNPJ'}
@@ -398,7 +404,7 @@ export default function ClienteDetailScreen() {
 
             {clienteSelecionado.cep && (
               <View style={styles.infoRow}>
-                <Ionicons name="postal-outline" size={20} color="#64748B" />
+                <Ionicons name="map-outline" size={20} color="#64748B" />
                 <View style={styles.infoContent}>
                   <Text style={styles.infoLabel}>CEP</Text>
                   <Text style={styles.infoValue}>{clienteSelecionado.cep}</Text>

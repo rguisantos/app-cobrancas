@@ -47,7 +47,8 @@ export interface SyncState {
     id: string;
     nome: string;
     chave: string;
-    registrado: boolean;  } | null;
+    registrado: boolean;
+  } | null;
   
   // Erros
   erro: string | null;
@@ -61,6 +62,7 @@ export interface SyncContextData extends SyncState {
   // Sincronização
   sincronizar: (forca?: boolean) => Promise<void>;
   cancelarSincronizacao: () => void;
+  syncNow: () => Promise<void>; // Alias para sincronizar
   
   // Dispositivo
   registrarDispositivo: (nome: string, chave: string) => Promise<boolean>;
@@ -79,6 +81,16 @@ export interface SyncContextData extends SyncState {
   // Configurações
   ativarAutoSync: (ativo: boolean) => void;
   setAutoSyncInterval: (minutos: number) => void;
+  syncConfig: SyncConfig;
+  
+  // Propriedades adicionais para compatibilidade
+  lastSync: string | null;
+  pendingItems: {
+    clientes: number;
+    produtos: number;
+    locacoes: number;
+    cobrancas: number;
+  };
 }
 
 export interface SyncConfig {
@@ -96,7 +108,8 @@ export interface SyncConfig {
 
 const DEFAULT_SYNC_CONFIG: SyncConfig = {
   autoSyncEnabled: true,
-  autoSyncInterval: 15, // 15 minutos  syncOnAppStart: true,
+  autoSyncInterval: 15, // 15 minutos
+  syncOnAppStart: true,
   syncOnAppResume: true,
   warnBeforeLargeSync: true,
   maxRecordsPerSync: 100,
@@ -179,14 +192,16 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       // Sync automático ao iniciar (se configurado)
       if (syncConfig.syncOnAppStart && metadata.deviceId) {
         await sincronizar();
-      }
+    
+  }
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao inicializar sync';
       setErro(mensagem);
       setUltimoErro(mensagem);
       setStatus('error');
       console.error('[SyncContext] Erro na inicialização:', error);
-    }
+  
+  }
   }, [syncConfig.syncOnAppStart]);
 
   // ==========================================================================
@@ -199,13 +214,15 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     if (isSyncing) {
       console.log('[SyncContext] Sincronização já em andamento');
       return;
-    }
+  
+  }
 
     // Verificar se dispositivo está registrado
     if (!dispositivo?.registrado && !forca) {
       setErro('Dispositivo não registrado. Registre antes de sincronizar.');
       return;
-    }
+  
+  }
 
     setIsSyncing(true);
     setStatus('pending');
@@ -235,16 +252,20 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
 
         if (!pushResponse.success) {
           throw new Error(pushResponse.errors?.[0] || 'Falha ao enviar mudanças');
-        }
+      
+  }
 
         // Marcar mudanças como sincronizadas
         for (const change of mudancasLocais) {
           await databaseService.markAsSynced(change.id);
-        }
+      
+  }
 
         setLastSyncMessage(`${mudancasLocais.length} mudanças enviadas`);
-      } else {        setLastSyncMessage('Nenhuma mudança local para enviar');
-      }
+      } else {
+        setLastSyncMessage('Nenhuma mudança local para enviar');
+    
+  }
 
       // 2. Pull - Buscar mudanças remotas
       setProgress({
@@ -271,7 +292,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
           await databaseService.applyRemoteChanges(pullResponse);
           setLastSyncMessage('Sincronização concluída com sucesso');
           setStatus('synced');
-        }
+      
+  }
 
         // Atualizar metadata
         setLastSyncAt(pullResponse.lastSyncAt);
@@ -279,7 +301,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
           lastSyncAt: pullResponse.lastSyncAt,
           lastPullAt: new Date().toISOString(),
         });
-      }
+    
+  }
 
       // 3. Completar
       setProgress({
@@ -304,7 +327,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       console.error('[SyncContext] Erro na sincronização:', error);
     } finally {
       setIsSyncing(false);
-    }
+  
+  }
   }, [isSyncing, dispositivo, lastSyncAt]);
 
   /**
@@ -341,7 +365,9 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       });
 
       if (!response.success) {
-        throw new Error(response.error || 'Falha ao registrar dispositivo');      }
+        throw new Error(response.error || 'Falha ao registrar dispositivo');
+    
+  }
 
       // Salvar metadata local
       await databaseService.setDeviceId(deviceId, nome, chave);
@@ -366,7 +392,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       setLastSyncMessage(mensagem);
       console.error('[SyncContext] Erro ao registrar dispositivo:', error);
       return false;
-    }
+  
+  }
   }, []);
 
   /**
@@ -389,7 +416,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       console.log('[SyncContext] Dispositivo atualizado');
     } catch (error) {
       console.error('[SyncContext] Erro ao atualizar dispositivo:', error);
-    }
+  
+  }
   }, [dispositivo]);
   // ==========================================================================
   // CONFLITOS
@@ -427,7 +455,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
           // TODO: Implementar tela de resolução manual
           setErro('Resolução manual deve ser feita pela interface');
           return;
-      }
+    
+  }
 
       // Salvar versão final no banco local
       await databaseService.save(conflito.entityType, versaoFinal);
@@ -439,7 +468,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       await apiService.resolverConflito({
         conflitoId,
         estrategia,
-        versaoFinal,      });
+        versaoFinal,
+      });
 
       setLastSyncMessage('Conflito resolvido');
       
@@ -447,12 +477,14 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       if (conflitosPendentes.length <= 1) {
         setStatus('synced');
         await sincronizar();
-      }
+    
+  }
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao resolver conflito';
       setErro(mensagem);
       console.error('[SyncContext] Erro ao resolver conflito:', error);
-    }
+  
+  }
   }, [conflitosPendentes, sincronizar]);
 
   /**
@@ -461,7 +493,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   const resolverTodosConflitos = useCallback(async (estrategia: ConflictResolutionStrategy) => {
     for (const conflito of conflitosPendentes) {
       await resolverConflito(conflito.entityId, estrategia);
-    }
+  
+  }
   }, [conflitosPendentes, resolverConflito]);
 
   /**
@@ -486,7 +519,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       return response.ok;
     } catch {
       return false;
-    }
+  
+  }
   }, []);
   /**
    * Busca mudanças pendentes do banco local
@@ -519,7 +553,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     if (autoSyncTimer) {
       clearInterval(autoSyncTimer);
       setAutoSyncTimer(null);
-    }
+  
+  }
 
     // Criar novo timer se ativo
     if (ativo) {
@@ -529,7 +564,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       }, syncConfig.autoSyncInterval * 60 * 1000);
 
       setAutoSyncTimer(timer);
-    }
+  
+  }
   }, [autoSyncTimer, syncConfig.autoSyncInterval, sincronizar]);
 
   /**
@@ -543,7 +579,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     // Reiniciar timer com novo intervalo
     if (syncConfig.autoSyncEnabled) {
       ativarAutoSync(true);
-    }
+  
+  }
   }, [syncConfig.autoSyncEnabled, ativarAutoSync]);
 
   // ==========================================================================
@@ -558,7 +595,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     return () => {
       if (autoSyncTimer) {
         clearInterval(autoSyncTimer);
-      }
+    
+  }
     };
   }, [inicializar]);
 
@@ -566,7 +604,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   useEffect(() => {
     if (syncConfig.autoSyncEnabled && dispositivo?.registrado) {
       ativarAutoSync(true);
-    }
+  
+  }
   }, [syncConfig.autoSyncEnabled, dispositivo?.registrado]);
 
   // ==========================================================================
@@ -592,6 +631,7 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     // Sincronização
     sincronizar,
     cancelarSincronizacao,
+    syncNow: () => sincronizar(true),
 
     // Dispositivo
     registrarDispositivo,
@@ -610,6 +650,16 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     // Configurações
     ativarAutoSync,
     setAutoSyncInterval,
+    syncConfig,
+
+    // Propriedades adicionais para compatibilidade
+    lastSync: lastSyncAt,
+    pendingItems: {
+      clientes: 0,
+      produtos: 0,
+      locacoes: 0,
+      cobrancas: 0,
+    },
   };
 
   return (
@@ -628,6 +678,7 @@ export function useSync(): SyncContextData {
 
   if (context === undefined) {
     throw new Error('useSync deve ser usado dentro de um SyncProvider');
+
   }
 
   return context;

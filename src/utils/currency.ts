@@ -19,6 +19,7 @@ export const formatarMoeda = (value: number | string): string => {
   
   if (isNaN(numberValue)) {
     return 'R$ 0,00';
+
   }
   
   return numberValue.toLocaleString('pt-BR', {
@@ -37,6 +38,7 @@ export const formatarNumero = (value: number | string): string => {
   
   if (isNaN(numberValue)) {
     return '0';
+
   }
   
   return numberValue.toLocaleString('pt-BR');
@@ -49,6 +51,7 @@ export const formatarPorcentagem = (value: number | string): string => {
   const numberValue = typeof value === 'string' ? parseFloat(value) : value;
     if (isNaN(numberValue)) {
     return '0%';
+
   }
   
   return `${numberValue.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%`;
@@ -62,6 +65,7 @@ export const formatarData = (date: Date | string): string => {
   
   if (isNaN(dateObj.getTime())) {
     return 'Data inválida';
+
   }
   
   return dateObj.toLocaleDateString('pt-BR');
@@ -75,6 +79,7 @@ export const formatarDataHora = (date: Date | string): string => {
   
   if (isNaN(dateObj.getTime())) {
     return 'Data inválida';
+
   }
   
   return dateObj.toLocaleString('pt-BR');

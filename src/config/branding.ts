@@ -117,6 +117,7 @@ export const CLIENT_BRANDING: Record<string, BrandingConfig> = {
 export const getBrandingConfig = (clientId?: string): BrandingConfig => {
   if (clientId && CLIENT_BRANDING[clientId]) {
     return CLIENT_BRANDING[clientId];
+
   }
   return DEFAULT_BRANDING;
 };

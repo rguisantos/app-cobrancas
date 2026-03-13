@@ -52,28 +52,33 @@ class ClienteRepository {
       if (filters?.rotaId) {
         whereClauses.push('rotaId = ?');
         params.push(String(filters.rotaId));
-      }
+    
+  }
 
       if (filters?.status) {
         whereClauses.push('status = ?');
         params.push(filters.status);
-      }
+    
+  }
 
       if (filters?.cidade) {
         whereClauses.push('cidade = ?');
         params.push(filters.cidade);
-      }
+    
+  }
 
       if (filters?.estado) {
         whereClauses.push('estado = ?');
         params.push(filters.estado);
-      }
+    
+  }
 
       if (filters?.termoBusca) {
         whereClauses.push('(nomeExibicao LIKE ? OR cpfCnpj LIKE ? OR telefonePrincipal LIKE ?)');
         const termo = `%${filters.termoBusca}%`;
         params.push(termo, termo, termo);
-      }
+    
+  }
 
       const where = whereClauses.join(' AND ');
       const clientes = await databaseService.getAll<Cliente>(
@@ -87,7 +92,9 @@ class ClienteRepository {
     } catch (error) {
       console.error('[ClienteRepository] Erro ao buscar clientes:', error);
       return [];
-    }
+  
+  }
+
   }
 
   /**
@@ -96,10 +103,13 @@ class ClienteRepository {
   async getById(id: string): Promise<Cliente | null> {
     try {
       const cliente = await databaseService.getById<Cliente>(this.entityType, id);
-      return cliente;    } catch (error) {
+      return cliente;
+    } catch (error) {
       console.error('[ClienteRepository] Erro ao buscar cliente por ID:', error);
       return null;
-    }
+  
+  }
+
   }
 
   /**
@@ -120,13 +130,15 @@ class ClienteRepository {
     } catch (error) {
       console.error('[ClienteRepository] Erro ao buscar cliente com locações:', error);
       return null;
-    }
+  
+  }
+
   }
 
   /**
    * Salva cliente (cria ou atualiza)
    */
-  async save(cliente: Omit<Cliente, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'>): Promise<Cliente> {
+  async save(cliente: Omit<Cliente, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'> & { id?: string }): Promise<Cliente> {
     try {
       // Gerar ID único se não existir
       const clienteCompleto: Cliente = {
@@ -145,10 +157,13 @@ class ClienteRepository {
       await databaseService.save(this.entityType, clienteCompleto);
       
       console.log('[ClienteRepository] Cliente salvo:', clienteCompleto.id);
-      return clienteCompleto;    } catch (error) {
+      return clienteCompleto;
+    } catch (error) {
       console.error('[ClienteRepository] Erro ao salvar cliente:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -160,7 +175,8 @@ class ClienteRepository {
       if (!existing) {
         console.warn('[ClienteRepository] Cliente não encontrado para atualização:', cliente.id);
         return null;
-      }
+    
+  }
 
       const clienteAtualizado: Cliente = {
         ...existing,
@@ -176,7 +192,9 @@ class ClienteRepository {
     } catch (error) {
       console.error('[ClienteRepository] Erro ao atualizar cliente:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -190,17 +208,21 @@ class ClienteRepository {
     } catch (error) {
       console.error('[ClienteRepository] Erro ao remover cliente:', error);
       return false;
-    }
+  
+  }
+
   }
 
   // ==========================================================================
-  // MÉTODOS ESPECÍFICOS DE NEGÓCIO  // ==========================================================================
+  // MÉTODOS ESPECÍFICOS DE NEGÓCIO
+  // ==========================================================================
 
   /**
    * Busca clientes por rota
    */
   async getByRota(rotaId: string | number): Promise<ClienteListItem[]> {
     return this.getAll({ rotaId, status: 'Ativo' });
+
   }
 
   /**
@@ -208,6 +230,7 @@ class ClienteRepository {
    */
   async getAtivos(): Promise<ClienteListItem[]> {
     return this.getAll({ status: 'Ativo' });
+
   }
 
   /**
@@ -215,6 +238,7 @@ class ClienteRepository {
    */
   async getInativos(): Promise<ClienteListItem[]> {
     return this.getAll({ status: 'Inativo' });
+
   }
 
   /**
@@ -223,9 +247,11 @@ class ClienteRepository {
   async search(termo: string): Promise<ClienteListItem[]> {
     if (!termo || termo.trim().length === 0) {
       return this.getAtivos();
-    }
+  
+  }
 
     return this.getAll({ termoBusca: termo });
+
   }
 
   /**
@@ -243,7 +269,10 @@ class ClienteRepository {
     } catch (error) {
       console.error('[ClienteRepository] Erro ao buscar cliente por documento:', error);
       return null;
-    }  }
+  
+  }
+
+  }
 
   /**
    * Verifica se CPF/CNPJ já está cadastrado (exceto o próprio cliente)
@@ -259,7 +288,9 @@ class ClienteRepository {
     } catch (error) {
       console.error('[ClienteRepository] Erro ao verificar documento:', error);
       return false;
-    }
+  
+  }
+
   }
 
   /**
@@ -272,7 +303,9 @@ class ClienteRepository {
     } catch (error) {
       console.error('[ClienteRepository] Erro ao contar clientes:', error);
       return 0;
-    }
+  
+  }
+
   }
 
   /**
@@ -292,17 +325,22 @@ class ClienteRepository {
         const locacoesCount = await this.getLocacoesCount(cliente.id);
         
         if (locacoesCount.saldoDevedorTotal > 0) {
-          clientesComSaldo.push({            ...cliente,
+          clientesComSaldo.push({
+            ...cliente,
             ...locacoesCount,
           });
-        }
-      }
+      
+  }
+    
+  }
 
       return clientesComSaldo;
     } catch (error) {
       console.error('[ClienteRepository] Erro ao buscar clientes com saldo devedor:', error);
       return [];
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -322,6 +360,7 @@ class ClienteRepository {
       estado: cliente.estado,
       status: cliente.status,
     };
+
   }
 
   /**
@@ -329,6 +368,7 @@ class ClienteRepository {
    */
   private generateId(): string {
     return `cliente_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
   }
 
   /**
@@ -341,11 +381,13 @@ class ClienteRepository {
     saldoDevedorTotal: number;
   }> {
     // TODO: Implementar quando LocacaoRepository for criado
-    // Por enquanto retorna valores padrão    return {
+    // Por enquanto retorna valores padrão
+    return {
       totalLocacoesAtivas: 0,
       totalLocacoesFinalizadas: 0,
       saldoDevedorTotal: 0,
     };
+
   }
 }
 

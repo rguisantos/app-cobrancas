@@ -62,7 +62,8 @@ export function ProdutoProvider({ children }: ProdutoProviderProps) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar produtos');
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, []);
 
   const carregarProduto = useCallback(async (id: string) => {
@@ -74,7 +75,8 @@ export function ProdutoProvider({ children }: ProdutoProviderProps) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar produto');
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, []);
 
   const selecionarProduto = useCallback(async (id: string) => {
@@ -86,7 +88,8 @@ export function ProdutoProvider({ children }: ProdutoProviderProps) {
       console.error('[ProdutoContext] Erro ao selecionar produto:', error);
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, []);
 
   const limparSelecao = useCallback(() => {
@@ -103,7 +106,8 @@ export function ProdutoProvider({ children }: ProdutoProviderProps) {
       return null;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, [carregarProdutos]);
 
   const atualizarProduto = useCallback(async (dados: Partial<Produto> & { id: string }): Promise<boolean> => {
@@ -113,14 +117,16 @@ export function ProdutoProvider({ children }: ProdutoProviderProps) {
       if (produto) {
         await carregarProdutos();
         return true;
-      }
+    
+  }
       return false;
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Erro ao atualizar produto');
       return false;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, [carregarProdutos]);
 
   const excluirProduto = useCallback(async (id: string): Promise<boolean> => {
@@ -134,7 +140,8 @@ export function ProdutoProvider({ children }: ProdutoProviderProps) {
       return false;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, [carregarProdutos]);
 
   const buscarProduto = useCallback(async (termo: string): Promise<ProdutoListItem[]> => {
@@ -142,7 +149,8 @@ export function ProdutoProvider({ children }: ProdutoProviderProps) {
       return await produtoRepository.search(termo);
     } catch (error) {
       return [];
-    }
+  
+  }
   }, []);
 
   const refresh = useCallback(async () => {    await carregarProdutos();
@@ -176,6 +184,7 @@ export function useProduto(): ProdutoContextData {
   const context = useContext(ProdutoContext);
   if (context === undefined) {
     throw new Error('useProduto deve ser usado dentro de um ProdutoProvider');
+
   }
   return context;
 }

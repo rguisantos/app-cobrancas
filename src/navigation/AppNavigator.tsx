@@ -9,19 +9,19 @@
  * - ModalStack: Telas em modal (Detalhes, Formulários)
  */
 
-import React from 'react';
-import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import React, { useCallback } from 'react';
+import { View, ActivityIndicator, useColorScheme } from 'react-native';
+import { NavigationContainer, DefaultTheme, DarkTheme, useNavigation } from '@react-navigation/native';
+import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { createBottomTabNavigator, BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { useColorScheme } from 'react-native';
 
 // Contexts
 import { useAuth } from '../contexts/AuthContext';
 import { useSync } from '../contexts/SyncContext';
 
 // Types
-import { TipoPermissaoUsuario } from '../types';
+import { TipoPermissaoUsuario, PermissoesUsuario } from '../types';
 
 // ============================================================================
 // IMPORTS DAS SCREENS (substitua pelos paths reais)
@@ -197,7 +197,8 @@ function AppTabsNavigator() {
               break;            case 'Mais':
               iconName = focused ? 'menu' : 'menu-outline';
               break;
-          }
+        
+  }
           
           return <Ionicons name={iconName} size={size} color={color} />;
         },
@@ -375,9 +376,12 @@ export function AppNavigator() {
   if (isLoading) {
     return (
       <NavigationContainer theme={theme}>
-        {/* Aqui poderia ter um SplashScreen */}
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
       </NavigationContainer>
     );
+
   }
 
   return (
@@ -390,10 +394,6 @@ export function AppNavigator() {
           <>
             {/* App principal */}
             <RootStack.Screen name="App" component={ModalNavigator} />
-                        {/* Modais podem ser abertos de qualquer lugar */}
-            <RootStack.Group screenOptions={{ presentation: 'modal' }}>
-              {/* Modais adicionais podem ser adicionados aqui */}
-            </RootStack.Group>
           </>
         )}
       </RootStack.Navigator>
@@ -450,14 +450,17 @@ export function useAuthNavigate() {
       if (requiredPerm && !hasPermission(requiredPerm, 'mobile')) {
         console.warn(`[Navigation] Permissão negada para ${screen}`);
         return;
-      }
-    }
+    
+  }
+  
+  }
 
     // Verificar acesso à rota se fornecido
     if (options?.rotaId && !canAccessRota(options.rotaId)) {
       console.warn(`[Navigation] Acesso à rota ${options.rotaId} negado`);
       return;
-    }
+  
+  }
 
     // Navegar normalmente
     navigation.navigate(screen as any, params as any);
@@ -475,3 +478,4 @@ export default AppNavigator;
 // Types para navegação tipada
 export type ModalStackNavigationProp = NativeStackNavigationProp<ModalStackParamList>;
 export type AppTabsNavigationProp = BottomTabNavigationProp<AppTabsParamList>;
+export type AuthStackNavigationProp = NativeStackNavigationProp<AuthStackParamList>;

@@ -98,38 +98,45 @@ class CobrancaRepository {
       // Aplicar filtros
       if (filters?.locacaoId) {        whereClauses.push('locacaoId = ?');
         params.push(String(filters.locacaoId));
-      }
+    
+  }
 
       if (filters?.clienteId) {
         whereClauses.push('clienteId = ?');
         params.push(String(filters.clienteId));
-      }
+    
+  }
 
       if (filters?.status) {
         whereClauses.push('status = ?');
         params.push(filters.status);
-      }
+    
+  }
 
       if (filters?.dataInicio) {
         whereClauses.push('dataInicio >= ?');
         params.push(filters.dataInicio);
-      }
+    
+  }
 
       if (filters?.dataFim) {
         whereClauses.push('dataFim <= ?');
         params.push(filters.dataFim);
-      }
+    
+  }
 
       if (filters?.produtoIdentificador) {
         whereClauses.push('produtoIdentificador = ?');
         params.push(filters.produtoIdentificador);
-      }
+    
+  }
 
       if (filters?.termoBusca) {
         whereClauses.push('(clienteNome LIKE ? OR produtoIdentificador LIKE ?)');
         const termo = `%${filters.termoBusca}%`;
         params.push(termo, termo);
-      }
+    
+  }
 
       // Apenas cobranças não deletadas
       whereClauses.push('deletedAt IS NULL');
@@ -145,7 +152,8 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao buscar cobranças:', error);
       return [];
-    }  }
+    }
+  }
 
   /**
    * Busca cobrança por ID
@@ -157,13 +165,15 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao buscar cobrança por ID:', error);
       return null;
-    }
+  
+  }
+
   }
 
   /**
    * Salva nova cobrança
    */
-  async save(cobranca: Omit<HistoricoCobranca, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'>): Promise<HistoricoCobranca> {
+  async save(cobranca: Omit<HistoricoCobranca, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'> & { id?: string }): Promise<HistoricoCobranca> {
     try {
       const cobrancaCompleta: HistoricoCobranca = {
         ...cobranca,
@@ -185,7 +195,9 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao salvar cobrança:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -196,7 +208,8 @@ class CobrancaRepository {
       const existing = await this.getById(cobranca.id);
       if (!existing) {        console.warn('[CobrancaRepository] Cobrança não encontrada para atualização:', cobranca.id);
         return null;
-      }
+    
+  }
 
       const cobrancaAtualizada: HistoricoCobranca = {
         ...existing,
@@ -212,7 +225,9 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao atualizar cobrança:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -226,7 +241,9 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao remover cobrança:', error);
       return false;
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -246,7 +263,8 @@ class CobrancaRepository {
       if (data.valorRecebido >= data.totalClientePaga) {        status = 'Pago';
       } else if (data.valorRecebido > 0) {
         status = 'Parcial';
-      }
+    
+  }
 
       const novaCobranca: Omit<HistoricoCobranca, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'> = {
         locacaoId: data.locacaoId,
@@ -289,7 +307,9 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao registrar cobrança:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**   * Atualiza status de pagamento
@@ -304,7 +324,8 @@ class CobrancaRepository {
       if (!cobranca) {
         console.warn('[CobrancaRepository] Cobrança não encontrada:', cobrancaId);
         return null;
-      }
+    
+  }
 
       // Calcular novo saldo
       const saldoDevedor = cobranca.totalClientePaga - valorRecebido;
@@ -315,7 +336,8 @@ class CobrancaRepository {
         status = 'Pago';
       } else if (valorRecebido > 0) {
         status = 'Parcial';
-      }
+    
+  }
 
       const cobrancaAtualizada = await this.update({
         id: cobrancaId,
@@ -331,7 +353,9 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao atualizar pagamento:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -346,7 +370,8 @@ class CobrancaRepository {
       if (!cobranca) {
         console.warn('[CobrancaRepository] Cobrança não encontrada:', cobrancaId);
         return null;
-      }
+    
+  }
 
       const novoValorRecebido = cobranca.valorRecebido + valorAdicional;
       
@@ -354,7 +379,9 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao registrar pagamento parcial:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -366,6 +393,7 @@ class CobrancaRepository {
    */
   async getByLocacao(locacaoId: string): Promise<HistoricoCobranca[]> {
     return await this.getAll({ locacaoId });
+
   }
 
   /**
@@ -388,7 +416,9 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao buscar cobranças por cliente:', error);
       return [];
-    }
+  
+  }
+
   }
   /**
    * Busca cobranças pendentes (para dashboard)
@@ -404,8 +434,8 @@ class CobrancaRepository {
       return cobranças
         .filter(c => c.dataVencimento && new Date(c.dataVencimento) < hoje)
         .map(cobranca => ({
-          locacaoId: cobranca.locacaoId,
-          clienteId: cobranca.clienteId,
+          locacaoId: String(cobranca.locacaoId),
+          clienteId: String(cobranca.clienteId),
           clienteNome: cobranca.clienteNome,
           produtoIdentificador: cobranca.produtoIdentificador,
           dataVencimento: cobranca.dataVencimento!,
@@ -415,7 +445,9 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao buscar cobranças pendentes:', error);
       return [];
-    }
+  
+  }
+
   }
 
   /**
@@ -436,13 +468,16 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao buscar cobranças atrasadas:', error);
       return [];
-    }
+  
+  }
+
   }
 
   /**   * Busca histórico de cobranças de um produto
    */
   async getByProduto(produtoIdentificador: string): Promise<HistoricoCobranca[]> {
     return await this.getAll({ produtoIdentificador });
+
   }
 
   /**
@@ -455,7 +490,9 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao contar cobranças:', error);
       return 0;
-    }
+  
+  }
+
   }
 
   /**
@@ -490,7 +527,8 @@ class CobrancaRepository {
           totalSaldoDevedor: 0,
           totalPago: 0,          totalParcial: 0,
           totalPendente: 0,
-        }
+      
+  }
       );
 
       return resumo;
@@ -504,7 +542,9 @@ class CobrancaRepository {
         totalParcial: 0,
         totalPendente: 0,
       };
-    }
+  
+  }
+
   }
 
   /**
@@ -521,7 +561,9 @@ class CobrancaRepository {
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao calcular saldo devedor:', error);
       return 0;
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -537,12 +579,14 @@ class CobrancaRepository {
     const diffTime = hoje.getTime() - vencimento.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return Math.max(0, diffDays);
+
   }
   /**
    * Gera ID único para a cobrança
    */
   private generateId(): string {
     return `cobranca_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
   }
 }
 

@@ -55,7 +55,8 @@ class DatabaseService {
       if (this.isInitialized) {
         console.log('[Database] Já inicializado');
         return;
-      }
+    
+  }
 
       console.log('[Database] Inicializando banco de dados...');
       
@@ -77,7 +78,9 @@ class DatabaseService {
     } catch (error) {
       console.error('[Database] Erro ao inicializar:', error);
       throw new Error(`Falha ao inicializar banco de dados: ${error}`);
-    }
+  
+  }
+
   }
 
   /**
@@ -288,9 +291,11 @@ class DatabaseService {
 
     for (const table of tables) {
       await this.db.runAsync(table);
-    }
+  
+  }
 
     console.log('[Database] Tabelas criadas com sucesso');
+
   }
   /**
    * Inicializa metadata de sincronização
@@ -311,7 +316,9 @@ class DatabaseService {
         `INSERT OR IGNORE INTO ${TABLES.SYNC_METADATA} (key, value) VALUES (?, ?)`,
         [key, typeof value === 'object' ? JSON.stringify(value) : String(value)]
       );
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -341,12 +348,14 @@ class DatabaseService {
         } else {
           // INSERT
           const newEntity = {
-            ...entity,            createdAt: now,
+            ...entity,
+            createdAt: now,
             updatedAt: now,
-            needsSync: 1,
-          };
+            needsSync: true,
+          } as T;
           await this.insert(tableName, newEntity);
-        }
+      
+  }
 
         // Log mudança para sincronização
         await this.logChange({
@@ -357,7 +366,7 @@ class DatabaseService {
           changes: entity,
           timestamp: now,
           deviceId: await this.getDeviceId(),
-          synced: 0,
+          synced: false,
         });
       });
 
@@ -365,7 +374,9 @@ class DatabaseService {
     } catch (error) {
       console.error(`[Database] Erro ao salvar ${entityType}:`, error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -386,7 +397,9 @@ class DatabaseService {
     } catch (error) {
       console.error(`[Database] Erro ao buscar ${entityType}:`, error);
       return null;
-    }
+  
+  }
+
   }
 
   /**
@@ -403,7 +416,8 @@ class DatabaseService {
 
     if (where) {
       query += ` AND ${where}`;
-    }
+  
+  }
 
     query += ' ORDER BY updatedAt DESC';
 
@@ -413,7 +427,9 @@ class DatabaseService {
     } catch (error) {
       console.error(`[Database] Erro ao buscar ${entityType}:`, error);
       return [];
-    }
+  
+  }
+
   }
 
   /**
@@ -433,17 +449,18 @@ class DatabaseService {
       const entityWithSync = {
         ...entity,
         updatedAt: now,
-        needsSync: 1,
+        needsSync: true,
         version: (entity.version || 0) + 1,
-      };
+      } as T;
 
       await this.db.runAsync(
         `UPDATE ${tableName} SET 
-          updatedAt = ?,          needsSync = 1,
+          updatedAt = ?,
+          needsSync = ?,
           version = ?,
           ${this.getUpdateFields(entityWithSync)}
         WHERE id = ?`,
-        [...Object.values(entityWithSync).slice(0, -1), entity.id]
+        [now, 1, entityWithSync.version, entity.id]
       );
 
       // Log mudança
@@ -455,14 +472,16 @@ class DatabaseService {
         changes: entity,
         timestamp: now,
         deviceId: await this.getDeviceId(),
-        synced: 0,
+        synced: false,
       });
 
       console.log(`[Database] ${entityType} atualizado: ${entity.id}`);
     } catch (error) {
       console.error(`[Database] Erro ao atualizar ${entityType}:`, error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -488,14 +507,17 @@ class DatabaseService {
         operation: 'delete',
         changes: { id, deletedAt: now },
         timestamp: now,
-        deviceId: await this.getDeviceId(),        synced: 0,
+        deviceId: await this.getDeviceId(),
+        synced: false,
       });
 
       console.log(`[Database] ${entityType} removido: ${id}`);
     } catch (error) {
       console.error(`[Database] Erro ao remover ${entityType}:`, error);
       throw error;
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -519,7 +541,9 @@ class DatabaseService {
     } catch (error) {
       console.error('[Database] Erro ao buscar mudanças pendentes:', error);
       return [];
-    }
+  
+  }
+
   }
 
   /**
@@ -537,7 +561,9 @@ class DatabaseService {
       );
     } catch (error) {
       console.error('[Database] Erro ao marcar como sincronizado:', error);
-      throw error;    }
+      throw error;  
+  }
+
   }
 
   /**
@@ -565,7 +591,9 @@ class DatabaseService {
     } catch (error) {
       console.error('[Database] Erro ao logar mudança:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -576,24 +604,30 @@ class DatabaseService {
 
     await this.runTransaction(async () => {
       // Aplicar mudanças de cada entidade
-      for (const cliente of response.changes.clientes || []) {
+      const changes = response.changes || {};
+      for (const cliente of changes.clientes || []) {
         await this.save('cliente', cliente);
-      }
+    
+  }
 
-      for (const produto of response.changes.produtos || []) {
+      for (const produto of changes.produtos || []) {
         await this.save('produto', produto);
-      }
+    
+  }
 
-      for (const locacao of response.changes.locacoes || []) {
+      for (const locacao of changes.locacoes || []) {
         await this.save('locacao', locacao);
-      }
-      for (const cobranca of response.changes.cobrancas || []) {
+    
+  }
+      for (const cobranca of changes.cobrancas || []) {
         await this.save('cobranca', cobranca);
-      }
+    
+  }
 
-      for (const rota of response.changes.rotas || []) {
+      for (const rota of changes.rotas || []) {
         await this.save('rota', rota);
-      }
+    
+  }
 
       // Atualizar metadata
       await this.updateSyncMetadata({
@@ -603,6 +637,7 @@ class DatabaseService {
     });
 
     console.log('[Database] Mudanças remotas aplicadas com sucesso');
+
   }
 
   // ==========================================================================
@@ -626,14 +661,18 @@ class DatabaseService {
           metadata[row.key] = JSON.parse(row.value);
         } catch {
           metadata[row.key] = row.value;
-        }
-      }
+      
+  }
+    
+  }
 
       return metadata as SyncMetadata;
     } catch (error) {
       console.error('[Database] Erro ao buscar metadata:', error);
       throw error;
-    }
+  
+  }
+
   }
   /**
    * Atualiza metadata de sincronização
@@ -646,7 +685,9 @@ class DatabaseService {
         `INSERT OR REPLACE INTO ${TABLES.SYNC_METADATA} (key, value) VALUES (?, ?)`,
         [key, typeof value === 'object' ? JSON.stringify(value) : String(value)]
       );
-    }
+  
+  }
+
   }
 
   /**
@@ -655,6 +696,7 @@ class DatabaseService {
   async getDeviceId(): Promise<string> {
     const metadata = await this.getSyncMetadata();
     return metadata.deviceId || '';
+
   }
 
   /**
@@ -666,6 +708,7 @@ class DatabaseService {
       deviceName,
       deviceKey,
     });
+
   }
 
   // ==========================================================================
@@ -683,7 +726,9 @@ class DatabaseService {
     } catch (error) {
       console.error('[Database] Erro na transação:', error);
       throw error;
-    }
+  
+  }
+
   }
   /**
    * Salva múltiplas entidades em batch
@@ -694,8 +739,10 @@ class DatabaseService {
     await this.runTransaction(async () => {
       for (const { entityType, data } of entities) {
         await this.save(entityType, data);
-      }
+    
+  }
     });
+
   }
 
   // ==========================================================================
@@ -713,6 +760,7 @@ class DatabaseService {
     };
 
     return tableMap[entityType];
+
   }
 
   private getUpdateFields(entity: any): string {
@@ -720,6 +768,7 @@ class DatabaseService {
       (key) => key !== 'id' && key !== 'createdAt'
     );
     return fields.map((field) => `${field} = ?`).join(', ');
+
   }
 
   private async insert(tableName: string, entity: any): Promise<void> {
@@ -727,12 +776,13 @@ class DatabaseService {
 
     const fields = Object.keys(entity);
     const placeholders = fields.map(() => '?').join(', ');
-    const values = Object.values(entity);
+    const values = Object.values(entity) as any[];
 
     await this.db.runAsync(
       `INSERT INTO ${tableName} (${fields.join(', ')}) VALUES (${placeholders})`,
-      values
+      ...values
     );
+
   }
   /**
    * Limpa todos os dados locais (útil para logout ou reset)
@@ -745,10 +795,12 @@ class DatabaseService {
     await this.runTransaction(async () => {
       for (const table of tables) {
         await this.db!.runAsync(`DELETE FROM ${table}`);
-      }
+    
+  }
     });
 
     console.log('[Database] Dados locais limpos');
+
   }
 
   /**
@@ -760,7 +812,9 @@ class DatabaseService {
       this.db = null;
       this.isInitialized = false;
       console.log('[Database] Banco fechado');
-    }
+  
+  }
+
   }
 }
 

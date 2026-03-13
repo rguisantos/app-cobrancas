@@ -28,6 +28,9 @@ export interface CobrancaContextData extends CobrancaState {
   registrarCobranca: (dados: any) => Promise<HistoricoCobranca | null>;
   atualizarCobranca: (dados: Partial<HistoricoCobranca> & { id: string }) => Promise<boolean>;
   refresh: () => Promise<void>;
+  // Propriedades adicionais para compatibilidade
+  cobrancasPendentes: HistoricoCobranca[];
+  fetchCobracas: () => Promise<void>;
 }
 
 // ============================================================================
@@ -63,7 +66,8 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar cobranças');
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, []);
 
   const carregarCobranca = useCallback(async (id: string) => {
@@ -75,7 +79,8 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar cobrança');
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, []);
 
   const selecionarCobranca = useCallback(async (id: string) => {
@@ -87,7 +92,8 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
       console.error('[CobrancaContext] Erro ao selecionar cobrança:', error);
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, []);
 
   const limparSelecao = useCallback(() => {
@@ -104,7 +110,8 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
       return null;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, [carregarCobrancas]);
 
   const atualizarCobranca = useCallback(async (dados: Partial<HistoricoCobranca> & { id: string }): Promise<boolean> => {
@@ -114,14 +121,16 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
       if (cobranca) {
         await carregarCobrancas();
         return true;
-      }
+    
+  }
       return false;
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Erro ao atualizar cobrança');
       return false;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, [carregarCobrancas]);
 
   const refresh = useCallback(async () => {
@@ -145,7 +154,11 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
     limparSelecao,
     registrarCobranca,
     atualizarCobranca,
-    refresh,  };
+    refresh,
+    // Propriedades adicionais para compatibilidade
+    cobrancasPendentes: cobrancas.filter(c => c.status === 'Pendente'),
+    fetchCobracas: carregarCobrancas,
+  };
 
   return <CobrancaContext.Provider value={contextValue}>{children}</CobrancaContext.Provider>;
 }
@@ -154,6 +167,7 @@ export function useCobranca(): CobrancaContextData {
   const context = useContext(CobrancaContext);
   if (context === undefined) {
     throw new Error('useCobranca deve ser usado dentro de um CobrancaProvider');
+
   }
   return context;
 }

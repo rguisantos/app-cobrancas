@@ -127,7 +127,8 @@ export default function ProdutoFormScreen() {
         descricaoId: produtoSelecionado.descricaoId?.toString() || '',
         tamanhoId: produtoSelecionado.tamanhoId?.toString() || '',
       });
-    }
+  
+  }
   }, [modo, produtoId, produtoSelecionado]);
 
   // ==========================================================================
@@ -140,31 +141,37 @@ export default function ProdutoFormScreen() {
     // Identificador (obrigatório e único)
     if (!formData.identificador?.trim()) {
       newErrors.identificador = 'Identificador é obrigatório';
-    }
+  
+  }
 
     // Número do relógio
     if (!formData.numeroRelogio?.trim()) {
       newErrors.numeroRelogio = 'Número do relógio é obrigatório';
-    }
+  
+  }
     // Tipo
     if (!formData.tipoId) {
       newErrors.tipoId = 'Tipo é obrigatório';
-    }
+  
+  }
 
     // Descrição
     if (!formData.descricaoId) {
       newErrors.descricaoId = 'Descrição é obrigatória';
-    }
+  
+  }
 
     // Tamanho
     if (!formData.tamanhoId) {
       newErrors.tamanhoId = 'Tamanho é obrigatório';
-    }
+  
+  }
 
     // Conservação
     if (!formData.conservacao) {
       newErrors.conservacao = 'Conservação é obrigatória';
-    }
+  
+  }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -178,8 +185,11 @@ export default function ProdutoFormScreen() {
     setFormData(prev => ({ ...prev, [field]: value }));
     
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: undefined }));
-    }
+      const newErrors = { ...errors };
+      delete newErrors[field];
+      setErrors(newErrors);
+  
+  }
   }, [errors]);
 
   const handleSelectTipo = useCallback((item: any) => {
@@ -222,7 +232,8 @@ export default function ProdutoFormScreen() {
     if (!validateForm()) {
       Alert.alert('Erro', 'Por favor, corrija os campos obrigatórios');
       return;
-    }
+  
+  }
 
     try {
       if (modo === 'criar') {
@@ -233,7 +244,8 @@ export default function ProdutoFormScreen() {
           ]);
         } else {
           Alert.alert('Erro', 'Não foi possível cadastrar o produto');
-        }
+      
+  }
       } else {
         const sucesso = await atualizarProduto({ ...formData, id: produtoId! });
         if (sucesso) {
@@ -242,10 +254,12 @@ export default function ProdutoFormScreen() {
           ]);
         } else {
           Alert.alert('Erro', 'Não foi possível atualizar o produto');
-        }
+      
+  }
       }    } catch (error) {
       Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao salvar produto');
-    }
+  
+  }
   }, [formData, modo, produtoId, salvarProduto, atualizarProduto, navigation]);
 
   // ==========================================================================
@@ -258,9 +272,9 @@ export default function ProdutoFormScreen() {
     placeholder: string,
     items: any[],
     onSelect: (item: any) => void,
-    error?: string,
     visible: boolean,
-    onToggle: () => void
+    onToggle: () => void,
+    error?: string
   ) => (
     <View style={styles.inputGroup}>
       <Text style={styles.label}>{label}{error && ' *'}</Text>
@@ -409,9 +423,9 @@ export default function ProdutoFormScreen() {
                 'Selecionar tipo',
                 TIPOS_PRODUTO,
                 handleSelectTipo,
-                errors.tipoId,
                 showTipoPicker,
-                () => setShowTipoPicker(!showTipoPicker)
+                () => setShowTipoPicker(!showTipoPicker),
+                errors.tipoId
               )}
 
               {/* Descrição */}
@@ -421,9 +435,9 @@ export default function ProdutoFormScreen() {
                 'Selecionar descrição',
                 DESCRICOES_PRODUTO,
                 handleSelectDescricao,
-                errors.descricaoId,
                 showDescricaoPicker,
-                () => setShowDescricaoPicker(!showDescricaoPicker)
+                () => setShowDescricaoPicker(!showDescricaoPicker),
+                errors.descricaoId
               )}
 
               {/* Tamanho */}
@@ -433,9 +447,9 @@ export default function ProdutoFormScreen() {
                 'Selecionar tamanho',
                 TAMANHOS_PRODUTO,
                 handleSelectTamanho,
-                errors.tamanhoId,
                 showTamanhoPicker,
-                () => setShowTamanhoPicker(!showTamanhoPicker)
+                () => setShowTamanhoPicker(!showTamanhoPicker),
+                errors.tamanhoId
               )}
             </View>
           </View>
@@ -452,9 +466,9 @@ export default function ProdutoFormScreen() {
                 'Selecionar conservação',
                 CONSERVACOES,
                 handleSelectConservacao,
-                errors.conservacao,
                 showConservacaoPicker,
-                () => setShowConservacaoPicker(!showConservacaoPicker)
+                () => setShowConservacaoPicker(!showConservacaoPicker),
+                errors.conservacao
               )}
 
               {/* Status */}
@@ -464,7 +478,6 @@ export default function ProdutoFormScreen() {
                 'Selecionar status',
                 STATUS_PRODUTO,
                 handleSelectStatus,
-                undefined,
                 showStatusPicker,
                 () => setShowStatusPicker(!showStatusPicker)
               )}

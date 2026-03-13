@@ -82,14 +82,16 @@ export default function LoginScreen() {
       newErrors.email = 'E-mail é obrigatório';
     } else if (!validateEmail(formData.email)) {
       newErrors.email = 'E-mail inválido';
-    }
+  
+  }
 
     // Validar senha
     if (!formData.password) {
       newErrors.password = 'Senha é obrigatória';
     } else if (formData.password.length < 6) {
       newErrors.password = 'Senha deve ter no mínimo 6 caracteres';
-    }
+  
+  }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -104,13 +106,15 @@ export default function LoginScreen() {
     // Limpar erro do campo ao digitar
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: undefined }));
-    }
+  
+  }
   }, [errors]);
 
   const handleLogin = useCallback(async () => {
     if (!validateForm()) {
       return;
-    }
+  
+  }
 
     setIsSubmitting(true);
 
@@ -122,7 +126,8 @@ export default function LoginScreen() {
       Alert.alert('Erro', mensagem, [{ text: 'OK' }]);
     } finally {
       setIsSubmitting(false);
-    }
+  
+  }
   }, [formData, login]);
 
   const handleRecoverPassword = useCallback(() => {

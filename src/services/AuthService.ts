@@ -48,13 +48,16 @@ class AuthService {
 
         logger.info('Login bem-sucedido', { email });
         return mockResponse;
-      }
+    
+  }
 
       throw new Error('Email e senha são obrigatórios');
     } catch (error) {
       logger.error('Erro ao fazer login', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -86,13 +89,16 @@ class AuthService {
 
         logger.info('Registro bem-sucedido', { email });
         return mockResponse;
-      }
+    
+  }
 
       throw new Error('Nome, email e senha são obrigatórios');
     } catch (error) {
       logger.error('Erro ao registrar', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -111,14 +117,17 @@ class AuthService {
       if (token && token.startsWith('mock_')) {
         logger.info('Token válido');
         return true;
-      }
+    
+  }
 
       logger.warn('Token inválido');
       return false;
     } catch (error) {
       logger.error('Erro ao validar token', error);
       return false;
-    }
+  
+  }
+
   }
 
   /**
@@ -140,7 +149,9 @@ class AuthService {
     } catch (error) {
       logger.error('Erro ao renovar token', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -161,7 +172,9 @@ class AuthService {
     } catch (error) {
       logger.error('Erro ao fazer logout', error);
       throw error;
-    }
+  
+  }
+
   }
 }
 

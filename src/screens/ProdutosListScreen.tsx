@@ -20,6 +20,7 @@ import {
   ActivityIndicator,
   TextInput,
   RefreshControl,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -47,7 +48,8 @@ export default function ProdutosListScreen() {
   const { user, hasPermission } = useAuth();
   const { produtos, carregando, erro, carregarProdutos, refresh } = useProduto();
 
-  // Estado local  const [searchTerm, setSearchTerm] = useState('');
+  // Estado local
+  const [searchTerm, setSearchTerm] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<StatusProduto | 'todos'>('todos');
   const [filtroLocacao, setFiltroLocacao] = useState<'todos' | 'locados' | 'disponiveis'>('todos');
   const [refreshing, setRefreshing] = useState(false);
@@ -84,19 +86,22 @@ export default function ProdutosListScreen() {
           p.tipoNome.toLowerCase().includes(termo) ||
           p.descricaoNome.toLowerCase().includes(termo)
       );
-    }
+  
+  }
 
     // Filtro por status
     if (filtroStatus !== 'todos') {
       filtrados = filtrados.filter(p => p.statusProduto === filtroStatus);
-    }
+  
+  }
 
     // Filtro por locação
     if (filtroLocacao === 'locados') {
       filtrados = filtrados.filter(p => p.clienteNome);
     } else if (filtroLocacao === 'disponiveis') {
       filtrados = filtrados.filter(p => !p.clienteNome && p.statusProduto === 'Ativo');
-    }
+  
+  }
     return filtrados;
   }, [produtos, searchTerm, filtroStatus, filtroLocacao]);
 
@@ -107,7 +112,7 @@ export default function ProdutosListScreen() {
   const renderProduto = useCallback(({ item }: { item: ProdutoListItem }) => (
     <TouchableOpacity
       style={styles.card}
-      onPress={() => navigateProduto.toDetail(item.id)}
+      onPress={() => navigateProduto.toDetail(String(item.id))}
       activeOpacity={0.7}
     >
       <View style={styles.cardHeader}>
@@ -154,7 +159,7 @@ export default function ProdutosListScreen() {
       <Ionicons name="cube-outline" size={64} color="#CBD5E1" />
       <Text style={styles.emptyTitle}>Nenhum produto encontrado</Text>
       <Text style={styles.emptySubtitle}>
-        {searchTerm || filtroStatus !== 'todos' || filtroLocacao !== 'todos'
+        {searchTerm || filtroStatus !== 'todos' || filtroLocacao !== undefined
           ? 'Tente ajustar os filtros'
           : 'Cadastre seu primeiro produto'}
       </Text>
@@ -243,6 +248,7 @@ export default function ProdutosListScreen() {
         <Text style={styles.loadingText}>Carregando produtos...</Text>
       </View>
     );
+
   }
   return (
     <SafeAreaView style={styles.container}>
@@ -272,7 +278,8 @@ export default function ProdutosListScreen() {
             colors={['#2563EB']}
             tintColor="#2563EB"
           />
-        }
+      
+  }
         showsVerticalScrollIndicator={false}
       />
 

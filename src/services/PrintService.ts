@@ -64,7 +64,9 @@ ${new Date().toLocaleString('pt-BR')}
     } catch (error) {
       logger.error('Erro ao gerar comprovante', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -84,7 +86,9 @@ ${new Date().toLocaleString('pt-BR')}
     } catch (error) {
       logger.error('Erro ao imprimir comprovante', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -98,7 +102,9 @@ ${new Date().toLocaleString('pt-BR')}
     } catch (error) {
       logger.error('Erro ao exportar comprovante', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -118,7 +124,9 @@ ${new Date().toLocaleString('pt-BR')}
     } catch (error) {
       logger.error('Erro ao compartilhar comprovante', error);
       throw error;
-    }
+  
+  }
+
   }
 }
 

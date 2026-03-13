@@ -72,37 +72,44 @@ class ProdutoRepository {
       if (filters?.tipoId) {
         whereClauses.push('tipoId = ?');
         params.push(String(filters.tipoId));
-      }
+    
+  }
 
       if (filters?.descricaoId) {
         whereClauses.push('descricaoId = ?');
         params.push(String(filters.descricaoId));
-      }
+    
+  }
 
       if (filters?.tamanhoId) {
         whereClauses.push('tamanhoId = ?');
         params.push(String(filters.tamanhoId));
-      }
+    
+  }
 
       if (filters?.statusProduto) {
         whereClauses.push('statusProduto = ?');
         params.push(filters.statusProduto);
-      }
+    
+  }
 
       if (filters?.conservacao) {
         whereClauses.push('conservacao = ?');
         params.push(filters.conservacao);
-      }
+    
+  }
 
       if (filters?.estabelecimento) {
         whereClauses.push('estabelecimento = ?');
-        params.push(filters.estabelecimento);      }
+        params.push(filters.estabelecimento);    
+  }
 
       if (filters?.termoBusca) {
         whereClauses.push('(identificador LIKE ? OR tipoNome LIKE ? OR descricaoNome LIKE ?)');
         const termo = `%${filters.termoBusca}%`;
         params.push(termo, termo, termo);
-      }
+    
+  }
 
       // Filtro para produtos locados vs disponíveis
       // Nota: Esta é uma simplificação. O ideal é fazer JOIN com locações
@@ -112,7 +119,8 @@ class ProdutoRepository {
       } else if (filters?.comLocacaoAtiva === false) {
         // Produtos em estoque têm estabelecimento preenchido
         whereClauses.push('(estabelecimento IS NOT NULL AND estabelecimento != "")');
-      }
+    
+  }
 
       const where = whereClauses.join(' AND ');
       const produtos = await databaseService.getAll<Produto>(
@@ -126,7 +134,9 @@ class ProdutoRepository {
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao buscar produtos:', error);
       return [];
-    }
+  
+  }
+
   }
 
   /**
@@ -139,7 +149,9 @@ class ProdutoRepository {
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao buscar produto por ID:', error);
       return null;
-    }
+  
+  }
+
   }
 
   /**
@@ -156,7 +168,9 @@ class ProdutoRepository {
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao buscar produto por identificador:', error);
       return null;
-    }
+  
+  }
+
   }
 
   /**
@@ -178,13 +192,15 @@ class ProdutoRepository {
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao buscar produto com locação:', error);
       return null;
-    }
+  
+  }
+
   }
 
   /**
    * Salva produto (cria ou atualiza)
    */
-  async save(produto: Omit<Produto, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'>): Promise<Produto> {
+  async save(produto: Omit<Produto, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'> & { id?: string }): Promise<Produto> {
     try {
       // Gerar ID único se não existir
       const produtoCompleto: Produto = {
@@ -206,7 +222,9 @@ class ProdutoRepository {
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao salvar produto:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -218,7 +236,8 @@ class ProdutoRepository {
       if (!existing) {
         console.warn('[ProdutoRepository] Produto não encontrado para atualização:', produto.id);
         return null;
-      }
+    
+  }
 
       const produtoAtualizado: Produto = {
         ...existing,
@@ -234,7 +253,9 @@ class ProdutoRepository {
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao atualizar produto:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -247,7 +268,9 @@ class ProdutoRepository {
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao remover produto:', error);
       return false;
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -262,6 +285,7 @@ class ProdutoRepository {
       statusProduto: 'Ativo',
       comLocacaoAtiva: false 
     });
+
   }
 
   /**
@@ -271,6 +295,7 @@ class ProdutoRepository {
     return this.getAll({ 
       comLocacaoAtiva: true 
     });
+
   }
 
   /**
@@ -280,6 +305,7 @@ class ProdutoRepository {
     return this.getAll({ 
       statusProduto: 'Manutenção' 
     });
+
   }
 
   /**
@@ -289,6 +315,7 @@ class ProdutoRepository {
     return this.getAll({ 
       statusProduto: 'Inativo' 
     });
+
   }
 
   /**
@@ -296,9 +323,11 @@ class ProdutoRepository {
   async search(termo: string): Promise<ProdutoListItem[]> {
     if (!termo || termo.trim().length === 0) {
       return this.getAll({ statusProduto: 'Ativo' });
-    }
+  
+  }
 
     return this.getAll({ termoBusca: termo });
+
   }
 
   /**
@@ -315,7 +344,9 @@ class ProdutoRepository {
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao verificar identificador:', error);
       return false;
-    }
+  
+  }
+
   }
 
   /**
@@ -333,7 +364,9 @@ class ProdutoRepository {
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao buscar produto por número do relógio:', error);
       return null;
-    }
+  
+  }
+
   }
 
   /**
@@ -345,7 +378,9 @@ class ProdutoRepository {
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao contar produtos:', error);
       return 0;
-    }
+  
+  }
+
   }
 
   /**
@@ -379,7 +414,9 @@ class ProdutoRepository {
         totalDisponiveis: 0,
         totalManutencao: 0,
       };
-    }
+  
+  }
+
   }
 
   /**
@@ -395,7 +432,8 @@ class ProdutoRepository {
       if (!produto) {
         console.warn('[ProdutoRepository] Produto não encontrado:', produtoId);
         return false;
-      }
+    
+  }
 
       // Atualizar produto
       await this.update({
@@ -422,7 +460,9 @@ class ProdutoRepository {
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao atualizar número do relógio:', error);
       return false;
-    }
+  
+  }
+
   }
 
   /**
@@ -445,7 +485,9 @@ class ProdutoRepository {
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao enviar produto para estoque:', error);
       return false;
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -465,6 +507,7 @@ class ProdutoRepository {
       statusProduto: produto.statusProduto,
       // clienteNome será preenchido quando tivermos integração com LocacaoRepository
     };
+
   }
 
   /**
@@ -472,6 +515,7 @@ class ProdutoRepository {
    */
   private generateId(): string {
     return `produto_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
   }
 
   /**
@@ -484,10 +528,10 @@ class ProdutoRepository {
     clienteNome: string;
     dataInicio: string;
     rotaNome?: string;
-  } | null> {
+  } | undefined> {
     // TODO: Implementar quando LocacaoRepository for criado
-    // Por enquanto retorna null
-    return null;
+    // Por enquanto retorna undefined
+    return undefined;
   }}
 
 // ============================================================================

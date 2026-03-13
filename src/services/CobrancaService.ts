@@ -96,7 +96,8 @@ class CobrancaService {
       Math.max(0, subtotalAposDescontoPartidas - descontoDinheiroValor)
     );
 
-    // 5. Calcular percentual da empresa    const valorPercentual = this.arredondar(
+    // 5. Calcular percentual da empresa
+    const valorPercentual = this.arredondar(
       (subtotalAposDescontoDinheiro * input.percentualEmpresa) / 100
     );
 
@@ -129,6 +130,7 @@ class CobrancaService {
       valorClienteFica,
       resumo,
     };
+
   }
 
   /**
@@ -154,6 +156,7 @@ class CobrancaService {
       valorClienteFica: 0,
       resumo: `Cobrança por ${periodicidade}: ${this.formatarMoeda(valorFixo)} - Desconto: ${this.formatarMoeda(desconto)}`,
     };
+
   }
 
   // ==========================================================================
@@ -170,21 +173,25 @@ class CobrancaService {
     // 1. Validar relógio
     if (input.relogioAtual < input.relogioAnterior) {
       erros.push('Relógio atual não pode ser menor que o anterior');
-    }
+  
+  }
 
     if (input.relogioAtual === input.relogioAnterior) {
       avisos.push('Relógio não teve alteração. Deseja continuar?');
-    }
+  
+  }
 
     // 2. Validar valor da ficha
     if (input.valorFicha <= 0 && input.formaPagamento !== 'Periodo') {
       erros.push('Valor da ficha deve ser maior que zero');
-    }
+  
+  }
 
     // 3. Validar percentual
     if (input.percentualEmpresa < 0 || input.percentualEmpresa > 100) {
       erros.push('Percentual da empresa deve estar entre 0 e 100');
-    }
+  
+  }
 
     // 4. Validar descontos
     const descontoPartidasQtd = input.descontoPartidasQtd || 0;
@@ -192,21 +199,25 @@ class CobrancaService {
 
     if (descontoPartidasQtd < 0) {
       erros.push('Desconto em partidas não pode ser negativo');
-    }
+  
+  }
 
     if (descontoDinheiro < 0) {      erros.push('Desconto em dinheiro não pode ser negativo');
-    }
+  
+  }
 
     // 5. Calcular e verificar se total não fica negativo
     const calculo = this.calcularCobranca(input);
     
     if (calculo.totalClientePaga <= 0) {
       erros.push('Total a pagar não pode ser zero ou negativo');
-    }
+  
+  }
 
     if (calculo.totalClientePaga < 1) {
       avisos.push('Valor muito baixo. Verifique se os cálculos estão corretos');
-    }
+  
+  }
 
     // 6. Verificar desconto muito alto
     const totalBruto = calculo.totalBruto;
@@ -214,13 +225,15 @@ class CobrancaService {
     
     if (totalDescontos > totalBruto * 0.5) {
       avisos.push('Descontos representam mais de 50% do total. Verifique se está correto');
-    }
+  
+  }
 
     return {
       valida: erros.length === 0,
       erros,
       avisos,
     };
+
   }
 
   /**
@@ -229,20 +242,23 @@ class CobrancaService {
   validarLeituraRelogio(atual: number, anterior: number): {
     valida: boolean;
     mensagem?: string;
-  } {
+  }
+    {
     if (atual < anterior) {
       return {
         valida: false,
         mensagem: 'Leitura atual não pode ser menor que a anterior. Verifique se o relógio foi reiniciado ou trocado.',
       };
-    }
+  
+  }
 
     if (atual === anterior) {
       return {
         valida: true,
         mensagem: 'Relógio sem alteração. Cobrança será de R$ 0,00.',
       };
-    }
+  
+  }
     // Verificar se a diferença é muito grande (possível erro de digitação)
     const diferenca = atual - anterior;
     if (diferenca > 100000) {
@@ -250,12 +266,14 @@ class CobrancaService {
         valida: true,
         mensagem: `Diferença muito grande (${diferenca} fichas). Verifique se a leitura está correta.`,
       };
-    }
+  
+  }
 
     return {
       valida: true,
       mensagem: undefined,
     };
+
   }
 
   // ==========================================================================
@@ -267,6 +285,7 @@ class CobrancaService {
    */
   calcularSaldoDevedor(totalPagar: number, valorRecebido: number): number {
     return this.arredondar(Math.max(0, totalPagar - valorRecebido));
+
   }
 
   /**
@@ -275,6 +294,7 @@ class CobrancaService {
   calcularValorCliente(totalClientePaga: number, percentualEmpresa: number): number {
     const valorEmpresa = (totalClientePaga * percentualEmpresa) / 100;
     return this.arredondar(totalClientePaga - valorEmpresa);
+
   }
 
   /**
@@ -282,6 +302,7 @@ class CobrancaService {
    */
   calcularValorEmpresa(totalClientePaga: number, percentualEmpresa: number): number {
     return this.arredondar((totalClientePaga * percentualEmpresa) / 100);
+
   }
 
   /**
@@ -289,12 +310,14 @@ class CobrancaService {
    */
   calcularDescontoPartidas(qtdPartidas: number, valorFicha: number): number {
     return this.arredondar(qtdPartidas * valorFicha);
+
   }
 
   /**
    * Aplica desconto no total   */
   aplicarDesconto(total: number, desconto: number): number {
     return this.arredondar(Math.max(0, total - desconto));
+
   }
 
   // ==========================================================================
@@ -306,6 +329,7 @@ class CobrancaService {
    */
   private arredondar(valor: number): number {
     return Math.round(valor * 100) / 100;
+
   }
 
   /**
@@ -316,6 +340,7 @@ class CobrancaService {
       style: 'currency',
       currency: 'BRL',
     }).format(valor);
+
   }
 
   /**
@@ -323,6 +348,7 @@ class CobrancaService {
    */
   formatarNumero(valor: number): string {
     return new Intl.NumberFormat('pt-BR').format(valor);
+
   }
 
   /**
@@ -342,16 +368,19 @@ class CobrancaService {
     partes.push(`Total Bruto: ${this.formatarMoeda(calculo.totalBruto)}`);
 
     if (calculo.descontoPartidasValor > 0) {      partes.push(`- Desc. Partidas: ${this.formatarMoeda(calculo.descontoPartidasValor)}`);
-    }
+  
+  }
 
     if (calculo.descontoDinheiro && calculo.descontoDinheiro > 0) {
       partes.push(`- Desc. Dinheiro: ${this.formatarMoeda(calculo.descontoDinheiro)}`);
-    }
+  
+  }
 
     partes.push(`(${calculo.percentualEmpresa}% Empresa: ${this.formatarMoeda(calculo.valorPercentual)})`);
     partes.push(`= Total: ${this.formatarMoeda(calculo.totalClientePaga)}`);
 
     return partes.join(' | ');
+
   }
 
   /**
@@ -365,6 +394,7 @@ class CobrancaService {
   ): number {
     const totalBrutoMensal = mediaFichasDiarias * valorFicha * diasMes;
     return this.arredondar((totalBrutoMensal * percentualEmpresa) / 100);
+
   }
 
   /**
@@ -377,6 +407,7 @@ class CobrancaService {
   ): number {
     const totalFichas = relogioFim - relogioInicio;
     return Math.round(totalFichas / Math.max(1, diasPeriodo));
+
   }
 
   // ==========================================================================
@@ -400,7 +431,8 @@ class CobrancaService {
       status = 'Pago';
     } else if (valorRecebido > 0) {
       status = 'Parcial';
-    }
+  
+  }
 
     return {
       locacaoId: locacao.id,
@@ -435,6 +467,7 @@ class CobrancaService {
       dataVencimento: undefined,
       observacao,
     };
+
   }
 }
 

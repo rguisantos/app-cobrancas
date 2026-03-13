@@ -9,7 +9,7 @@
  * EXPO_PUBLIC_APP_NAME=Nome do App
  */
 
-import { Constants } from 'expo-constants';
+import Constants from 'expo-constants';
 
 // ============================================================================
 // INTERFACES

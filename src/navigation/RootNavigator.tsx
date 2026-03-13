@@ -16,6 +16,7 @@ const RootNavigator: React.FC = () => {
         <LoadingSpinner />
       </NavigationContainer>
     );
+
   }
 
   // 2. Se terminou de carregar, decidimos qual fluxo mostrar (App ou Auth),

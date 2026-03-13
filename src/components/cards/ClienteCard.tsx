@@ -13,7 +13,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ClienteListItem } from '../../types';
-import { StatusBadge } from '../StatusBadge';
+import StatusBadge from '../StatusBadge';
 
 // ============================================================================
 // INTERFACES

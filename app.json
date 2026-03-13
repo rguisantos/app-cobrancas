@@ -1,19 +1,17 @@
 {
   "expo": {
-    "name": "Nome do App",
+    "name": "App Cobranças",
     "slug": "app-cobrancas",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#2563EB"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.suaempresa.cobrancas",
@@ -25,7 +23,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
         "backgroundColor": "#2563EB"
       },
       "package": "com.suaempresa.cobrancas",
@@ -55,16 +54,11 @@
       "API_URL": "https://api.suaempresa.com.br",
       "USE_MOCK": "true",
       "APP_VERSION": "1.0.0",
-      "APP_NAME": "Nome do App",
+      "APP_NAME": "App Cobranças",
       "DEBUG": "true",
       "SYNC_INTERVAL": "15",
       "MAX_RECORDS_PER_SYNC": "100",
       "TIMEOUT": "30000"
-    },
-    "updates": {
-      "fallbackToCacheTimeout": 0,
-      "url": "https://u.expo.dev/your-project-id"
-    },
-    "runtimeVersion": "1.0.0"
+    }
   }
 }

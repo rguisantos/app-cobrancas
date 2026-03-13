@@ -107,7 +107,8 @@ export default function CobrancaConfirmScreen() {
     if (!relogioAtual) {
       setCalculo(null);
       return;
-    }
+  
+  }
 
     const relogioAtualNum = parseInt(relogioAtual.replace(/\D/g, ''), 10);
     
@@ -119,7 +120,8 @@ export default function CobrancaConfirmScreen() {
       });
       setCalculo(null);
       return;
-    }
+  
+  }
 
     const descontoPartidasNum = parseInt(descontoPartidas.replace(/\D/g, ''), 10) || 0;
     const descontoDinheiroStr = descontoDinheiro.replace(',', '.');
@@ -150,14 +152,16 @@ export default function CobrancaConfirmScreen() {
     if (!calculo || !validacao?.valida) {
       Alert.alert('Erro', 'Por favor, verifique os dados da cobrança');
       return;
-    }
+  
+  }
 
     const valorRecebidoNum = parseFloat(valorRecebido.replace(',', '.')) || 0;
 
     if (valorRecebidoNum < 0) {
       Alert.alert('Erro', 'Valor recebido não pode ser negativo');
       return;
-    }
+  
+  }
 
     try {
       // Preparar dados para salvar
@@ -198,10 +202,12 @@ export default function CobrancaConfirmScreen() {
         );
       } else {
         Alert.alert('Erro', 'Não foi possível registrar a cobrança');
-      }
+    
+  }
     } catch (error) {
       Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao registrar cobrança');
-    }
+  
+  }
   }, [calculo, validacao, valorRecebido, locacaoId, relogioAnterior, relogioAtual, descontoPartidas, observacao, registrarCobranca, navigation]);
 
   // ==========================================================================

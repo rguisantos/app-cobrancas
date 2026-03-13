@@ -10,7 +10,7 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBranding } from '../BrandingProvider';
 
@@ -50,7 +50,8 @@ export default function FormSection({
     if (collapsible) {      const newExpanded = !expanded;
       setExpanded(newExpanded);
       onToggle?.(newExpanded);
-    }
+  
+  }
   }, [collapsible, expanded, onToggle]);
 
   return (

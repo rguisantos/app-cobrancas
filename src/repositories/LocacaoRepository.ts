@@ -10,7 +10,8 @@ import {
   LocacaoListItem, 
   EntityType,
   StatusLocacao,
-  FormaPagamentoLocacao
+  FormaPagamentoLocacao,
+  Periodicidade
 } from '../types';
 
 // ============================================================================
@@ -39,15 +40,17 @@ export interface LocacaoComDetalhes extends Locacao {
 }
 
 export interface LocacaoResumo {
-  id: string;
+  id: string | number;
   produtoIdentificador: string;
   produtoNome: string;
+  produtoTipo?: string;
   clienteNome: string;
   dataLocacao: string;
   formaPagamento: FormaPagamentoLocacao;
   percentualEmpresa: number;
   precoFicha: number;
-  status: StatusLocacao;}
+  status: StatusLocacao;
+}
 
 export interface NovaLocacaoData {
   clienteId: string;
@@ -128,42 +131,50 @@ class LocacaoRepository {
       if (filters?.clienteId) {
         whereClauses.push('clienteId = ?');
         params.push(String(filters.clienteId));
-      }
+    
+  }
 
       if (filters?.produtoId) {
         whereClauses.push('produtoId = ?');
         params.push(String(filters.produtoId));
-      }
+    
+  }
 
       if (filters?.status) {
         whereClauses.push('status = ?');
         params.push(filters.status);
-      }
+    
+  }
 
       if (filters?.formaPagamento) {
         whereClauses.push('formaPagamento = ?');
         params.push(filters.formaPagamento);
-      }
+    
+  }
 
       if (filters?.rotaId) {        whereClauses.push('rotaId = ?');
         params.push(String(filters.rotaId));
-      }
+    
+  }
 
       if (filters?.dataInicio) {
         whereClauses.push('dataLocacao >= ?');
         params.push(filters.dataInicio);
-      }
+    
+  }
 
       if (filters?.dataFim) {
         whereClauses.push('dataLocacao <= ?');
         params.push(filters.dataFim);
-      }
+    
+  }
 
       if (filters?.termoBusca) {
         whereClauses.push('(produtoIdentificador LIKE ? OR clienteNome LIKE ?)');
         const termo = `%${filters.termoBusca}%`;
         params.push(termo, termo);
-      }
+    
+  }
 
       // Apenas locações não deletadas
       whereClauses.push('deletedAt IS NULL');
@@ -180,7 +191,9 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao buscar locações:', error);
       return [];
-    }
+  
+  }
+
   }
 
   /**
@@ -193,7 +206,9 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao buscar locação por ID:', error);
       return null;
-    }
+  
+  }
+
   }
   /**
    * Busca locação ativa por produto
@@ -210,7 +225,9 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao buscar locação ativa por produto:', error);
       return null;
-    }
+  
+  }
+
   }
 
   /**
@@ -225,13 +242,15 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao buscar locações ativas do cliente:', error);
       return [];
-    }
+  
+  }
+
   }
 
   /**
    * Salva nova locação
    */
-  async save(locacao: Omit<Locacao, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'>): Promise<Locacao> {
+  async save(locacao: Omit<Locacao, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'> & { id?: string }): Promise<Locacao> {
     try {
       const locacaoCompleta: Locacao = {
         ...locacao,
@@ -252,7 +271,9 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao salvar locação:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -264,7 +285,8 @@ class LocacaoRepository {
       if (!existing) {
         console.warn('[LocacaoRepository] Locação não encontrada para atualização:', locacao.id);
         return null;
-      }
+    
+  }
 
       const locacaoAtualizada: Locacao = {
         ...existing,
@@ -280,7 +302,9 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao atualizar locação:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -293,7 +317,9 @@ class LocacaoRepository {
       return true;
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao remover locação:', error);      return false;
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -310,7 +336,8 @@ class LocacaoRepository {
       if (locacaoExistente) {
         console.error('[LocacaoRepository] Produto já está locado:', data.produtoId);
         throw new Error('Produto já está locado para outro cliente');
-      }
+    
+  }
 
       const novaLocacao: Omit<Locacao, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'> = {
         clienteId: data.clienteId,
@@ -328,7 +355,7 @@ class LocacaoRepository {
         percentualEmpresa: data.percentualEmpresa,
         percentualCliente: data.percentualCliente,
         
-        periodicidade: data.periodicidade,
+        periodicidade: data.periodicidade as Periodicidade | undefined,
         valorFixo: data.valorFixo,
         dataPrimeiraCobranca: data.dataPrimeiraCobranca,
         
@@ -341,7 +368,9 @@ class LocacaoRepository {
       return locacao;
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao criar nova locação:', error);
-      throw error;    }
+      throw error;  
+  }
+
   }
 
   /**
@@ -358,7 +387,8 @@ class LocacaoRepository {
         
         if (!locacaoAtual) {
           throw new Error('Produto não está locado atualmente');
-        }
+      
+  }
 
         // 2. Finalizar locação antiga
         await this.finalizarLocacao(locacaoAtual.id, 'Relocação', data.motivoRelocacao);
@@ -380,7 +410,7 @@ class LocacaoRepository {
           percentualEmpresa: data.percentualEmpresa,
           percentualCliente: data.percentualCliente,
           
-          periodicidade: data.periodicidade,
+          periodicidade: data.periodicidade as Periodicidade | undefined,
           valorFixo: data.valorFixo,
           dataPrimeiraCobranca: data.dataPrimeiraCobranca,
           
@@ -399,7 +429,9 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao realizar relocação:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -420,7 +452,9 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao enviar para estoque:', error);
       return false;
-    }
+  
+  }
+
   }
 
   /**
@@ -436,7 +470,8 @@ class LocacaoRepository {
       if (!locacao) {
         console.warn('[LocacaoRepository] Locação não encontrada:', locacaoId);
         return false;
-      }
+    
+  }
 
       await this.update({
         id: locacaoId,        status: 'Finalizada',
@@ -449,7 +484,9 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao finalizar locação:', error);
       return false;
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -461,6 +498,7 @@ class LocacaoRepository {
    */
   async getAtivas(): Promise<LocacaoListItem[]> {
     return this.getAll({ status: 'Ativa' });
+
   }
 
   /**
@@ -468,6 +506,7 @@ class LocacaoRepository {
    */
   async getFinalizadas(): Promise<LocacaoListItem[]> {
     return this.getAll({ status: 'Finalizada' });
+
   }
 
   /**
@@ -478,10 +517,11 @@ class LocacaoRepository {
       const locacoes = await this.getAll({ clienteId });
       
       return locacoes.map(locacao => ({
-        id: locacao.id,
+        id: String(locacao.id),
         produtoIdentificador: locacao.produtoIdentificador,
         produtoNome: `${locacao.produtoTipo} N° ${locacao.produtoIdentificador}`,
-        clienteNome: locacao.clienteNome,
+        produtoTipo: locacao.produtoTipo,
+        clienteNome: locacao.clienteNome || '',
         dataLocacao: locacao.dataLocacao,
         formaPagamento: locacao.formaPagamento,
         percentualEmpresa: locacao.percentualEmpresa,
@@ -490,7 +530,9 @@ class LocacaoRepository {
       }));
     } catch (error) {      console.error('[LocacaoRepository] Erro ao buscar locações por cliente:', error);
       return [];
-    }
+  
+  }
+
   }
 
   /**
@@ -502,7 +544,9 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao buscar locações por produto:', error);
       return [];
-    }
+  
+  }
+
   }
 
   /**
@@ -515,7 +559,9 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao contar locações:', error);
       return 0;
-    }
+  
+  }
+
   }
 
   /**
@@ -548,7 +594,9 @@ class LocacaoRepository {
         totalFinalizadas: 0,
         totalCanceladas: 0,
       };
-    }
+  
+  }
+
   }
 
   /**
@@ -561,7 +609,9 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao contar locações:', error);
       return 0;
-    }
+  
+  }
+
   }
 
   /**
@@ -583,7 +633,9 @@ class LocacaoRepository {
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao atualizar leitura:', error);
       return false;
-    }
+  
+  }
+
   }
 
   // ==========================================================================  // MÉTODOS AUXILIARES PRIVADOS
@@ -606,6 +658,7 @@ class LocacaoRepository {
       dataLocacao: locacao.dataLocacao,
       status: locacao.status,
     };
+
   }
 
   /**
@@ -613,6 +666,7 @@ class LocacaoRepository {
    */
   private generateId(): string {
     return `locacao_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
   }
 }
 

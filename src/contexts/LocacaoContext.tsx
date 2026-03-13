@@ -154,7 +154,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       console.error('[LocacaoContext] Erro ao carregar locações:', error);
     } finally {
       setCarregando(false);
-    }
+  
+  }
   };
 
   /**
@@ -171,7 +172,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       const locacoesList: LocacaoListItem[] = lista.map(l => ({
         id: l.id,
         produtoIdentificador: l.produtoIdentificador,
-        produtoTipo: l.produtoTipo,
+        produtoTipo: l.produtoTipo || '',
         produtoDescricao: '',
         produtoTamanho: '',
         formaPagamento: l.formaPagamento,
@@ -191,7 +192,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       console.error('[LocacaoContext] Erro ao carregar locações do cliente:', error);
     } finally {
       setCarregando(false);
-    }
+  
+  }
   };
 
   /**   * Carrega histórico de locações de um produto
@@ -225,7 +227,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       console.error('[LocacaoContext] Erro ao carregar histórico do produto:', error);
     } finally {
       setCarregando(false);
-    }
+  
+  }
   };
 
   // ==========================================================================
@@ -243,7 +246,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     } catch (error) {
       console.error('[LocacaoContext] Erro ao selecionar locação:', error);
     } finally {
-      setCarregando(false);    }
+      setCarregando(false);  
+  }
   };
 
   /**
@@ -270,7 +274,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       if (produtoLocado) {
         setErro('Produto já está locado para outro cliente');
         return null;
-      }
+    
+  }
 
       const novaLocacao = await locacaoRepository.criarNovaLocacao(dados);
       
@@ -286,7 +291,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return null;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   };
 
   /**
@@ -303,7 +309,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
         await carregarLocacoes();
         console.log('[LocacaoContext] Locação atualizada:', dados.id);
         return true;
-      }
+    
+  }
       
       return false;
     } catch (error) {
@@ -313,7 +320,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return false;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   };
 
   /**
@@ -331,7 +339,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
         await carregarLocacoes();
         console.log('[LocacaoContext] Locação finalizada:', id);
         return true;
-      }
+    
+  }
       
       return false;
     } catch (error) {
@@ -358,7 +367,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
         await carregarLocacoes();
         console.log('[LocacaoContext] Relocação realizada:', dados.produtoId);
         return true;
-      }
+    
+  }
       
       return false;
     } catch (error) {
@@ -368,7 +378,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return false;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   };
 
   /**
@@ -393,7 +404,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
         // Atualizar lista        await carregarLocacoes();
         console.log('[LocacaoContext] Produto enviado para estoque:', dados.produtoId);
         return true;
-      }
+    
+  }
       
       return false;
     } catch (error) {
@@ -403,7 +415,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return false;
     } finally {
       setCarregando(false);
-    }
+  
+  }
   };
 
   // ==========================================================================
@@ -420,7 +433,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     } catch (error) {
       console.error('[LocacaoContext] Erro ao verificar produto locado:', error);
       return false;
-    }
+  
+  }
   };
 
   /**
@@ -432,7 +446,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     } catch (error) {
       console.error('[LocacaoContext] Erro ao buscar locação ativa:', error);
       return null;
-    }
+  
+  }
   };
 
   /**
@@ -495,6 +510,7 @@ export function useLocacao(): LocacaoContextData {
 
   if (context === undefined) {
     throw new Error('useLocacao deve ser usado dentro de um LocacaoProvider');
+
   }
 
   return context;

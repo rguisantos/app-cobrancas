@@ -13,7 +13,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { HistoricoCobranca } from '../../types';
-import { StatusBadge } from '../StatusBadge';
+import StatusBadge from '../StatusBadge';
 import { formatarMoeda, formatarData } from '../../utils/currency';
 
 // ============================================================================
@@ -74,6 +74,7 @@ export default function CobrancaCard({
         </View>
       </TouchableOpacity>
     );
+
   }
 
   return (

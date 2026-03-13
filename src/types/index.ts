@@ -21,7 +21,7 @@ export type StatusPagamento = 'Pago' | 'Parcial' | 'Pendente' | 'Atrasado';
 // 🔄 TIPOS DE SINCRONIZAÇÃO (Offline-first)
 // ============================================================================
 
-export type SyncStatus = 'pending' | 'synced' | 'conflict' | 'error';
+export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'conflict' | 'error';
 export type SyncDirection = 'push' | 'pull' | 'bidirectional';
 export type EntityType = 'cliente' | 'produto' | 'locacao' | 'cobranca' | 'rota' | 'usuario';
 export type ConflictResolutionStrategy = 'local' | 'remote' | 'newest' | 'manual';
@@ -47,7 +47,8 @@ export interface SyncableEntity {
   lastSyncedAt?: string;
   needsSync: boolean;
   version: number; // Versionamento para detecção de conflitos
-  deviceId: string; // Dispositivo que criou/alterou}
+  deviceId: string; // Dispositivo que criou/alterou
+}
 
 export interface ChangeLog {
   id: string;
@@ -79,6 +80,12 @@ export interface Rota {
   id: string | number;
   descricao: string; // ex: "Linha Aquidauana"
   status: 'Ativo' | 'Inativo';
+  // Campos de sincronização
+  syncStatus?: SyncStatus;
+  lastSyncedAt?: string;
+  needsSync?: boolean;
+  version?: number;
+  deviceId?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -129,6 +136,10 @@ export interface Cliente extends SyncableEntity {
   nomeFantasia?: string;
   inscricaoEstadual?: string;
   
+  // Campos computados/acessores comuns
+  cpfCnpj?: string; // Campo computado (cpf ou cnpj)
+  rgIe?: string; // Campo computado (rg ou inscricaoEstadual)
+  
   // Campo unificado para exibição
   nomeExibicao: string;
   
@@ -161,6 +172,7 @@ export interface ClienteListItem {
   id: string | number;
   nomeExibicao: string;
   cpfCnpj?: string;
+  rotaId?: string | number;
   rotaNome: string;
   cidade: string;
   estado: string;
@@ -209,9 +221,21 @@ export interface Produto extends SyncableEntity {
   estabelecimento?: string; // ex: "Barracão" (quando não está locado)
   observacao?: string;
   
+  // Locação ativa (se houver)
+  locacaoAtiva?: LocacaoAtivaInfo;
+  
   // Sistema
   dataCadastro?: string;
   dataUltimaAlteracao?: string;
+}
+
+// Informações resumidas da locação ativa
+export interface LocacaoAtivaInfo {
+  locacaoId: string;
+  clienteId: string;
+  clienteNome: string;
+  dataInicio: string;
+  rotaNome?: string;
 }
 
 // Interface leve para listagem
@@ -223,6 +247,7 @@ export interface ProdutoListItem {
   tamanhoNome: string;
   statusProduto: StatusProduto;
   clienteNome?: string; // Se estiver locado
+  locacaoId?: string; // ID da locação ativa, se houver
 }
 
 // Histórico de alteração do número do relógio
@@ -243,7 +268,8 @@ export interface ProdutoHistoricoRelogio {
 export interface Locacao extends SyncableEntity {
   tipo: EntityType;
   
-  // Vínculos  clienteId: string | number;
+  // Vínculos
+  clienteId: string | number;
   clienteNome: string;
   produtoId: string | number;
   produtoIdentificador: string; // ex: "515"
@@ -285,6 +311,7 @@ export interface LocacaoListItem {
   produtoTipo: string;
   produtoDescricao: string;
   produtoTamanho: string;
+  clienteNome?: string;
   
   formaPagamento: FormaPagamentoLocacao;
   numeroRelogio: string;
@@ -292,7 +319,22 @@ export interface LocacaoListItem {
   precoFicha: number;
   dataLocacao: string;
   
-  status: StatusLocacao;}
+  status: StatusLocacao;
+}
+
+// Interface para resumo de locação
+export interface LocacaoResumo {
+  id: string;
+  produtoIdentificador: string;
+  produtoNome: string;
+  produtoTipo?: string;
+  clienteNome: string;
+  dataLocacao: string;
+  formaPagamento: FormaPagamentoLocacao;
+  percentualEmpresa: number;
+  precoFicha: number;
+  status: StatusLocacao;
+}
 
 // ============================================================================
 // 💰 COBRANÇAS E REGRAS
@@ -371,7 +413,7 @@ export type TipoPermissaoUsuario = 'Administrador' | 'Secretario' | 'AcessoContr
 export interface PermissoesWeb {
   todosCadastros: boolean;
   locacaoRelocacaoEstoque: boolean;
-  relatorios: boolean;
+  relatorios?: boolean;
 }
 
 export interface PermissoesMobile {
@@ -480,7 +522,71 @@ export interface Equipamento {
 }
 
 // ============================================================================
-// 🎯 FUNÇÕES UTILITÁRIAS (exportadas para uso global)
+// 🔍 FILTROS DE PESQUISA
+// ============================================================================
+
+export interface ClienteFilters {
+  rotaId?: string | number;
+  status?: 'Ativo' | 'Inativo';
+  cidade?: string;
+  estado?: string;
+  termoBusca?: string;
+}
+
+export interface ProdutoFilters {
+  status?: StatusProduto;
+  tipoId?: string | number;
+  conservacao?: Conservacao;
+  termoBusca?: string;
+  comLocacaoAtiva?: boolean;
+}
+
+export interface CobrancaFilters {
+  status?: StatusPagamento;
+  clienteId?: string | number;
+  dataInicio?: string;
+  dataFim?: string;
+}
+
+export interface LocacaoFilters {
+  status?: StatusLocacao;
+  clienteId?: string | number;
+  produtoId?: string | number;
+}
+
+// ============================================================================
+// 📤 SYNC PAYLOAD TYPES
+// ============================================================================
+
+export interface SyncPayload {
+  deviceId: string;
+  deviceKey: string;
+  lastSyncAt: string;
+  changes: ChangeLog[];
+}
+
+export interface SyncResponse {
+  success: boolean;
+  lastSyncAt: string;
+  changes?: {
+    clientes?: any[];
+    produtos?: any[];
+    locacoes?: any[];
+    cobrancas?: any[];
+    rotas?: any[];
+  };
+  conflicts?: SyncConflict[];
+  errors?: string[];
+  // Propriedades para mudanças remotas agrupadas por tipo (alternativa)
+  clientes?: any[];
+  produtos?: any[];
+  locacoes?: any[];
+  cobrancas?: any[];
+  rotas?: any[];
+}
+
+// ============================================================================
+// 📤 UTILITÁRIOS
 // ============================================================================
 
 export function getProdutoNome(produto: Pick<Produto, 'tipoNome' | 'identificador'>): string {
@@ -488,7 +594,8 @@ export function getProdutoNome(produto: Pick<Produto, 'tipoNome' | 'identificado
 }
 
 export function formatarMoeda(valor: number): string {
-  return new Intl.NumberFormat('pt-BR', {    style: 'currency',
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
     currency: 'BRL'
   }).format(valor);
 }
@@ -503,6 +610,7 @@ export function getSaudacao(): string {
 export function getSyncStatusColor(status: SyncStatus): string {
   const colors: Record<SyncStatus, string> = {
     pending: '#FFA500',
+    syncing: '#2563EB',
     synced: '#22C55E',
     conflict: '#EF4444',
     error: '#EF4444'
@@ -511,23 +619,28 @@ export function getSyncStatusColor(status: SyncStatus): string {
 }
 
 // ============================================================================
-// 📤 EXPORTAÇÃO PADRÃO (opcional)
+// 💰 COBRANÇAS PENDENTES
 // ============================================================================
 
-export default {
-  // Enums
-  Conservacao,
-  StatusProduto,
-  StatusLocacao,
-  Periodicidade,
-  ModalidadeCobranca,
-  FormaPagamentoLocacao,
-  TipoPessoa,
-  StatusPagamento,
-  SyncStatus,
-  SyncDirection,
-  EntityType,
-  TipoPermissaoUsuario,
-  
-  // Interfaces principais podem ser importadas individualmente
-};
+export interface CobrancaPendente {
+  locacaoId: string;
+  clienteId: string;
+  clienteNome: string;
+  produtoIdentificador: string;
+  dataVencimento: string;
+  valorPrevisto: number;
+  diasAtraso: number;
+}
+
+// ============================================================================
+// 📤 SYNC CHANGES RESPONSE
+// ============================================================================
+
+export interface SyncChangesResponse {
+  clientes?: any[];
+  produtos?: any[];
+  locacoes?: any[];
+  cobrancas?: any[];
+  rotas?: any[];
+  lastSyncAt: string;
+}

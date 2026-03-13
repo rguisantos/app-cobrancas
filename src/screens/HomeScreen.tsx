@@ -22,6 +22,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Contexts
@@ -30,7 +31,7 @@ import { useDashboard } from '../contexts/DashboardContext';
 import { useSync } from '../contexts/SyncContext';
 
 // Types
-import { AppTabsNavigationProp } from '../navigation/AppNavigator';
+import { AppTabsParamList } from '../navigation/AppNavigator';
 
 // Components
 import MetricCard from '../components/MetricCard';
@@ -44,17 +45,18 @@ import SyncIndicator from '../components/SyncIndicator';
 interface QuickActionItem {
   id: string;
   title: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  screen: keyof AppTabsNavigationProp;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  screen: keyof AppTabsParamList;
   color: string;
-  permission?: boolean;}
+  permission?: boolean;
+}
 
 // ============================================================================
 // COMPONENTE PRINCIPAL
 // ============================================================================
 
 export default function HomeScreen() {
-  const navigation = useNavigation<AppTabsNavigationProp>();
+  const navigation = useNavigation<BottomTabNavigationProp<AppTabsParamList>>();
   
   // Contexts
   const { user, logout, isAdmin, hasPermission } = useAuth();
@@ -86,8 +88,8 @@ export default function HomeScreen() {
   /**
    * Navega para módulo específico
    */
-  const navigateToModule = useCallback((module: keyof AppTabsNavigationProp) => {
-    navigation.navigate(module);
+  const navigateToModule = useCallback((module: keyof AppTabsParamList) => {
+    navigation.navigate(module as any);
   }, [navigation]);
 
   /**
@@ -107,32 +109,32 @@ export default function HomeScreen() {
     {
       id: 'clientes',
       title: 'Clientes',
-      icon: 'people',
-      screen: 'Clientes',
+      icon: 'people' as const,
+      screen: 'Clientes' as keyof AppTabsParamList,
       color: '#2563EB',
       permission: isAdmin() || hasPermission('todosCadastros', 'mobile'),
     },
     {
       id: 'produtos',
       title: 'Produtos',
-      icon: 'cube',
-      screen: 'Produtos',
+      icon: 'cube' as const,
+      screen: 'Produtos' as keyof AppTabsParamList,
       color: '#16A34A',
       permission: isAdmin() || hasPermission('todosCadastros', 'mobile'),
     },
     {
       id: 'cobrancas',
       title: 'Cobranças',
-      icon: 'cash',
-      screen: 'Cobrancas',
+      icon: 'cash' as const,
+      screen: 'Cobrancas' as keyof AppTabsParamList,
       color: '#DC2626',
       permission: isAdmin() || hasPermission('cobrancasFaturas', 'mobile'),
     },
     {
       id: 'locacoes',
       title: 'Locações',
-      icon: 'swap-horizontal',
-      screen: 'Clientes', // Navega para Clientes > Locações
+      icon: 'swap-horizontal' as const,
+      screen: 'Clientes' as keyof AppTabsParamList, // Navega para Clientes > Locações
       color: '#9333EA',
       permission: isAdmin() || hasPermission('locacaoRelocacaoEstoque', 'mobile'),
     },
@@ -170,6 +172,7 @@ export default function HomeScreen() {
         <Text style={styles.loadingText}>Carregando dashboard...</Text>
       </View>
     );
+
   }
 
   return (
@@ -184,7 +187,8 @@ export default function HomeScreen() {
             colors={['#2563EB']}
             tintColor="#2563EB"
           />
-        }
+      
+  }
       >
         {/* ========================================================================== */}
         {/* HEADER - SAUDAÇÃO E PERFIL */}

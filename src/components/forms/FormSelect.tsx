@@ -87,7 +87,8 @@ export default function FormSelect<T = string>({
         onValueChange(option.value);
         setModalVisible(false);
         setSearchTerm('');
-      }
+    
+  }
     },
     [onValueChange]
   );
@@ -95,7 +96,8 @@ export default function FormSelect<T = string>({
   const handleOpenModal = useCallback(() => {
     if (!disabled) {
       setModalVisible(true);
-    }
+  
+  }
   }, [disabled]);
   const handleCloseModal = useCallback(() => {
     setModalVisible(false);
@@ -216,7 +218,8 @@ export default function FormSelect<T = string>({
                   <Ionicons name="search-outline" size={48} color="#CBD5E1" />
                   <Text style={styles.emptyText}>Nenhuma opção encontrada</Text>
                 </View>
-              }
+            
+  }
             />
           </View>
         </View>

@@ -95,7 +95,8 @@ export default function LocacaoFormScreen() {
         clienteId: clienteSelecionado.id,
         clienteNome: clienteSelecionado.nomeExibicao,
       }));
-    }
+  
+  }
   }, [clienteSelecionado]);
   // ==========================================================================
   // VALIDAÇÕES
@@ -107,34 +108,42 @@ export default function LocacaoFormScreen() {
     // Produto
     if (!formData.produtoId) {
       newErrors.produtoId = 'Produto é obrigatório';
-    }
+  
+  }
 
     // Relógio
     if (!formData.numeroRelogio) {
       newErrors.numeroRelogio = 'Número do relógio é obrigatório';
-    }
+  
+  }
 
     // Preço da ficha
     if (!formData.precoFicha || formData.precoFicha <= 0) {
       newErrors.precoFicha = 'Preço da ficha deve ser maior que zero';
-    }
+  
+  }
 
     // Percentual
     if (formData.formaPagamento !== 'Periodo') {
       if (!formData.percentualEmpresa || formData.percentualEmpresa < 0 || formData.percentualEmpresa > 100) {
         newErrors.percentualEmpresa = 'Percentual deve estar entre 0 e 100';
-      }
-    }
+    
+  }
+  
+  }
 
     // Período
     if (formData.formaPagamento === 'Periodo') {
       if (!formData.valorFixo || formData.valorFixo <= 0) {
         newErrors.valorFixo = 'Valor fixo deve ser maior que zero';
-      }
+    
+  }
       if (!formData.periodicidade) {
         newErrors.periodicidade = 'Periodicidade é obrigatória';
-      }
-    }
+    
+  }
+  
+  }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -147,14 +156,18 @@ export default function LocacaoFormScreen() {
   const handleInputChange = useCallback((field: keyof Locacao, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));    
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: undefined }));
-    }
+      const newErrors = { ...errors };
+      delete newErrors[field];
+      setErrors(newErrors);
+  
+  }
 
     // Atualizar percentual cliente automaticamente
     if (field === 'percentualEmpresa' && formData.formaPagamento !== 'Periodo') {
       const percentualCliente = 100 - (value as number);
       setFormData(prev => ({ ...prev, percentualCliente }));
-    }
+  
+  }
   }, [errors, formData.formaPagamento]);
 
   const handleSelectProduto = useCallback((produto: any) => {
@@ -171,7 +184,8 @@ export default function LocacaoFormScreen() {
     if (!validateForm()) {
       Alert.alert('Erro', 'Por favor, corrija os campos obrigatórios');
       return;
-    }
+  
+  }
 
     try {
       if (modo === 'criar') {
@@ -182,7 +196,8 @@ export default function LocacaoFormScreen() {
           ]);
         } else {
           Alert.alert('Erro', 'Não foi possível criar a locação');
-        }
+      
+  }
       } else if (modo === 'editar') {
         const sucesso = await atualizarLocacao({ ...formData, id: locacaoId! });
         if (sucesso) {
@@ -191,10 +206,13 @@ export default function LocacaoFormScreen() {
           ]);
         } else {
           Alert.alert('Erro', 'Não foi possível atualizar a locação');
-        }
-      }
+      
+  }
+    
+  }
     } catch (error) {
-      Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao salvar locação');    }
+      Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao salvar locação');  
+  }
   }, [formData, modo, locacaoId, criarLocacao, atualizarLocacao, navigation]);
 
   // ==========================================================================

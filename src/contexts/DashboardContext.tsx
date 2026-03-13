@@ -118,7 +118,8 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
         cobrancasPendentes: 0,
         totalProdutos: 0,
       };
-    }
+  
+  }
   }, []);
 
   /**
@@ -151,7 +152,8 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
         ganhoComPercentual: 0,
         ganhoComPeriodo: 0,
       };
-    }
+  
+  }
   }, []);
 
   /**
@@ -171,8 +173,10 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
         
         if (!existente || new Date(cobranca.dataInicio) > new Date(existente.dataInicio)) {
           ultimaCobrancaPorCliente.set(clienteId, cobranca);
-        }
-      }
+      
+  }
+    
+  }
 
       // Filtrar clientes com cobrança há mais de 90 dias
       const hoje = new Date();
@@ -195,16 +199,20 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
               rotaId: cliente.rotaId,
               rotaNome: cliente.rotaNome || '',
               diasAtraso: diasDesdeUltima,            });
-          }
-        }
-      }
+        
+  }
+      
+  }
+    
+  }
 
       // Ordenar por mais antigo
       return clientesNaoCobrados.sort((a, b) => b.diasAtraso - a.diasAtraso);
     } catch (error) {
       console.error('[DashboardContext] Erro ao buscar clientes não cobrados:', error);
       return [];
-    }
+  
+  }
   }, []);
 
   /**
@@ -224,7 +232,8 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
         totalLocados: 0,
         totalEstoque: 0,
       };
-    }
+  
+  }
   }, []);
 
   // ==========================================================================
@@ -258,7 +267,8 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
 
         setMobile(dashboardMobile);
         setMetricas(metricasCalculadas);
-      }
+    
+  }
 
       setUltimaAtualizacao(new Date().toISOString());
       console.log('[DashboardContext] Dashboard mobile carregado');
@@ -282,7 +292,8 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
       console.error('[DashboardContext] Erro ao carregar dashboard mobile:', error);
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, [usuarioNome, usuarioTipo, calcularMetricasMobile]);
 
   /**
@@ -316,7 +327,8 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
         };
 
         setWeb(dashboardWeb);
-      }
+    
+  }
 
       setUltimaAtualizacao(new Date().toISOString());
       console.log('[DashboardContext] Dashboard web carregado');
@@ -326,7 +338,8 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
       console.error('[DashboardContext] Erro ao carregar dashboard web:', error);
     } finally {
       setCarregando(false);
-    }
+  
+  }
   }, [calcularGanhosMes, getClientesNaoCobrados, getProdutosLocadosEstoque]);
 
   /**
@@ -337,7 +350,8 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
       await carregarDashboardMobile();
     } else {
       await carregarDashboardWeb();
-    }
+  
+  }
   }, [carregarDashboardMobile, carregarDashboardWeb]);
 
   /**
@@ -367,12 +381,14 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
           metricas: metricasCalculadas,
           dataAtualizacao: new Date().toISOString(),
         });
-      }
+    
+  }
       
       console.log('[DashboardContext] Métricas atualizadas');
     } catch (error) {
       console.error('[DashboardContext] Erro ao atualizar métricas:', error);
-    }
+  
+  }
   }, [mobile, calcularMetricasMobile]);
 
   /**
@@ -458,6 +474,7 @@ export function useDashboard(): DashboardContextData {
 
   if (context === undefined) {
     throw new Error('useDashboard deve ser usado dentro de um DashboardProvider');
+
   }
 
   return context;

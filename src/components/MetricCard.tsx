@@ -47,7 +47,8 @@ export interface MetricCardProps {
   trend?: 'up' | 'down' | 'neutral'; // Seta de tendência
   trendValue?: number | string; // Valor da tendência
   
-  // Customização  style?: ViewStyle;
+  // Customização
+  style?: ViewStyle;
   titleStyle?: TextStyle;
   valueStyle?: TextStyle;
 }
@@ -84,7 +85,8 @@ export default function MetricCard({
         return 'arrow-down';
       default:
         return 'remove';
-    }
+  
+  }
   };
 
   // Cor da tendência
@@ -96,19 +98,24 @@ export default function MetricCard({
         return '#DC2626'; // Vermelho
       default:
         return '#64748B'; // Cinza
-    }  };
+  
+  }
+  };
 
   // Formatador de números grandes
   const formatValue = (val: number | string): string => {
     if (typeof val === 'number') {
       if (val >= 1000000) {
         return `${(val / 1000000).toFixed(1)}M`;
-      }
+    
+  }
       if (val >= 1000) {
         return `${(val / 1000).toFixed(1)}K`;
-      }
+    
+  }
       return val.toString();
-    }
+  
+  }
     return val;
   };
 
@@ -145,7 +152,8 @@ export default function MetricCard({
         <View style={styles.footer}>
           {trend && (
             <View style={styles.trend}>
-              <Ionicons                name={getTrendIcon()}
+              <Ionicons
+                name={getTrendIcon()}
                 size={12}
                 color={getTrendColor()}
               />
@@ -179,6 +187,7 @@ export default function MetricCard({
         {cardContent}
       </TouchableOpacity>
     );
+
   }
 
   return cardContent;
@@ -194,7 +203,8 @@ const styles = StyleSheet.create({
     minWidth: '47%', // 2 cards por linha com gap
     maxWidth: '47%',
   },
-  card: {    flex: 1,
+  card: {
+    flex: 1,
     borderRadius: 16,
     padding: 16,
     minHeight: 120,
@@ -243,7 +253,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   title: {
-    fontSize: 13,    color: '#64748B',
+    fontSize: 13,
+    color: '#64748B',
     fontWeight: '500',
     marginBottom: 8,
   },
@@ -292,7 +303,8 @@ export type MetricColor = keyof typeof METRIC_COLORS;
 export function MetricCardVariant({
   colorVariant,
   ...props
-}: Omit<MetricCardProps, 'color'> & { colorVariant: MetricColor }) {  return (
+}: Omit<MetricCardProps, 'color'> & { colorVariant: MetricColor }) {
+  return (
     <MetricCard
       color={METRIC_COLORS[colorVariant]}
       {...props}
@@ -303,5 +315,3 @@ export function MetricCardVariant({
 // ============================================================================
 // EXPORTAÇÃO
 // ============================================================================
-
-export default MetricCard;

@@ -57,7 +57,8 @@ export const masks = {
     const digits = cleanDigits(value);
     if (digits.length <= 11) {
       return masks.cpf(value);
-    }
+  
+  }
     return masks.cnpj(value);
   },
 
@@ -206,6 +207,7 @@ export const unmask = {
   },
   percentage: (value: string): string => cleanDigits(value),
   date: (value: string): string => cleanDigits(value),
+  relogio: (value: string): string => cleanDigits(value),
 };
 
 // ============================================================================

@@ -100,7 +100,8 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
         if (savedDevice[1]) {
           const device = JSON.parse(savedDevice[1]);
           await databaseService.setDeviceId(device.id, device.nome, device.chave);
-        }
+      
+  }
         
         logger.info('[Auth] Sessão restaurada', { user: parsedUser.nome, role: parsedUser.tipoPermissao });
         
@@ -109,13 +110,15 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       } else {
         setIsSignout(true);
         logger.info('[Auth] Nenhuma sessão ativa');
-      }
+    
+  }
     } catch (error) {
       logger.error('[Auth] Erro no bootstrap', error);
       setIsSignout(true);
     } finally {
       setIsLoading(false);
-    }
+  
+  }
   }, [onAuthChange]);
 
   useEffect(() => {
@@ -188,15 +191,18 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
           data: {
             token: `mock_token_${Date.now()}`,
             usuario: mockAdmin, // Troque para mockControlado para testar acesso restrito
-          }
+        
+  }
         };
       } else {
         // --- MODO PRODUÇÃO (API Real) ---
         response = await apiService.login(email, password);
         
         if (!response.success) {          throw new Error(response.error || 'Falha na autenticação');
-        }
-      }
+      
+  }
+    
+  }
 
       const { token: newToken, usuario } = response.data;
 
@@ -228,7 +234,8 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       throw new Error(mensagem);
     } finally {
       setIsLoading(false);
-    }
+  
+  }
   }, [onAuthChange]);
 
   // ==========================================================================
@@ -243,7 +250,8 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       if (savedDevice) {
         const device = JSON.parse(savedDevice);
         await databaseService.setDeviceId(device.id, device.nome, device.chave);
-        return;      }
+        return;    
+  }
 
       // Gerar novo dispositivo
       const deviceId = `mobile_${usuario.id}_${Date.now()}`;
@@ -267,13 +275,15 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       // Enviar para servidor (se não for mock)
       if (!API_CONFIG.useMock) {
         await apiService.registrarEquipamento(deviceData);
-      }
+    
+  }
 
       logger.info('[Auth] Dispositivo registrado', { deviceId, deviceName });
     } catch (error) {
       logger.error('[Auth] Erro ao registrar dispositivo', error);
       // Não falhar o login por causa disso
-    }
+  
+  }
   }, []);
 
   // ==========================================================================
@@ -288,7 +298,8 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       // Chamar API se não for mock
       if (!API_CONFIG.useMock) {
         await apiService.logout().catch(() => {}); // Ignorar erros no logout
-      }
+    
+  }
 
       // Limpar AsyncStorage
       await AsyncStorage.multiRemove([
@@ -316,7 +327,8 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       setIsSignout(true);
     } finally {
       setIsLoading(false);
-    }
+  
+  }
   }, [onAuthChange]);
 
   // ==========================================================================
@@ -336,10 +348,12 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
         await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(usuarioAtualizado));
         
         logger.info('[Auth] Usuário atualizado');
-      }
+    
+  }
     } catch (error) {
       logger.error('[Auth] Erro ao atualizar usuário', error);
-    }
+  
+  }
   }, [token]);
   // ==========================================================================
   // VERIFICAÇÃO DE PERMISSÕES
@@ -356,7 +370,7 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
     
     // Verificar permissão específica
     const perms = user.permissoes?.[platform];
-    return perms ? perms[module] : false;
+    return perms ? (perms as any)[module] ?? false : false;
   }, [user]);
 
   const canAccessRota = useCallback((rotaId: string | number): boolean => {
@@ -413,6 +427,7 @@ export function useAuth(): AuthContextType {
   
   if (context === undefined) {
     throw new Error('useAuth deve ser usado dentro de um AuthProvider');
+
   }
   
   return context;

@@ -94,7 +94,8 @@ export default function FormInput({
       handleTogglePassword();
     } else {
       onRightIconPress?.();
-    }
+  
+  }
   }, [secureTextEntry, onRightIconPress, handleTogglePassword]);
   return (
     <View style={[styles.container, style]}>
@@ -238,7 +239,10 @@ export function FormNumberInput({
   value,
   onChangeText,
   ...props
-}: Omit<FormInputProps, 'value' | 'onChangeText' | 'keyboardType'>) {
+}: Omit<FormInputProps, 'value' | 'onChangeText' | 'keyboardType'> & {
+  value: string;
+  onChangeText: (value: string) => void;
+}) {
   const handleNumericChange = useCallback((text: string) => {
     const numericValue = text.replace(/[^0-9]/g, '');
     onChangeText(numericValue);
@@ -263,7 +267,10 @@ export function FormEmailInput({
   value,
   onChangeText,
   ...props
-}: Omit<FormInputProps, 'value' | 'onChangeText' | 'keyboardType' | 'autoCapitalize' | 'autoCorrect'>) {
+}: Omit<FormInputProps, 'value' | 'onChangeText' | 'keyboardType' | 'autoCapitalize' | 'autoCorrect'> & {
+  value: string;
+  onChangeText: (value: string) => void;
+}) {
   const handleEmailChange = useCallback((text: string) => {
     onChangeText(text.toLowerCase().trim());
   }, [onChangeText]);
@@ -289,7 +296,10 @@ export function FormPhoneInput({
   value,
   onChangeText,
   ...props
-}: Omit<FormInputProps, 'value' | 'onChangeText' | 'keyboardType'>) {
+}: Omit<FormInputProps, 'value' | 'onChangeText' | 'keyboardType'> & {
+  value: string;
+  onChangeText: (value: string) => void;
+}) {
   const handlePhoneChange = useCallback((text: string) => {
     const digits = text.replace(/\D/g, '');
     let formatted = digits;    
@@ -299,7 +309,8 @@ export function FormPhoneInput({
       formatted = `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
     } else if (digits.length > 2) {
       formatted = `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-    }
+  
+  }
     
     onChangeText(formatted);
   }, [onChangeText]);
@@ -326,7 +337,10 @@ export function FormDocumentoInput({
   value,
   onChangeText,
   ...props
-}: Omit<FormInputProps, 'value' | 'onChangeText' | 'keyboardType' | 'maxLength'>) {
+}: Omit<FormInputProps, 'value' | 'onChangeText' | 'keyboardType' | 'maxLength'> & {
+  value: string;
+  onChangeText: (value: string) => void;
+}) {
   const handleDocumentoChange = useCallback((text: string) => {
     const digits = text.replace(/\D/g, '');
     let formatted = digits;
@@ -337,7 +351,8 @@ export function FormDocumentoInput({
     } else {
       // CPF
       formatted = `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9, 11)}`;
-    }
+  
+  }
     
     onChangeText(formatted.slice(0, 18));
   }, [onChangeText]);

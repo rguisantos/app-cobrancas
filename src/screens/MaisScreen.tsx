@@ -43,11 +43,12 @@ interface MenuItem {
   id: string;
   title: string;
   subtitle?: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon?: keyof typeof Ionicons.glyphMap;
   iconColor?: string;
   onPress?: () => void;
   badge?: number;
-  disabled?: boolean;  divider?: boolean;
+  disabled?: boolean;
+  divider?: boolean;
 }
 
 // ============================================================================
@@ -92,7 +93,8 @@ export default function MaisScreen() {
   const handleWebsite = useCallback(() => {
     if (companyName) {
       Linking.openURL(`https://${companyName.replace(/\s+/g, '').toLowerCase()}.com.br`);
-    }
+  
+  }
   }, [companyName]);
 
   // ==========================================================================
@@ -134,12 +136,11 @@ export default function MaisScreen() {
       title: 'Status da Sincronização',
       subtitle: 'Ver detalhes e conflitos',
       icon: 'information-circle',
-      onPress: () => navigation.navigate('Modal', { screen: 'SyncStatus' } as any),
+      onPress: () => (navigation as any).navigate('Modal', { screen: 'SyncStatus' }),
     },
     {
       id: 'divider-sync',
       title: '',
-      icon: 'none',
       divider: true,
     },
 
@@ -148,7 +149,7 @@ export default function MaisScreen() {
       id: 'settings',      title: 'Configurações',
       subtitle: 'Preferências do aplicativo',
       icon: 'settings',
-      onPress: () => navigation.navigate('Modal', { screen: 'Settings' } as any),
+      onPress: () => (navigation as any).navigate('Modal', { screen: 'Settings' }),
     },
     {
       id: 'notifications',
@@ -160,7 +161,6 @@ export default function MaisScreen() {
     {
       id: 'divider-settings',
       title: '',
-      icon: 'none',
       divider: true,
     },
 
@@ -182,7 +182,6 @@ export default function MaisScreen() {
     {
       id: 'divider-support',
       title: '',
-      icon: 'none',
       divider: true,
     },
 
@@ -207,7 +206,6 @@ export default function MaisScreen() {
     {
       id: 'divider-about',
       title: '',
-      icon: 'none',
       divider: true,
     },
 
@@ -229,7 +227,8 @@ export default function MaisScreen() {
   const renderMenuItem = useCallback((item: MenuItem) => {
     if (item.divider) {
       return <View key={item.id} style={styles.divider} />;
-    }
+  
+  }
 
     return (
       <TouchableOpacity

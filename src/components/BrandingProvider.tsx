@@ -18,6 +18,8 @@ interface BrandingContextType {
   secondaryColor: string;
   accentColor: string;
   appName: string;
+  supportEmail: string;
+  companyName: string;
 }
 
 // ============================================================================
@@ -44,6 +46,8 @@ export function BrandingProvider({ children, clientId }: BrandingProviderProps) 
     secondaryColor: branding.secondaryColor,
     accentColor: branding.accentColor,
     appName: branding.appName,
+    supportEmail: branding.supportEmail,
+    companyName: branding.companyName || branding.appName,
   };
 
   return (
@@ -62,6 +66,7 @@ export function useBranding(): BrandingContextType {
 
   if (context === undefined) {
     throw new Error('useBranding deve ser usado dentro de um BrandingProvider');
+
   }
 
   return context;

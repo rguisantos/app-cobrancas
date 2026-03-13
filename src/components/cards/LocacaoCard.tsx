@@ -13,7 +13,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LocacaoListItem } from '../../types';
-import { StatusBadge } from '../StatusBadge';
+import StatusBadge from '../StatusBadge';
 import { formatarMoeda } from '../../utils/currency';
 
 // ============================================================================
@@ -89,7 +89,7 @@ export default function LocacaoCard({
         )}
 
         <View style={styles.infoItem}>
-          <Ionicons name="percent-outline" size={16} color="#64748B" />
+          <Ionicons name="pie-chart-outline" size={16} color="#64748B" />
           <Text style={styles.infoLabel}>% Empresa</Text>
           <Text style={styles.infoValue}>{locacao.percentualEmpresa}%</Text>
         </View>

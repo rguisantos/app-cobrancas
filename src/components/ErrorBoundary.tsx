@@ -10,14 +10,17 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
   constructor(props: React.PropsWithChildren) {
     super(props);
     this.state = { hasError: false, errorMessage: null };
+
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, errorMessage: error.message };
+
   }
 
   componentDidCatch(error: Error, info: any) {
     console.error('[ErrorBoundary]', error, info);
+
   }
 
   handleReset = () => {
@@ -33,9 +36,11 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
           <Button title="Tentar novamente" onPress={this.handleReset} />
         </View>
       );
-    }
+  
+  }
 
     return this.props.children;
+
   }
 }
 

@@ -48,13 +48,15 @@ class RotaRepository {
       // Aplicar filtros
       if (filters?.status) {
         whereClauses.push('status = ?');        params.push(filters.status);
-      }
+    
+  }
 
       if (filters?.termoBusca) {
         whereClauses.push('descricao LIKE ?');
         const termo = `%${filters.termoBusca}%`;
         params.push(termo);
-      }
+    
+  }
 
       const where = whereClauses.length > 0 ? whereClauses.join(' AND ') : '1=1';
       const rotas = await databaseService.getAll<Rota>(
@@ -67,7 +69,9 @@ class RotaRepository {
     } catch (error) {
       console.error('[RotaRepository] Erro ao buscar rotas:', error);
       return [];
-    }
+  
+  }
+
   }
 
   /**
@@ -80,7 +84,9 @@ class RotaRepository {
     } catch (error) {
       console.error('[RotaRepository] Erro ao buscar rota por ID:', error);
       return null;
-    }
+  
+  }
+
   }
 
   /**
@@ -92,16 +98,20 @@ class RotaRepository {
       
       const rotaCompleta: Rota = {
         ...rota,
-        createdAt: rota.createdAt || now,
+        id: String(rota.id), // Garantir que id seja string para sincronização
+        createdAt: now,
         updatedAt: now,
+        syncStatus: 'pending',
+        needsSync: true,
       };
 
-      // Verificar se existe para decidir entre insert ou update      const existing = await this.getById(rota.id);
+      // Verificar se existe para decidir entre insert ou update
+      const existingRota = await this.getById(rota.id);
       
-      if (existing) {
-        await databaseService.update(this.entityType, rotaCompleta);
+      if (existingRota) {
+        await databaseService.update(this.entityType, rotaCompleta as any);
       } else {
-        await databaseService.save(this.entityType, rotaCompleta);
+        await databaseService.save(this.entityType, rotaCompleta as any);
       }
       
       console.log('[RotaRepository] Rota salva:', rotaCompleta.id);
@@ -121,22 +131,26 @@ class RotaRepository {
       if (!existing) {
         console.warn('[RotaRepository] Rota não encontrada para atualização:', rota.id);
         return null;
-      }
+    
+  }
 
       const rotaAtualizada: Rota = {
         ...existing,
         ...rota,
+        id: String(rota.id), // Garantir que id seja string para sincronização
         updatedAt: new Date().toISOString(),
       };
 
-      await databaseService.update(this.entityType, rotaAtualizada);
+      await databaseService.update(this.entityType, rotaAtualizada as any);
       
       console.log('[RotaRepository] Rota atualizada:', rota.id);
       return rotaAtualizada;
     } catch (error) {
       console.error('[RotaRepository] Erro ao atualizar rota:', error);
       throw error;
-    }
+  
+  }
+
   }
 
   /**
@@ -149,7 +163,9 @@ class RotaRepository {
     } catch (error) {
       console.error('[RotaRepository] Erro ao remover rota:', error);
       return false;
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -161,6 +177,7 @@ class RotaRepository {
    */
   async getAtivas(): Promise<Rota[]> {
     return this.getAll({ status: 'Ativo' });
+
   }
 
   /**
@@ -168,6 +185,7 @@ class RotaRepository {
    */
   async getInativas(): Promise<Rota[]> {
     return this.getAll({ status: 'Inativo' });
+
   }
 
   /**
@@ -185,7 +203,9 @@ class RotaRepository {
     } catch (error) {
       console.error('[RotaRepository] Erro ao buscar rota por descrição:', error);
       return null;
-    }
+  
+  }
+
   }
 
   /**
@@ -194,10 +214,12 @@ class RotaRepository {
   async search(termo: string): Promise<RotaResumo[]> {
     if (!termo || termo.trim().length === 0) {
       const rotas = await this.getAtivas();
-      return rotas.map(rota => this.toResumo(rota));    }
+      return rotas.map(rota => this.toResumo(rota));  
+  }
 
     const rotas = await this.getAll({ termoBusca: termo, status: 'Ativo' });
     return rotas.map(rota => this.toResumo(rota));
+
   }
 
   /**
@@ -214,7 +236,9 @@ class RotaRepository {
     } catch (error) {
       console.error('[RotaRepository] Erro ao verificar descrição:', error);
       return false;
-    }
+  
+  }
+
   }
 
   /**
@@ -227,7 +251,9 @@ class RotaRepository {
     } catch (error) {
       console.error('[RotaRepository] Erro ao contar rotas:', error);
       return 0;
-    }
+  
+  }
+
   }
 
   /**
@@ -239,7 +265,8 @@ class RotaRepository {
       if (!rota) {
         console.warn('[RotaRepository] Rota não encontrada:', id);
         return null;
-      }
+    
+  }
 
       const novoStatus: 'Ativo' | 'Inativo' = rota.status === 'Ativo' ? 'Inativo' : 'Ativo';
 
@@ -249,7 +276,9 @@ class RotaRepository {
     } catch (error) {
       console.error('[RotaRepository] Erro ao alternar status:', error);
       return null;
-    }
+  
+  }
+
   }
 
   /**
@@ -267,7 +296,9 @@ class RotaRepository {
     } catch (error) {
       console.error('[RotaRepository] Erro ao buscar resumo:', error);
       return [];
-    }
+  
+  }
+
   }
 
   // ==========================================================================
@@ -283,6 +314,7 @@ class RotaRepository {
       descricao: rota.descricao,
       status: rota.status,
     };
+
   }
 }
 
