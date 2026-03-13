@@ -31,9 +31,19 @@ interface EnvConfig {
 // ============================================================================
 
 const getEnvValue = (key: string, defaultValue: string = ''): string => {
-  return (Constants.expoConfig?.extra as any)?.[key] || 
-         process.env[`EXPO_PUBLIC_${key}`] || 
-         defaultValue;
+  // Tentar pegar do extra do expo config
+  const extraValue = (Constants.expoConfig as any)?.extra?.[key];
+  if (extraValue !== undefined && extraValue !== null) {
+    return String(extraValue);
+  }
+  
+  // Tentar pegar do process.env
+  const envValue = process.env[`EXPO_PUBLIC_${key}`];
+  if (envValue !== undefined && envValue !== null) {
+    return envValue;
+  }
+  
+  return defaultValue;
 };
 
 const getBoolValue = (key: string, defaultValue: boolean = false): boolean => {
@@ -50,16 +60,17 @@ const getNumberValue = (key: string, defaultValue: number = 0): number => {
 // EXPORTAÇÃO
 // ============================================================================
 
+// IMPORTANTE: USE_MOCK deve ser true por padrão para o app funcionar offline
 export const ENV: EnvConfig = {
   // API
-  API_URL: getEnvValue('API_URL', 'https://api.suaempresa.com.br'),
+  API_URL: getEnvValue('API_URL', 'https://api.diamondsistemas.com.br'),
   
-  // Mock (desenvolvimento)
-  USE_MOCK: getBoolValue('USE_MOCK', true),
+  // Mock (desenvolvimento) - TRUE por padrão para funcionar offline
+  USE_MOCK: true, // Sempre usar mock para demonstração
   
   // App Info
   APP_VERSION: getEnvValue('APP_VERSION', '1.0.0'),
-  APP_NAME: getEnvValue('APP_NAME', 'Nome do App'),
+  APP_NAME: getEnvValue('APP_NAME', 'App Cobranças'),
   
   // Debug
   DEBUG: getBoolValue('DEBUG', true),

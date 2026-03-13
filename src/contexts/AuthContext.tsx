@@ -12,6 +12,7 @@ import { Usuario, TipoPermissaoUsuario, PermissoesUsuario, SyncMetadata } from '
 import { apiService } from '../services/ApiService';
 import { databaseService } from '../services/DatabaseService';
 import logger from '../utils/logger';
+import { ENV } from '../config/env';
 
 // ============================================================================
 // CONFIGURAÇÃO E CONSTANTES
@@ -25,7 +26,7 @@ const STORAGE_KEYS = {
 };
 
 const API_CONFIG = {
-  useMock: process.env.EXPO_PUBLIC_USE_MOCK === 'true', // Controle por env
+  useMock: ENV.USE_MOCK, // Controle via config/env.ts
   mockDelay: 800, // Simular latência de rede
 };
 

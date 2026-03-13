@@ -58,7 +58,10 @@
       "DEBUG": "true",
       "SYNC_INTERVAL": "15",
       "MAX_RECORDS_PER_SYNC": "100",
-      "TIMEOUT": "30000"
+      "TIMEOUT": "30000",
+      "eas": {
+        "projectId": "775e65c2-83ca-493c-aa5e-bce591d1bec8"
+      }
     }
   }
 }
