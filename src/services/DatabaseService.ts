@@ -540,14 +540,16 @@ class DatabaseService {
         version: (entity.version || 0) + 1,
       } as T;
 
+      // Construir campos e valores dinamicamente
+      const fields = Object.keys(entityWithSync).filter(
+        (key) => key !== 'id' && key !== 'createdAt'
+      );
+      const setClause = fields.map((field) => `${field} = ?`).join(', ');
+      const values = fields.map((field) => (entityWithSync as any)[field]);
+
       await this.db.runAsync(
-        `UPDATE ${tableName} SET 
-          updatedAt = ?,
-          needsSync = ?,
-          version = ?,
-          ${this.getUpdateFields(entityWithSync)}
-        WHERE id = ?`,
-        [now, 1, entityWithSync.version, entity.id]
+        `UPDATE ${tableName} SET ${setClause} WHERE id = ?`,
+        [...values, entity.id]
       );
 
       // Log mudança
@@ -566,7 +568,7 @@ class DatabaseService {
     } catch (error) {
       console.error(`[Database] Erro ao atualizar ${entityType}:`, error);
       throw error;
-  
+    
   }
 
   }

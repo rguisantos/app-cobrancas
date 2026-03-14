@@ -122,22 +122,22 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       // Usar o AuthService que autentica com SQLite local
       const response = await authService.login(email, password);
 
-      const { token: newToken, usuario } = response;
+      const { token: newToken, user: usuarioLogado } = response;
 
       // Salvar no AsyncStorage
       await AsyncStorage.multiSet([
         [STORAGE_KEYS.TOKEN, newToken],
-        [STORAGE_KEYS.USER, JSON.stringify(usuario)],
+        [STORAGE_KEYS.USER, JSON.stringify(usuarioLogado)],
       ]);
 
       // Atualizar estado
       setToken(newToken);
-      setUser(usuario);
+      setUser(usuarioLogado as Usuario);
       setIsSignout(false);
 
-      logger.info('[Auth] Login bem-sucedido', { email, role: usuario.tipoPermissao });
+      logger.info('[Auth] Login bem-sucedido', { email, role: usuarioLogado.tipoPermissao });
       
-      onAuthChange?.(usuario);
+      onAuthChange?.(usuarioLogado as Usuario);
 
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao fazer login';
