@@ -237,6 +237,7 @@ export default function App() {
         
         // Inicializar dados padrão (atributos de produto, usuário admin)
         await databaseService.inicializarAtributosPadrao();
+        await databaseService.inicializarRotasPadrao();
         await AuthService.inicializar();
         logger.info('Dados padrão inicializados', undefined, 'App');
         

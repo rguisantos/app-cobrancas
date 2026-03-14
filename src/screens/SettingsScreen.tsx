@@ -207,6 +207,11 @@ export default function SettingsScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Gerenciamento</Text>
             <View style={styles.sectionCard}>
+              {renderSettingItem('usuarios', 'Usuários', 'Gerenciar usuários do sistema', 'people', {
+                type: 'navigation',
+                iconColor: '#8B5CF6',
+                onPress: () => navigation.navigate('UsuariosGerenciar'),
+              })}
               {renderSettingItem('rotas', 'Rotas', 'Gerenciar rotas de cobrança', 'map', {
                 type: 'navigation',
                 iconColor: '#2563EB',

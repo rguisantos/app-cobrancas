@@ -53,6 +53,7 @@ import SyncStatusScreen from '../screens/SyncStatusScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import RotasGerenciarScreen from '../screens/RotasGerenciarScreen';
 import AtributosProdutoGerenciarScreen from '../screens/AtributosProdutoGerenciarScreen';
+import UsuariosGerenciarScreen from '../screens/UsuariosGerenciarScreen';
 
 // ============================================================================
 // CONFIGURAÇÃO DE TEMAS
@@ -120,6 +121,7 @@ export type ModalStackParamList = {
   Settings: undefined;
   RotasGerenciar: undefined;
   AtributosProdutoGerenciar: undefined;
+  UsuariosGerenciar: undefined;
 };
 
 // Root Stack (gerencia auth state)
@@ -371,6 +373,11 @@ function ModalNavigator() {
         name="AtributosProdutoGerenciar" 
         component={AtributosProdutoGerenciarScreen}
         options={{ title: 'Atributos de Produto' }}
+      />
+      <ModalStack.Screen 
+        name="UsuariosGerenciar" 
+        component={UsuariosGerenciarScreen}
+        options={{ title: 'Gerenciar Usuários' }}
       />
     </ModalStack.Navigator>
   );

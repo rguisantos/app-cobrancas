@@ -1142,6 +1142,60 @@ class DatabaseService {
     
     console.log('[Database] Usuário salvo:', usuario.email);
   }
+
+  // ==========================================================================
+  // MÉTODOS PARA ROTAS
+  // ==========================================================================
+
+  /**
+   * Busca todas as rotas ativas
+   */
+  async getRotas(): Promise<Array<{id: string, descricao: string, status: string}>> {
+    if (!this.db) throw new Error('Database não inicializado');
+    try {
+      const results = await this.db.getAllAsync<{id: string, descricao: string, status: string}>(
+        `SELECT id, descricao, status FROM ${TABLES.ROTAS} WHERE deletedAt IS NULL ORDER BY descricao`
+      );
+      return results || [];
+    } catch (error) {
+      console.error('[Database] Erro ao buscar rotas:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Salva rota
+   */
+  async saveRota(id: string, descricao: string, status: string = 'Ativo'): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO ${TABLES.ROTAS} (id, descricao, status, updatedAt, needsSync) VALUES (?, ?, ?, ?, 1)`,
+      [id, descricao.trim(), status, now]
+    );
+    console.log('[Database] Rota salva:', descricao);
+  }
+
+  /**
+   * Inicializa rotas padrão se não existirem
+   */
+  async inicializarRotasPadrao(): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    
+    const rotasExistentes = await this.getRotas();
+    if (rotasExistentes.length === 0) {
+      const rotasPadrao = [
+        { id: '1', descricao: 'Linha Aquidauana' },
+        { id: '2', descricao: 'Linha Miranda' },
+        { id: '3', descricao: 'Linha Bonito' },
+        { id: '4', descricao: 'Centro' },
+      ];
+      for (const rota of rotasPadrao) {
+        await this.saveRota(rota.id, rota.descricao, 'Ativo');
+      }
+      console.log('[Database] Rotas padrão inicializadas');
+    }
+  }
 }
 
 // ============================================================================
