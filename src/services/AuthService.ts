@@ -20,6 +20,7 @@ interface LoginResponse {
     tipoPermissao: TipoPermissaoUsuario;
     permissoes: PermissoesUsuario;
     rotasPermitidas: Array<string | number>;
+    status: 'Ativo' | 'Inativo';
   };
 }
 
@@ -72,6 +73,7 @@ class AuthService {
             tipoPermissao: usuarioLocal.tipoPermissao,
             permissoes: usuarioLocal.permissoes,
             rotasPermitidas: usuarioLocal.rotasPermitidas,
+            status: usuarioLocal.status,
           },
         };
 
