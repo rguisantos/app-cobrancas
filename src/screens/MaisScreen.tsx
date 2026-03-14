@@ -136,7 +136,12 @@ export default function MaisScreen() {
       title: 'Status da Sincronização',
       subtitle: 'Ver detalhes e conflitos',
       icon: 'information-circle',
-      onPress: () => (navigation as any).navigate('Modal', { screen: 'SyncStatus' }),
+      onPress: () => {
+        const parentNav = navigation.getParent();
+        if (parentNav) {
+          (parentNav as any).navigate('SyncStatus');
+        }
+      },
     },
     {
       id: 'divider-sync',
@@ -149,7 +154,13 @@ export default function MaisScreen() {
       id: 'settings',      title: 'Configurações',
       subtitle: 'Preferências do aplicativo',
       icon: 'settings',
-      onPress: () => (navigation as any).navigate('Modal', { screen: 'Settings' }),
+      onPress: () => {
+        // Navegar para Settings no ModalStack pai
+        const parentNav = navigation.getParent();
+        if (parentNav) {
+          (parentNav as any).navigate('Settings');
+        }
+      },
     },
     {
       id: 'notifications',

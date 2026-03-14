@@ -86,7 +86,7 @@ const STATUS_PRODUTO: StatusProduto[] = ['Ativo', 'Inativo', 'Manutenção'];
 export default function ProdutoFormScreen() {
   const route = useRoute<ProdutoFormRouteProp>();
   const navigation = useNavigation();
-  const { produtoSelecionado, salvarProduto, atualizarProduto, carregando } = useProduto();
+  const { produtoSelecionado, carregarProduto, salvarProduto, atualizarProduto, carregando } = useProduto();
   const { user, hasPermission } = useAuth();
 
   const modo = route.params?.modo || 'criar';
@@ -114,22 +114,51 @@ export default function ProdutoFormScreen() {
   const [showTamanhoPicker, setShowTamanhoPicker] = useState(false);
   const [showConservacaoPicker, setShowConservacaoPicker] = useState(false);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
+  const [carregandoProduto, setCarregandoProduto] = useState(false);
 
   // ==========================================================================
   // CARREGAMENTO (MODO EDIÇÃO)
   // ==========================================================================
 
   useEffect(() => {
-    if (modo === 'editar' && produtoId && produtoSelecionado) {
+    const carregarProdutoParaEdicao = async () => {
+      if (modo === 'editar' && produtoId) {
+        setCarregandoProduto(true);
+        try {
+          // Se o produtoSelecionado já está carregado e é o mesmo ID
+          if (produtoSelecionado && produtoSelecionado.id === produtoId) {
+            setFormData({
+              ...produtoSelecionado,
+              tipoId: produtoSelecionado.tipoId?.toString() || '',
+              descricaoId: produtoSelecionado.descricaoId?.toString() || '',
+              tamanhoId: produtoSelecionado.tamanhoId?.toString() || '',
+            });
+          } else {
+            // Carregar o produto do repositório
+            await carregarProduto(produtoId);
+          }
+        } catch (error) {
+          console.error('Erro ao carregar produto para edição:', error);
+        } finally {
+          setCarregandoProduto(false);
+        }
+      }
+    };
+    
+    carregarProdutoParaEdicao();
+  }, [modo, produtoId]);
+
+  // Atualiza formData quando produtoSelecionado muda
+  useEffect(() => {
+    if (modo === 'editar' && produtoId && produtoSelecionado && produtoSelecionado.id === produtoId) {
       setFormData({
         ...produtoSelecionado,
         tipoId: produtoSelecionado.tipoId?.toString() || '',
         descricaoId: produtoSelecionado.descricaoId?.toString() || '',
         tamanhoId: produtoSelecionado.tamanhoId?.toString() || '',
       });
-  
-  }
-  }, [modo, produtoId, produtoSelecionado]);
+    }
+  }, [produtoSelecionado, modo, produtoId]);
 
   // ==========================================================================
   // VALIDAÇÕES
@@ -328,6 +357,18 @@ export default function ProdutoFormScreen() {
   // ==========================================================================
   // RENDER
   // ==========================================================================
+
+  // Mostrar loading quando estiver carregando produto para edição
+  if (carregandoProduto || (modo === 'editar' && produtoId && !formData.identificador)) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2563EB" />
+          <Text style={styles.loadingText}>Carregando produto...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -762,5 +803,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+
+  // Loading
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#64748B',
   },
 });

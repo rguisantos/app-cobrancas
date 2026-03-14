@@ -58,7 +58,7 @@ class AuthService {
     try {
       logger.info('Tentando login', { email });
 
-      // 1. Tentar autenticação local primeiro
+      // 1. Tentar autenticação local
       const usuarioLocal = await usuarioRepository.autenticar(email, password);
       
       if (usuarioLocal) {
@@ -83,27 +83,7 @@ class AuthService {
       // TODO: Integrar com API real
       // const response = await ApiService.post('/auth/login', { email, password });
 
-      // 3. Modo de desenvolvimento: criar usuário automaticamente se não existir
-      if (email && password) {
-        const novoUsuario = await this.criarUsuarioPadrao(email, password);
-        
-        const response: LoginResponse = {
-          token: 'local_jwt_token_' + Date.now(),
-          user: {
-            id: novoUsuario.id,
-            email: novoUsuario.email,
-            nome: novoUsuario.nome,
-            role: novoUsuario.tipoPermissao,
-            tipoPermissao: novoUsuario.tipoPermissao,
-            permissoes: novoUsuario.permissoes,
-            rotasPermitidas: novoUsuario.rotasPermitidas,
-          },
-        };
-
-        logger.info('Login com novo usuário criado', { email });
-        return response;
-      }
-
+      // Não criar usuário automaticamente - apenas retornar erro
       throw new Error('Email e/ou senha incorretos');
     } catch (error) {
       logger.error('Erro ao fazer login', error);
