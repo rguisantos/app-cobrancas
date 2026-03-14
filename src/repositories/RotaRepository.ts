@@ -1,14 +1,11 @@
 /**
  * RotaRepository.ts
  * Repositório para operações com Rotas
- * Integração: DatabaseService (expo-sqlite) + Tipos TypeScript
+ * Integração: DatabaseService (expo-sqlite)
  */
 
 import { databaseService } from '../services/DatabaseService';
-import { 
-  Rota, 
-  EntityType
-} from '../types';
+import { Rota } from '../types';
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -20,7 +17,7 @@ export interface RotaFilters {
 }
 
 export interface RotaResumo {
-  id: string | number;
+  id: string;
   descricao: string;
   status: 'Ativo' | 'Inativo';
   totalClientes?: number;
@@ -31,47 +28,37 @@ export interface RotaResumo {
 // ============================================================================
 
 class RotaRepository {
-  private entityType: EntityType = 'rota';
 
   // ==========================================================================
-  // OPERAÇÕES CRUD BÁSICAS
+  // OPERAÇÕES CRUD
   // ==========================================================================
 
   /**
-   * Busca todas as rotas (com filtros opcionais)
+   * Busca todas as rotas ativas
    */
-  async getAll(filters?: RotaFilters): Promise<Rota[]> {
+  async getAtivas(): Promise<Rota[]> {
     try {
-      const whereClauses: string[] = [];
-      const params: any[] = [];
-
-      // Aplicar filtros
-      if (filters?.status) {
-        whereClauses.push('status = ?');        params.push(filters.status);
-    
-  }
-
-      if (filters?.termoBusca) {
-        whereClauses.push('descricao LIKE ?');
-        const termo = `%${filters.termoBusca}%`;
-        params.push(termo);
-    
-  }
-
-      const where = whereClauses.length > 0 ? whereClauses.join(' AND ') : '1=1';
-      const rotas = await databaseService.getAll<Rota>(
-        this.entityType,
-        where,
-        params
-      );
-
-      return rotas;
+      const rotas = await databaseService.getRotas();
+      return rotas
+        .filter(r => r.status === 'Ativo')
+        .map(r => this.mapToRota(r));
     } catch (error) {
-      console.error('[RotaRepository] Erro ao buscar rotas:', error);
+      console.error('[RotaRepository] Erro ao buscar rotas ativas:', error);
       return [];
-  
+    }
   }
 
+  /**
+   * Busca todas as rotas
+   */
+  async getAll(): Promise<Rota[]> {
+    try {
+      const rotas = await databaseService.getRotas();
+      return rotas.map(r => this.mapToRota(r));
+    } catch (error) {
+      console.error('[RotaRepository] Erro ao buscar todas as rotas:', error);
+      return [];
+    }
   }
 
   /**
@@ -79,43 +66,40 @@ class RotaRepository {
    */
   async getById(id: string | number): Promise<Rota | null> {
     try {
-      const rota = await databaseService.getById<Rota>(this.entityType, String(id));
-      return rota;
+      const rotas = await databaseService.getRotas();
+      const rota = rotas.find(r => String(r.id) === String(id));
+      return rota ? this.mapToRota(rota) : null;
     } catch (error) {
       console.error('[RotaRepository] Erro ao buscar rota por ID:', error);
       return null;
-  
-  }
-
+    }
   }
 
   /**
    * Salva rota (cria ou atualiza)
    */
-  async save(rota: Omit<Rota, 'createdAt' | 'updatedAt'>): Promise<Rota> {
+  async save(rota: Partial<Rota>): Promise<Rota> {
     try {
-      const now = new Date().toISOString();
+      const id = rota.id || `rota_${Date.now()}`;
+      const descricao = rota.descricao || '';
+      const status = rota.status || 'Ativo';
+
+      await databaseService.saveRota(id, descricao, status);
       
-      const rotaCompleta: Rota = {
-        ...rota,
-        id: String(rota.id), // Garantir que id seja string para sincronização
-        createdAt: now,
-        updatedAt: now,
+      console.log('[RotaRepository] Rota salva:', id, descricao);
+      
+      return {
+        id,
+        descricao,
+        status: status as 'Ativo' | 'Inativo',
+        tipo: 'rota',
         syncStatus: 'pending',
         needsSync: true,
+        version: 1,
+        deviceId: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
-
-      // Verificar se existe para decidir entre insert ou update
-      const existingRota = await this.getById(rota.id);
-      
-      if (existingRota) {
-        await databaseService.update(this.entityType, rotaCompleta as any);
-      } else {
-        await databaseService.save(this.entityType, rotaCompleta as any);
-      }
-      
-      console.log('[RotaRepository] Rota salva:', rotaCompleta.id);
-      return rotaCompleta;
     } catch (error) {
       console.error('[RotaRepository] Erro ao salvar rota:', error);
       throw error;
@@ -131,190 +115,74 @@ class RotaRepository {
       if (!existing) {
         console.warn('[RotaRepository] Rota não encontrada para atualização:', rota.id);
         return null;
-    
-  }
+      }
 
-      const rotaAtualizada: Rota = {
-        ...existing,
-        ...rota,
-        id: String(rota.id), // Garantir que id seja string para sincronização
-        updatedAt: new Date().toISOString(),
-      };
+      const descricao = rota.descricao || existing.descricao;
+      const status = rota.status || existing.status;
 
-      await databaseService.update(this.entityType, rotaAtualizada as any);
+      await databaseService.saveRota(String(rota.id), descricao, status);
       
       console.log('[RotaRepository] Rota atualizada:', rota.id);
-      return rotaAtualizada;
+      
+      return {
+        ...existing,
+        descricao,
+        status: status as 'Ativo' | 'Inativo',
+        updatedAt: new Date().toISOString(),
+      };
     } catch (error) {
       console.error('[RotaRepository] Erro ao atualizar rota:', error);
       throw error;
-  
-  }
-
+    }
   }
 
   /**
-   * Remove rota (soft delete não se aplica, é hard delete)
+   * Remove rota (soft delete)
    */
   async delete(id: string | number): Promise<boolean> {
     try {
-      await databaseService.delete(this.entityType, String(id));
-      console.log('[RotaRepository] Rota removida:', id);      return true;
+      // Soft delete - marcar como deletado
+      const existing = await this.getById(id);
+      if (existing) {
+        await databaseService.delete('rota', String(id));
+        console.log('[RotaRepository] Rota removida:', id);
+      }
+      return true;
     } catch (error) {
       console.error('[RotaRepository] Erro ao remover rota:', error);
       return false;
-  
-  }
-
-  }
-
-  // ==========================================================================
-  // MÉTODOS ESPECÍFICOS DE NEGÓCIO
-  // ==========================================================================
-
-  /**
-   * Busca apenas rotas ativas
-   */
-  async getAtivas(): Promise<Rota[]> {
-    return this.getAll({ status: 'Ativo' });
-
-  }
-
-  /**
-   * Busca apenas rotas inativas
-   */
-  async getInativas(): Promise<Rota[]> {
-    return this.getAll({ status: 'Inativo' });
-
-  }
-
-  /**
-   * Busca rota por descrição (nome)
-   */
-  async getByDescricao(descricao: string): Promise<Rota | null> {
-    try {
-      const rotas = await databaseService.getAll<Rota>(
-        this.entityType,
-        'descricao = ?',
-        [descricao]
-      );
-
-      return rotas.length > 0 ? rotas[0] : null;
-    } catch (error) {
-      console.error('[RotaRepository] Erro ao buscar rota por descrição:', error);
-      return null;
-  
-  }
-
-  }
-
-  /**
-   * Busca avançada (para autocomplete/select)
-   */
-  async search(termo: string): Promise<RotaResumo[]> {
-    if (!termo || termo.trim().length === 0) {
-      const rotas = await this.getAtivas();
-      return rotas.map(rota => this.toResumo(rota));  
-  }
-
-    const rotas = await this.getAll({ termoBusca: termo, status: 'Ativo' });
-    return rotas.map(rota => this.toResumo(rota));
-
-  }
-
-  /**
-   * Verifica se descrição da rota já existe (exceto a própria rota)
-   */
-  async descricaoExists(descricao: string, excludeId?: string | number): Promise<boolean> {
-    try {
-      const rota = await this.getByDescricao(descricao);
-      
-      if (!rota) return false;
-      if (excludeId && String(rota.id) === String(excludeId)) return false;
-      
-      return true;
-    } catch (error) {
-      console.error('[RotaRepository] Erro ao verificar descrição:', error);
-      return false;
-  
-  }
-
-  }
-
-  /**
-   * Conta total de rotas
-   */
-  async count(filters?: RotaFilters): Promise<number> {
-    try {
-      const rotas = await this.getAll(filters);
-      return rotas.length;
-    } catch (error) {
-      console.error('[RotaRepository] Erro ao contar rotas:', error);
-      return 0;
-  
-  }
-
-  }
-
-  /**
-   * Ativa ou desativa rota
-   */
-  async toggleStatus(id: string | number): Promise<Rota | null> {
-    try {
-      const rota = await this.getById(id);
-      if (!rota) {
-        console.warn('[RotaRepository] Rota não encontrada:', id);
-        return null;
-    
-  }
-
-      const novoStatus: 'Ativo' | 'Inativo' = rota.status === 'Ativo' ? 'Inativo' : 'Ativo';
-
-      return await this.update({        id,
-        status: novoStatus,
-      });
-    } catch (error) {
-      console.error('[RotaRepository] Erro ao alternar status:', error);
-      return null;
-  
-  }
-
-  }
-
-  /**
-   * Busca resumo de rotas com contagem de clientes
-   */
-  async getResumoComClientes(): Promise<RotaResumo[]> {
-    try {
-      const rotas = await this.getAll();
-      
-      // TODO: Integrar com ClienteRepository para contar clientes por rota
-      return rotas.map(rota => ({
-        ...this.toResumo(rota),
-        totalClientes: 0, // Será implementado quando integrar com ClienteRepository
-      }));
-    } catch (error) {
-      console.error('[RotaRepository] Erro ao buscar resumo:', error);
-      return [];
-  
-  }
-
+    }
   }
 
   // ==========================================================================
-  // MÉTODOS AUXILIARES PRIVADOS
+  // MÉTODOS AUXILIARES
   // ==========================================================================
 
   /**
-   * Converte Rota completa para RotaResumo
+   * Mapeia dados do banco para objeto Rota
    */
-  private toResumo(rota: Rota): RotaResumo {
+  private mapToRota(data: any): Rota {
     return {
-      id: rota.id,
-      descricao: rota.descricao,
-      status: rota.status,
+      id: data.id,
+      descricao: data.descricao,
+      status: data.status || 'Ativo',
+      tipo: 'rota',
+      syncStatus: data.syncStatus || 'synced',
+      needsSync: data.needsSync === 1 || data.needsSync === true,
+      version: data.version || 1,
+      deviceId: data.deviceId || '',
+      createdAt: data.createdAt || new Date().toISOString(),
+      updatedAt: data.updatedAt || new Date().toISOString(),
+      deletedAt: data.deletedAt,
     };
+  }
 
+  /**
+   * Conta total de rotas ativas
+   */
+  async count(): Promise<number> {
+    const rotas = await this.getAtivas();
+    return rotas.length;
   }
 }
 

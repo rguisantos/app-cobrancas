@@ -141,15 +141,12 @@ const styles = StyleSheet.create({
   container: {
     width: '48%', // 2 cards por linha com espaçamento
     marginBottom: 12,
-    borderRadius: 16,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   iconContainer: {
     borderRadius: 14,
