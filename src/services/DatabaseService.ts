@@ -32,6 +32,10 @@ const TABLES = {
   LOCACOES: 'locacoes',
   COBRANCAS: 'cobrancas',
   ROTAS: 'rotas',
+  USUARIOS: 'usuarios',
+  TIPOS_PRODUTO: 'tipos_produto',
+  DESCRICOES_PRODUTO: 'descricoes_produto',
+  TAMANHOS_PRODUTO: 'tamanhos_produto',
   CHANGE_LOG: 'change_log',
   SYNC_METADATA: 'sync_metadata',
 };
@@ -246,7 +250,83 @@ class DatabaseService {
         id TEXT PRIMARY KEY,
         descricao TEXT,
         status TEXT,
-        createdAt TEXT,        updatedAt TEXT
+        syncStatus TEXT,
+        lastSyncedAt TEXT,
+        needsSync INTEGER,
+        version INTEGER,
+        deviceId TEXT,
+        createdAt TEXT,
+        updatedAt TEXT,
+        deletedAt TEXT
+      )`,
+
+      // Tabela de Usuários
+      `CREATE TABLE IF NOT EXISTS ${TABLES.USUARIOS} (
+        id TEXT PRIMARY KEY,
+        tipo TEXT,
+        nome TEXT,
+        cpf TEXT,
+        telefone TEXT,
+        email TEXT UNIQUE,
+        senha TEXT,
+        tipoPermissao TEXT,
+        permissoesWeb TEXT,
+        permissoesMobile TEXT,
+        rotasPermitidas TEXT,
+        status TEXT,
+        bloqueado INTEGER,
+        dataUltimoAcesso TEXT,
+        ultimoAcessoDispositivo TEXT,
+        syncStatus TEXT,
+        lastSyncedAt TEXT,
+        needsSync INTEGER,
+        version INTEGER,
+        deviceId TEXT,
+        createdAt TEXT,
+        updatedAt TEXT,
+        deletedAt TEXT
+      )`,
+
+      // Tabela de Tipos de Produto
+      `CREATE TABLE IF NOT EXISTS ${TABLES.TIPOS_PRODUTO} (
+        id TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        syncStatus TEXT,
+        lastSyncedAt TEXT,
+        needsSync INTEGER,
+        version INTEGER,
+        deviceId TEXT,
+        createdAt TEXT,
+        updatedAt TEXT,
+        deletedAt TEXT
+      )`,
+
+      // Tabela de Descrições de Produto
+      `CREATE TABLE IF NOT EXISTS ${TABLES.DESCRICOES_PRODUTO} (
+        id TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        syncStatus TEXT,
+        lastSyncedAt TEXT,
+        needsSync INTEGER,
+        version INTEGER,
+        deviceId TEXT,
+        createdAt TEXT,
+        updatedAt TEXT,
+        deletedAt TEXT
+      )`,
+
+      // Tabela de Tamanhos de Produto
+      `CREATE TABLE IF NOT EXISTS ${TABLES.TAMANHOS_PRODUTO} (
+        id TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        syncStatus TEXT,
+        lastSyncedAt TEXT,
+        needsSync INTEGER,
+        version INTEGER,
+        deviceId TEXT,
+        createdAt TEXT,
+        updatedAt TEXT,
+        deletedAt TEXT
       )`,
 
       // Change Log (para sincronização)
@@ -287,6 +367,13 @@ class DatabaseService {
       
       `CREATE INDEX IF NOT EXISTS idx_change_log_sync ON ${TABLES.CHANGE_LOG}(synced, timestamp)`,
       `CREATE INDEX IF NOT EXISTS idx_change_log_entity ON ${TABLES.CHANGE_LOG}(entityId, entityType)`,
+      
+      `CREATE INDEX IF NOT EXISTS idx_usuarios_email ON ${TABLES.USUARIOS}(email)`,
+      `CREATE INDEX IF NOT EXISTS idx_usuarios_status ON ${TABLES.USUARIOS}(status)`,
+      `CREATE INDEX IF NOT EXISTS idx_usuarios_sync ON ${TABLES.USUARIOS}(syncStatus, needsSync)`,
+      
+      `CREATE INDEX IF NOT EXISTS idx_rotas_status ON ${TABLES.ROTAS}(status)`,
+      `CREATE INDEX IF NOT EXISTS idx_rotas_sync ON ${TABLES.ROTAS}(syncStatus, needsSync)`,
     ];
 
     for (const table of tables) {
@@ -756,7 +843,7 @@ class DatabaseService {
       locacao: TABLES.LOCACOES,
       cobranca: TABLES.COBRANCAS,
       rota: TABLES.ROTAS,
-      usuario: 'usuarios', // Se necessário
+      usuario: TABLES.USUARIOS,
     };
 
     return tableMap[entityType];
@@ -815,6 +902,245 @@ class DatabaseService {
   
   }
 
+  }
+
+  // ==========================================================================
+  // MÉTODOS PARA ATRIBUTOS DE PRODUTO (Tipos, Descrições, Tamanhos)
+  // ==========================================================================
+
+  /**
+   * Busca todos os tipos de produto
+   */
+  async getTiposProduto(): Promise<Array<{id: string, nome: string}>> {
+    if (!this.db) throw new Error('Database não inicializado');
+    try {
+      const results = await this.db.getAllAsync<{id: string, nome: string}>(
+        `SELECT id, nome FROM ${TABLES.TIPOS_PRODUTO} WHERE deletedAt IS NULL ORDER BY nome`
+      );
+      return results || [];
+    } catch (error) {
+      console.error('[Database] Erro ao buscar tipos:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Busca todas as descrições de produto
+   */
+  async getDescricoesProduto(): Promise<Array<{id: string, nome: string}>> {
+    if (!this.db) throw new Error('Database não inicializado');
+    try {
+      const results = await this.db.getAllAsync<{id: string, nome: string}>(
+        `SELECT id, nome FROM ${TABLES.DESCRICOES_PRODUTO} WHERE deletedAt IS NULL ORDER BY nome`
+      );
+      return results || [];
+    } catch (error) {
+      console.error('[Database] Erro ao buscar descrições:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Busca todos os tamanhos de produto
+   */
+  async getTamanhosProduto(): Promise<Array<{id: string, nome: string}>> {
+    if (!this.db) throw new Error('Database não inicializado');
+    try {
+      const results = await this.db.getAllAsync<{id: string, nome: string}>(
+        `SELECT id, nome FROM ${TABLES.TAMANHOS_PRODUTO} WHERE deletedAt IS NULL ORDER BY nome`
+      );
+      return results || [];
+    } catch (error) {
+      console.error('[Database] Erro ao buscar tamanhos:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Salva tipo de produto
+   */
+  async saveTipoProduto(id: string, nome: string): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO ${TABLES.TIPOS_PRODUTO} (id, nome, updatedAt, needsSync) VALUES (?, ?, ?, 1)`,
+      [id, nome.trim(), now]
+    );
+    console.log('[Database] Tipo de produto salvo:', nome);
+  }
+
+  /**
+   * Salva descrição de produto
+   */
+  async saveDescricaoProduto(id: string, nome: string): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO ${TABLES.DESCRICOES_PRODUTO} (id, nome, updatedAt, needsSync) VALUES (?, ?, ?, 1)`,
+      [id, nome.trim(), now]
+    );
+    console.log('[Database] Descrição de produto salva:', nome);
+  }
+
+  /**
+   * Salva tamanho de produto
+   */
+  async saveTamanhoProduto(id: string, nome: string): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO ${TABLES.TAMANHOS_PRODUTO} (id, nome, updatedAt, needsSync) VALUES (?, ?, ?, 1)`,
+      [id, nome.trim(), now]
+    );
+    console.log('[Database] Tamanho de produto salvo:', nome);
+  }
+
+  /**
+   * Remove tipo de produto (soft delete)
+   */
+  async deleteTipoProduto(id: string): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `UPDATE ${TABLES.TIPOS_PRODUTO} SET deletedAt = ?, needsSync = 1 WHERE id = ?`,
+      [now, id]
+    );
+    console.log('[Database] Tipo de produto removido:', id);
+  }
+
+  /**
+   * Remove descrição de produto (soft delete)
+   */
+  async deleteDescricaoProduto(id: string): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `UPDATE ${TABLES.DESCRICOES_PRODUTO} SET deletedAt = ?, needsSync = 1 WHERE id = ?`,
+      [now, id]
+    );
+    console.log('[Database] Descrição de produto removida:', id);
+  }
+
+  /**
+   * Remove tamanho de produto (soft delete)
+   */
+  async deleteTamanhoProduto(id: string): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `UPDATE ${TABLES.TAMANHOS_PRODUTO} SET deletedAt = ?, needsSync = 1 WHERE id = ?`,
+      [now, id]
+    );
+    console.log('[Database] Tamanho de produto removido:', id);
+  }
+
+  /**
+   * Inicializa dados padrão de atributos se não existirem
+   */
+  async inicializarAtributosPadrao(): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    
+    const tiposExistentes = await this.getTiposProduto();
+    if (tiposExistentes.length === 0) {
+      const tiposPadrao = [
+        { id: '1', nome: 'Bilhar' },
+        { id: '2', nome: 'Jukebox Padrão Grande' },
+        { id: '3', nome: 'Jukebox Padrão Pequena' },
+        { id: '4', nome: 'Mesa' },
+      ];
+      for (const tipo of tiposPadrao) {
+        await this.saveTipoProduto(tipo.id, tipo.nome);
+      }
+      console.log('[Database] Tipos padrão inicializados');
+    }
+
+    const descricoesExistentes = await this.getDescricoesProduto();
+    if (descricoesExistentes.length === 0) {
+      const descricoesPadrao = [
+        { id: '1', nome: 'Azul' },
+        { id: '2', nome: 'Branco/Carijo' },
+        { id: '3', nome: 'Preto' },
+        { id: '4', nome: 'Vermelho' },
+      ];
+      for (const desc of descricoesPadrao) {
+        await this.saveDescricaoProduto(desc.id, desc.nome);
+      }
+      console.log('[Database] Descrições padrão inicializadas');
+    }
+
+    const tamanhosExistentes = await this.getTamanhosProduto();
+    if (tamanhosExistentes.length === 0) {
+      const tamanhosPadrao = [
+        { id: '1', nome: '2,00' },
+        { id: '2', nome: '2,20' },
+        { id: '3', nome: 'Grande' },
+        { id: '4', nome: 'Média' },
+      ];
+      for (const tam of tamanhosPadrao) {
+        await this.saveTamanhoProduto(tam.id, tam.nome);
+      }
+      console.log('[Database] Tamanhos padrão inicializados');
+    }
+  }
+
+  // ==========================================================================
+  // MÉTODOS PARA USUÁRIOS
+  // ==========================================================================
+
+  /**
+   * Busca usuário por email
+   */
+  async getUsuarioByEmail(email: string): Promise<any | null> {
+    if (!this.db) throw new Error('Database não inicializado');
+    try {
+      const result = await this.db.getFirstAsync(
+        `SELECT * FROM ${TABLES.USUARIOS} WHERE email = ? AND deletedAt IS NULL`,
+        [email.toLowerCase().trim()]
+      );
+      return result || null;
+    } catch (error) {
+      console.error('[Database] Erro ao buscar usuário por email:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Salva usuário
+   */
+  async saveUsuario(usuario: any): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const now = new Date().toISOString();
+    
+    const usuarioData = {
+      ...usuario,
+      email: usuario.email?.toLowerCase().trim(),
+      updatedAt: now,
+      needsSync: 1,
+    };
+    
+    // Verificar se existe
+    const existente = await this.getUsuarioByEmail(usuario.email);
+    
+    if (existente) {
+      // Update
+      const fields = Object.keys(usuarioData).filter(k => k !== 'id');
+      const setClause = fields.map(f => `${f} = ?`).join(', ');
+      await this.db.runAsync(
+        `UPDATE ${TABLES.USUARIOS} SET ${setClause} WHERE id = ?`,
+        [...fields.map(f => usuarioData[f]), usuario.id]
+      );
+    } else {
+      // Insert
+      usuarioData.createdAt = now;
+      const fields = Object.keys(usuarioData);
+      const placeholders = fields.map(() => '?').join(', ');
+      await this.db.runAsync(
+        `INSERT INTO ${TABLES.USUARIOS} (${fields.join(', ')}) VALUES (${placeholders})`,
+        ...fields.map(f => usuarioData[f])
+      );
+    }
+    
+    console.log('[Database] Usuário salvo:', usuario.email);
   }
 }
 

@@ -36,6 +36,8 @@ import { getBrandingConfig } from './src/config/branding';
 
 // Services
 import { apiService } from './src/services/ApiService';
+import { databaseService } from './src/services/DatabaseService';
+import AuthService from './src/services/AuthService';
 import logger from './src/utils/logger';
 
 // Config
@@ -216,25 +218,39 @@ function AppContent() {  return (
 export default function App() {
   // Configurar API e serviços no início
   React.useEffect(() => {
-    // Configurar URL da API
-    if (ENV.API_URL) {
-      apiService.setBaseURL(ENV.API_URL);
-      logger.info('API configurada', { url: ENV.API_URL }, 'App');
-    }
+    const inicializarApp = async () => {
+      try {
+        // Configurar URL da API
+        if (ENV.API_URL) {
+          apiService.setBaseURL(ENV.API_URL);
+          logger.info('API configurada', { url: ENV.API_URL }, 'App');
+        }
+        
+        // Configurar modo mock
+        if (ENV.USE_MOCK) {
+          logger.warn('Modo MOCK ativado - dados fictícios em uso', undefined, 'App');
+        }
+        
+        // Inicializar banco de dados
+        await databaseService.initialize();
+        logger.info('Banco de dados inicializado', undefined, 'App');
+        
+        // Inicializar dados padrão (atributos de produto, usuário admin)
+        await databaseService.inicializarAtributosPadrao();
+        await AuthService.inicializar();
+        logger.info('Dados padrão inicializados', undefined, 'App');
+        
+        logger.info('Aplicação inicializada', { 
+          appName: ENV.APP_NAME, 
+          version: ENV.APP_VERSION,
+          debug: ENV.DEBUG 
+        }, 'App');
+      } catch (error) {
+        logger.error('Erro ao inicializar aplicação', error, 'App');
+      }
+    };
     
-    // Configurar modo mock
-    if (ENV.USE_MOCK) {
-      logger.warn('Modo MOCK ativado - dados fictícios em uso', undefined, 'App');
-    }
-    
-    // Inicializar banco de dados (lazy load - só quando necessário)
-    // databaseService.initialize().catch(err => logger.error('Falha ao inicializar DB', err));
-    
-    logger.info('Aplicação inicializada', { 
-      appName: ENV.APP_NAME, 
-      version: ENV.APP_VERSION,
-      debug: ENV.DEBUG 
-    }, 'App');
+    inicializarApp();
     
     // Cleanup
     return () => {

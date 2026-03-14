@@ -51,6 +51,8 @@ import EnviarEstoqueScreen from '../screens/EnviarEstoqueScreen';import Cobranca
 import CobrancaDetailScreen from '../screens/CobrancaDetailScreen';
 import SyncStatusScreen from '../screens/SyncStatusScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import RotasGerenciarScreen from '../screens/RotasGerenciarScreen';
+import AtributosProdutoGerenciarScreen from '../screens/AtributosProdutoGerenciarScreen';
 
 // ============================================================================
 // CONFIGURAÇÃO DE TEMAS
@@ -116,6 +118,8 @@ export type ModalStackParamList = {
   CobrancaDetail: { cobrancaId: string };
   SyncStatus: undefined;
   Settings: undefined;
+  RotasGerenciar: undefined;
+  AtributosProdutoGerenciar: undefined;
 };
 
 // Root Stack (gerencia auth state)
@@ -357,6 +361,16 @@ function ModalNavigator() {
         name="Settings" 
         component={SettingsScreen}
         options={{ title: 'Configurações' }}
+      />
+      <ModalStack.Screen 
+        name="RotasGerenciar" 
+        component={RotasGerenciarScreen}
+        options={{ title: 'Gerenciar Rotas' }}
+      />
+      <ModalStack.Screen 
+        name="AtributosProdutoGerenciar" 
+        component={AtributosProdutoGerenciarScreen}
+        options={{ title: 'Atributos de Produto' }}
       />
     </ModalStack.Navigator>
   );

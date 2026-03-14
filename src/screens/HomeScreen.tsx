@@ -104,39 +104,40 @@ export default function HomeScreen() {
 
   /**
    * Ações rápidas baseadas em permissões
+   * Funcionalidades específicas, não duplicação das métricas
    */
   const quickActions: QuickActionItem[] = [
     {
-      id: 'clientes',
-      title: 'Clientes',
-      icon: 'people' as const,
+      id: 'novo-cliente',
+      title: 'Novo Cliente',
+      icon: 'person-add' as const,
       screen: 'Clientes' as keyof AppTabsParamList,
       color: '#2563EB',
       permission: isAdmin() || hasPermission('todosCadastros', 'mobile'),
     },
     {
-      id: 'produtos',
-      title: 'Produtos',
-      icon: 'cube' as const,
-      screen: 'Produtos' as keyof AppTabsParamList,
-      color: '#16A34A',
-      permission: isAdmin() || hasPermission('todosCadastros', 'mobile'),
+      id: 'nova-locacao',
+      title: 'Nova Locação',
+      icon: 'add-circle' as const,
+      screen: 'Clientes' as keyof AppTabsParamList,
+      color: '#9333EA',
+      permission: isAdmin() || hasPermission('locacaoRelocacaoEstoque', 'mobile'),
     },
     {
-      id: 'cobrancas',
-      title: 'Cobranças',
-      icon: 'cash' as const,
+      id: 'registrar-pagamento',
+      title: 'Registrar Pagamento',
+      icon: 'card' as const,
       screen: 'Cobrancas' as keyof AppTabsParamList,
-      color: '#DC2626',
+      color: '#16A34A',
       permission: isAdmin() || hasPermission('cobrancasFaturas', 'mobile'),
     },
     {
-      id: 'locacoes',
-      title: 'Locações',
-      icon: 'swap-horizontal' as const,
-      screen: 'Clientes' as keyof AppTabsParamList, // Navega para Clientes > Locações
-      color: '#9333EA',
-      permission: isAdmin() || hasPermission('locacaoRelocacaoEstoque', 'mobile'),
+      id: 'relatorios',
+      title: 'Relatórios',
+      icon: 'bar-chart' as const,
+      screen: 'Mais' as keyof AppTabsParamList,
+      color: '#EA580C',
+      permission: true, // Todos podem ver
     },
   ].filter(action => action.permission !== false);
 
@@ -375,7 +376,7 @@ const styles = StyleSheet.create({
   },
   userRole: {
     fontSize: 12,
-    color: '#2563EB',
+    color: '#1E40AF',
     fontWeight: '600',
     marginTop: 4,
     backgroundColor: '#DBEAFE',
@@ -387,6 +388,8 @@ const styles = StyleSheet.create({
   },
   syncButton: {
     padding: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
   },
   syncStatus: {
     flexDirection: 'row',
@@ -429,14 +432,16 @@ const styles = StyleSheet.create({
   metricsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    justifyContent: 'space-between',
+  marginHorizontal: -4,
   },
 
   // Actions Grid
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    justifyContent: 'space-between',
+    marginHorizontal: -4,
   },
 
   // Error Card

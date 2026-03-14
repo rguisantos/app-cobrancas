@@ -187,10 +187,13 @@ export default function MetricCard({
         {cardContent}
       </TouchableOpacity>
     );
-
   }
 
-  return cardContent;
+  return (
+    <View style={styles.touchable}>
+      {cardContent}
+    </View>
+  );
 }
 
 // ============================================================================
@@ -199,12 +202,10 @@ export default function MetricCard({
 
 const styles = StyleSheet.create({
   touchable: {
-    flex: 1,
-    minWidth: '47%', // 2 cards por linha com gap
-    maxWidth: '47%',
+    width: '48%', // 2 cards por linha com espaçamento
+    marginBottom: 12,
   },
   card: {
-    flex: 1,
     borderRadius: 16,
     padding: 16,
     minHeight: 120,

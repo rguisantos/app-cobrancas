@@ -6,7 +6,8 @@
  * - Campos para PF e PJ
  * - Validação de CPF/CNPJ
  * - Contatos adicionais (múltiplos)
- * - Endereço completo
+ * - Endereço completo com busca de CEP
+ * - Seleção de Estado → Cidades via API IBGE
  * - Seleção de rota
  * - Máscaras de input
  */
@@ -23,6 +24,8 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -41,13 +44,17 @@ import { ClientesStackParamList } from '../navigation/ClientesStack';
 import { masks } from '../utils/masks';
 import { validators } from '../utils/validators';
 
+// Services
+import localizacaoService, { Estado, Cidade } from '../services/LocalizacaoService';
+
 // ============================================================================
 // TIPOS DE ROTA
 // ============================================================================
 
 type ClienteFormRouteProp = RouteProp<ClientesStackParamList, 'ClienteForm'>;
 
-// ============================================================================// COMPONENTE PRINCIPAL
+// ============================================================================
+// COMPONENTE PRINCIPAL
 // ============================================================================
 
 export default function ClienteFormScreen() {
@@ -83,10 +90,22 @@ export default function ClienteFormScreen() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [buscandoCep, setBuscandoCep] = useState(false);
+  
+  // Estados e Cidades
+  const [estados, setEstados] = useState<Estado[]>([]);
+  const [cidades, setCidades] = useState<Cidade[]>([]);
+  const [carregandoEstados, setCarregandoEstados] = useState(false);
+  const [carregandoCidades, setCarregandoCidades] = useState(false);
+  const [modalEstadoVisible, setModalEstadoVisible] = useState(false);
+  const [modalCidadeVisible, setModalCidadeVisible] = useState(false);
 
   // ==========================================================================
-  // CARREGAMENTO (MODO EDIÇÃO)
+  // CARREGAMENTO INICIAL
   // ==========================================================================
+
+  useEffect(() => {
+    carregarEstados();
+  }, []);
 
   useEffect(() => {
     if (modo === 'editar' && clienteId && clienteSelecionado) {
@@ -95,9 +114,43 @@ export default function ClienteFormScreen() {
         contatos: clienteSelecionado.contatos || [],
       });
       setTipoPessoa(clienteSelecionado.tipoPessoa || 'Fisica');
-  
-  }
+      
+      // Carregar cidades se tiver estado
+      if (clienteSelecionado.estado) {
+        carregarCidades(clienteSelecionado.estado);
+      }
+    }
   }, [modo, clienteId, clienteSelecionado]);
+
+  const carregarEstados = async () => {
+    setCarregandoEstados(true);
+    try {
+      const lista = await localizacaoService.getEstados();
+      setEstados(lista);
+    } catch (error) {
+      console.error('Erro ao carregar estados:', error);
+    } finally {
+      setCarregandoEstados(false);
+    }
+  };
+
+  const carregarCidades = async (uf: string) => {
+    if (!uf) {
+      setCidades([]);
+      return;
+    }
+    setCarregandoCidades(true);
+    try {
+      const lista = await localizacaoService.getCidadesPorEstado(uf);
+      setCidades(lista);
+    } catch (error) {
+      console.error('Erro ao carregar cidades:', error);
+      setCidades([]);
+    } finally {
+      setCarregandoCidades(false);
+    }
+  };
+
   // ==========================================================================
   // VALIDAÇÕES
   // ==========================================================================
@@ -108,8 +161,7 @@ export default function ClienteFormScreen() {
     // Nome
     if (!formData.nomeExibicao?.trim()) {
       newErrors.nomeExibicao = 'Nome é obrigatório';
-  
-  }
+    }
 
     // CPF/CNPJ
     if (!formData.cpfCnpj?.trim()) {
@@ -118,44 +170,37 @@ export default function ClienteFormScreen() {
       newErrors.cpfCnpj = 'CPF inválido';
     } else if (tipoPessoa === 'Juridica' && !validators.isValidCNPJ(formData.cpfCnpj)) {
       newErrors.cpfCnpj = 'CNPJ inválido';
-  
-  }
+    }
 
     // Telefone
     if (!formData.telefonePrincipal?.trim()) {
       newErrors.telefonePrincipal = 'Telefone é obrigatório';
     } else if (formData.telefonePrincipal.replace(/\D/g, '').length < 10) {
       newErrors.telefonePrincipal = 'Telefone inválido';
-  
-  }
+    }
 
     // Rota
     if (!formData.rotaId) {
       newErrors.rotaId = 'Rota é obrigatória';
-  
-  }
+    }
 
     // Endereço
     if (!formData.logradouro?.trim()) {
       newErrors.logradouro = 'Logradouro é obrigatório';
-  
-  }
+    }
     if (!formData.numero?.trim()) {
       newErrors.numero = 'Número é obrigatório';
-  
-  }
+    }
     if (!formData.bairro?.trim()) {
       newErrors.bairro = 'Bairro é obrigatório';
-  
-  }
+    }
     if (!formData.cidade?.trim()) {
       newErrors.cidade = 'Cidade é obrigatória';
-  
-  }
+    }
     if (!formData.estado?.trim()) {
       newErrors.estado = 'Estado é obrigatório';
-  
-  }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -172,8 +217,7 @@ export default function ClienteFormScreen() {
       const newErrors = { ...errors };
       delete newErrors[field];
       setErrors(newErrors);
-  
-  }
+    }
   }, [errors]);
 
   const handleCepBlur = useCallback(async () => {
@@ -181,28 +225,61 @@ export default function ClienteFormScreen() {
     if (cep?.length === 8) {
       setBuscandoCep(true);
       try {
-        const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-        const data = await response.json();
+        const endereco = await localizacaoService.buscarEnderecoPorCep(cep);
         
-        if (!data.erro) {
+        if (endereco && !endereco.erro) {
           setFormData(prev => ({
             ...prev,
-            logradouro: data.logradouro,
-            bairro: data.bairro,
-            cidade: data.localidade,
-            estado: data.uf,
+            logradouro: endereco.logradouro,
+            bairro: endereco.bairro,
+            cidade: endereco.cidade,
+            estado: endereco.estado,
           }));
-      
-  }
+          
+          // Carregar cidades do estado
+          if (endereco.estado) {
+            await carregarCidades(endereco.estado);
+          }
+        } else if (endereco?.erro) {
+          Alert.alert('CEP não encontrado', 'Verifique o CEP digitado');
+        }
       } catch (error) {
         console.error('Erro ao buscar CEP:', error);
       } finally {
         setBuscandoCep(false);
-    
-  }
-  
-  }
+      }
+    }
   }, [formData.cep]);
+
+  const handleSelectEstado = useCallback((estado: Estado) => {
+    setFormData(prev => ({ 
+      ...prev, 
+      estado: estado.sigla,
+      cidade: '', // Limpar cidade ao mudar estado
+    }));
+    setModalEstadoVisible(false);
+    carregarCidades(estado.sigla);
+    
+    // Limpar erro
+    if (errors.estado) {
+      const newErrors = { ...errors };
+      delete newErrors.estado;
+      delete newErrors.cidade;
+      setErrors(newErrors);
+    }
+  }, [errors]);
+
+  const handleSelectCidade = useCallback((cidade: Cidade) => {
+    setFormData(prev => ({ ...prev, cidade: cidade.nome }));
+    setModalCidadeVisible(false);
+    
+    // Limpar erro
+    if (errors.cidade) {
+      const newErrors = { ...errors };
+      delete newErrors.cidade;
+      setErrors(newErrors);
+    }
+  }, [errors]);
 
   const handleAddContato = useCallback(() => {
     setFormData(prev => ({
@@ -210,7 +287,8 @@ export default function ClienteFormScreen() {
       contatos: [
         ...(prev.contatos || []),
         { id: `contato_${Date.now()}`, nome: '', telefone: '' },
-      ],    }));
+      ],
+    }));
   }, []);
 
   const handleRemoveContato = useCallback((index: number) => {
@@ -233,8 +311,7 @@ export default function ClienteFormScreen() {
     if (!validateForm()) {
       Alert.alert('Erro', 'Por favor, corrija os campos obrigatórios');
       return;
-  
-  }
+    }
 
     try {
       if (modo === 'criar') {
@@ -245,8 +322,7 @@ export default function ClienteFormScreen() {
           ]);
         } else {
           Alert.alert('Erro', 'Não foi possível cadastrar o cliente');
-      
-  }
+        }
       } else {
         const sucesso = await atualizarCliente({ ...formData, id: clienteId! });
         if (sucesso) {
@@ -255,15 +331,13 @@ export default function ClienteFormScreen() {
           ]);
         } else {
           Alert.alert('Erro', 'Não foi possível atualizar o cliente');
-      
-  }
-    
-  }
+        }
+      }
     } catch (error) {
       Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao salvar cliente');
-  
-  }
+    }
   }, [formData, modo, clienteId, salvarCliente, atualizarCliente, navigation]);
+
   // ==========================================================================
   // RENDERIZAÇÃO DE CAMPOS
   // ==========================================================================
@@ -313,7 +387,8 @@ export default function ClienteFormScreen() {
         </TouchableOpacity>
       </View>
       <View style={styles.contatoRow}>
-        <View style={styles.contatoField}>          <TextInput
+        <View style={styles.contatoField}>
+          <TextInput
             style={styles.contatoInput}
             placeholder="Nome"
             placeholderTextColor="#94A3B8"
@@ -334,6 +409,114 @@ export default function ClienteFormScreen() {
       </View>
     </View>
   ), [handleContatoChange, handleRemoveContato]);
+
+  // ==========================================================================
+  // MODAIS
+  // ==========================================================================
+
+  const renderModalEstado = () => (
+    <Modal
+      visible={modalEstadoVisible}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setModalEstadoVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Selecionar Estado</Text>
+            <TouchableOpacity onPress={() => setModalEstadoVisible(false)}>
+              <Ionicons name="close" size={24} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+          
+          {carregandoEstados ? (
+            <View style={styles.modalLoading}>
+              <ActivityIndicator size="large" color="#2563EB" />
+            </View>
+          ) : (
+            <FlatList
+              data={estados}
+              keyExtractor={(item) => item.sigla}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.modalItem,
+                    formData.estado === item.sigla && styles.modalItemActive,
+                  ]}
+                  onPress={() => handleSelectEstado(item)}
+                >
+                  <Text style={[
+                    styles.modalItemText,
+                    formData.estado === item.sigla && styles.modalItemTextActive,
+                  ]}>
+                    {item.sigla} - {item.nome}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderModalCidade = () => (
+    <Modal
+      visible={modalCidadeVisible}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setModalCidadeVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Selecionar Cidade</Text>
+            <TouchableOpacity onPress={() => setModalCidadeVisible(false)}>
+              <Ionicons name="close" size={24} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+          
+          {!formData.estado ? (
+            <View style={styles.modalLoading}>
+              <Text style={styles.modalEmptyText}>Selecione um estado primeiro</Text>
+            </View>
+          ) : carregandoCidades ? (
+            <View style={styles.modalLoading}>
+              <ActivityIndicator size="large" color="#2563EB" />
+            </View>
+          ) : cidades.length === 0 ? (
+            <View style={styles.modalLoading}>
+              <Text style={styles.modalEmptyText}>Nenhuma cidade encontrada</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={cidades}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.modalItem,
+                    formData.cidade === item.nome && styles.modalItemActive,
+                  ]}
+                  onPress={() => handleSelectCidade(item)}
+                >
+                  <Text style={[
+                    styles.modalItemText,
+                    formData.cidade === item.nome && styles.modalItemTextActive,
+                  ]}>
+                    {item.nome}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
 
   // ==========================================================================
   // RENDER
@@ -362,7 +545,8 @@ export default function ClienteFormScreen() {
                 onPress={() => {
                   setTipoPessoa('Fisica');
                   handleInputChange('tipoPessoa', 'Fisica');
-                }}              >
+                }}
+              >
                 <Text
                   style={[
                     styles.tipoPessoaText,
@@ -411,13 +595,13 @@ export default function ClienteFormScreen() {
             )}
 
             {renderInput(
-              tipoPessoa === 'Fisica' ? 'CPF *' : 'CNPJ *',              'cpfCnpj',
+              tipoPessoa === 'Fisica' ? 'CPF *' : 'CNPJ *',
+              'cpfCnpj',
               tipoPessoa === 'Fisica' ? '000.000.000-00' : '00.000.000/0000-00',
               {
                 keyboardType: 'numeric',
                 mask: tipoPessoa === 'Fisica' ? masks.cpf : masks.cnpj,
-            
-  }
+              }
             )}
 
             {renderInput(
@@ -438,8 +622,7 @@ export default function ClienteFormScreen() {
               {
                 keyboardType: 'phone-pad',
                 mask: masks.phone,
-            
-  }
+              }
             )}
 
             {renderInput(
@@ -448,8 +631,7 @@ export default function ClienteFormScreen() {
               'email@exemplo.com',
               {
                 keyboardType: 'email-address',
-            
-  }
+              }
             )}
 
             {/* Contatos Adicionais */}
@@ -473,16 +655,33 @@ export default function ClienteFormScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Endereço</Text>
             
-            {renderInput(
-              'CEP',
-              'cep',
-              '00000-000',
-              {
-                keyboardType: 'numeric',
-                mask: masks.cep,
-            
-  }
-            )}
+            {/* CEP com busca */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>CEP</Text>
+              <View style={[styles.inputContainer, styles.cepContainer]}>
+                <TextInput
+                  style={styles.cepInput}
+                  placeholder="00000-000"
+                  placeholderTextColor="#94A3B8"
+                  value={formData.cep}
+                  onChangeText={(value) => handleInputChange('cep', masks.cep(value))}
+                  keyboardType="numeric"
+                  maxLength={9}
+                  onBlur={handleCepBlur}
+                />
+                {buscandoCep && (
+                  <ActivityIndicator size="small" color="#2563EB" style={styles.cepLoader} />
+                )}
+                <TouchableOpacity 
+                  style={styles.cepButton}
+                  onPress={handleCepBlur}
+                  disabled={buscandoCep}
+                >
+                  <Ionicons name="search" size={20} color="#2563EB" />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.cepHint}>Digite o CEP para buscar o endereço</Text>
+            </View>
 
             <View style={styles.row}>
               <View style={[styles.flex2, styles.rowField]}>
@@ -508,31 +707,47 @@ export default function ClienteFormScreen() {
               'Apto, Bloco, etc.'
             )}
 
-            <View style={styles.row}>
-              <View style={[styles.flex2, styles.rowField]}>
-                {renderInput(
-                  'Bairro *',
-                  'bairro',
-                  'Nome do bairro'                )}
-              </View>
-              <View style={[styles.flex1, styles.rowField]}>
-                {renderInput(
-                  'Cidade *',
-                  'cidade',
-                  'Cidade'
-                )}
-              </View>
+            {renderInput(
+              'Bairro *',
+              'bairro',
+              'Nome do bairro'
+            )}
+
+            {/* Estado - Seleção */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Estado *</Text>
+              <TouchableOpacity
+                style={[styles.inputContainer, errors.estado && styles.inputError]}
+                onPress={() => setModalEstadoVisible(true)}
+              >
+                <Text style={[styles.selectText, !formData.estado && styles.selectPlaceholder]}>
+                  {formData.estado 
+                    ? estados.find(e => e.sigla === formData.estado)?.nome || formData.estado
+                    : 'Selecione o estado'
+                  }
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#64748B" />
+              </TouchableOpacity>
+              {errors.estado && <Text style={styles.errorText}>{errors.estado}</Text>}
             </View>
 
-            <View style={styles.row}>
-              <View style={[styles.flex1, styles.rowField]}>
-                {renderInput(
-                  'Estado *',
-                  'estado',
-                  'MS',
-                  { keyboardType: 'default' }
-                )}
-              </View>
+            {/* Cidade - Seleção */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Cidade *</Text>
+              <TouchableOpacity
+                style={[styles.inputContainer, errors.cidade && styles.inputError]}
+                onPress={() => formData.estado && setModalCidadeVisible(true)}
+                disabled={!formData.estado}
+              >
+                <Text style={[styles.selectText, !formData.cidade && styles.selectPlaceholder]}>
+                  {formData.cidade || 'Selecione a cidade'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color={!formData.estado ? '#CBD5E1' : '#64748B'} />
+              </TouchableOpacity>
+              {errors.cidade && <Text style={styles.errorText}>{errors.cidade}</Text>}
+              {!formData.estado && (
+                <Text style={styles.fieldHint}>Selecione o estado primeiro</Text>
+              )}
             </View>
 
             {/* Rota */}
@@ -551,7 +766,7 @@ export default function ClienteFormScreen() {
                       key={rota.id}
                       style={[
                         styles.rotaChip,
-                        formData.rotaId === rota.id && styles.rotaChipActive,
+                        String(formData.rotaId) === String(rota.id) && styles.rotaChipActive,
                       ]}
                       onPress={() => {
                         handleInputChange('rotaId', String(rota.id));
@@ -561,8 +776,9 @@ export default function ClienteFormScreen() {
                       <Text
                         style={[
                           styles.rotaChipText,
-                          formData.rotaId === rota.id && styles.rotaChipTextActive,
-                        ]}                      >
+                          String(formData.rotaId) === String(rota.id) && styles.rotaChipTextActive,
+                        ]}
+                      >
                         {rota.descricao}
                       </Text>
                     </TouchableOpacity>
@@ -597,6 +813,10 @@ export default function ClienteFormScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Modais */}
+      {renderModalEstado()}
+      {renderModalCidade()}
     </SafeAreaView>
   );
 }
@@ -611,7 +831,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   keyboardView: {
-    flex: 1,  },
+    flex: 1,
+  },
   scrollView: {
     flex: 1,
   },
@@ -660,7 +881,8 @@ const styles = StyleSheet.create({
 
   // Inputs
   inputGroup: {
-    marginBottom: 16,  },
+    marginBottom: 16,
+  },
   label: {
     fontSize: 14,
     fontWeight: '600',
@@ -674,12 +896,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   inputError: {
     borderColor: '#DC2626',
     backgroundColor: '#FEF2F2',
   },
   input: {
+    flex: 1,
     fontSize: 16,
     color: '#1E293B',
   },
@@ -690,6 +915,43 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 12,
     color: '#DC2626',
+    marginTop: 4,
+  },
+
+  // CEP
+  cepContainer: {
+    paddingVertical: 0,
+  },
+  cepInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1E293B',
+    paddingVertical: 12,
+  },
+  cepLoader: {
+    marginHorizontal: 8,
+  },
+  cepButton: {
+    padding: 8,
+  },
+  cepHint: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 4,
+  },
+
+  // Select
+  selectText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1E293B',
+  },
+  selectPlaceholder: {
+    color: '#94A3B8',
+  },
+  fieldHint: {
+    fontSize: 11,
+    color: '#64748B',
     marginTop: 4,
   },
 
@@ -709,7 +971,8 @@ const styles = StyleSheet.create({
   },
 
   // Contatos
-  contatosSection: {    marginTop: 12,
+  contatosSection: {
+    marginTop: 12,
   },
   contatosHeader: {
     flexDirection: 'row',
@@ -759,6 +1022,7 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     paddingVertical: 8,
   },
+
   // Rotas
   rotasScroll: {
     gap: 8,
@@ -807,10 +1071,62 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   saveButtonDisabled: {
-    backgroundColor: '#93C5FD',  },
+    backgroundColor: '#93C5FD',
+  },
   saveButtonText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+    paddingBottom: 34,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  modalLoading: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  modalEmptyText: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  modalItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  modalItemActive: {
+    backgroundColor: '#EFF6FF',
+  },
+  modalItemText: {
+    fontSize: 15,
+    color: '#1E293B',
+  },
+  modalItemTextActive: {
+    color: '#2563EB',
+    fontWeight: '600',
   },
 });

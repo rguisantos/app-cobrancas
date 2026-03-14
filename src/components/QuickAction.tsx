@@ -59,19 +59,19 @@ export default function QuickAction({
   // Tamanhos pré-definidos
   const sizes = {
     small: {
-      container: { padding: 12, minHeight: 90 },
+      container: { minHeight: 90 },
       icon: 24,
       iconContainer: 48,
       title: 12,
     },
     medium: {
-      container: { padding: 16, minHeight: 110 },
+      container: { minHeight: 100 },
       icon: 28,
       iconContainer: 56,
       title: 13,
     },
     large: {
-      container: { padding: 20, minHeight: 130 },
+      container: { minHeight: 120 },
       icon: 32,
       iconContainer: 64,
       title: 14,
@@ -139,13 +139,12 @@ export default function QuickAction({
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    minWidth: '30%', // 3 cards por linha
-    maxWidth: '30%',
+    width: '48%', // 2 cards por linha com espaçamento
+    marginBottom: 12,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    paddingVertical: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -157,6 +156,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
+    marginBottom: 12,
   },
   badge: {
     position: 'absolute',

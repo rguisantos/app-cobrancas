@@ -3,12 +3,11 @@
  * Tela de configurações do aplicativo
  * 
  * Funcionalidades:
+ * - Gerenciamento de Rotas
+ * - Gerenciamento de Atributos de Produto (Tipos, Descrições, Tamanhos)
  * - Preferências de sincronização
- * - Notificações
- * - Tema (claro/escuro)
- * - Idioma
  * - Limpar dados locais
- * - Restaurar padrões
+ * - Sobre o aplicativo
  */
 
 import React, { useState, useCallback } from 'react';
@@ -20,7 +19,6 @@ import {
   Switch,
   TouchableOpacity,
   Alert,
-  Linking,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,40 +38,16 @@ import logger from '../utils/logger';
 import { ENV } from '../config/env';
 
 // ============================================================================
-// TIPOS DE CONFIGURAÇÃO
-// ============================================================================
-
-interface SettingGroup {
-  id: string;
-  title: string;
-  items: SettingItem[];
-}
-
-interface SettingItem {  id: string;
-  title: string;
-  subtitle?: string;
-  type: 'toggle' | 'select' | 'button' | 'info';
-  value?: any;
-  options?: Array<{ label: string; value: any }>;
-  icon?: keyof typeof Ionicons.glyphMap;
-  onPress?: () => void;
-  onToggle?: (value: boolean) => void;
-  danger?: boolean;
-  disabled?: boolean;
-}
-
-// ============================================================================
 // COMPONENTE PRINCIPAL
 // ============================================================================
 
 export default function SettingsScreen() {
-  const navigation = useNavigation();
-  const { primaryColor, appName, supportEmail } = useBranding();
-  const { user } = useAuth();
-  const { 
-    syncConfig, 
-    ativarAutoSync, 
-    setAutoSyncInterval,
+  const navigation = useNavigation<any>();
+  const { primaryColor, appName } = useBranding();
+  const { user, isAdmin } = useAuth();
+  const {
+    syncConfig,
+    ativarAutoSync,
     sincronizar,
     isSyncing,
     lastSyncAt,
@@ -82,13 +56,10 @@ export default function SettingsScreen() {
   // Estado local para configurações
   const [settings, setSettings] = useState({
     autoSync: syncConfig?.autoSyncEnabled ?? true,
-    syncInterval: syncConfig?.autoSyncInterval ?? 15,
-    syncOnStart: syncConfig?.syncOnAppStart ?? true,
-    syncOnResume: syncConfig?.syncOnAppResume ?? true,
-    darkMode: false,
-    notifications: true,
-    language: 'pt-BR',
   });
+
+  // Permissões
+  const podeGerenciar = isAdmin() || user?.tipoPermissao === 'Administrador';
 
   // ==========================================================================
   // HANDLERS
@@ -96,11 +67,9 @@ export default function SettingsScreen() {
 
   const handleToggle = useCallback((key: string, value: boolean) => {
     setSettings(prev => ({ ...prev, [key]: value }));
-    
-    // Aplicar configurações de sync
-    if (key === 'autoSync') {      ativarAutoSync(value);
-  
-  }
+    if (key === 'autoSync') {
+      ativarAutoSync(value);
+    }
   }, [ativarAutoSync]);
 
   const handleSyncNow = useCallback(async () => {
@@ -109,8 +78,7 @@ export default function SettingsScreen() {
       Alert.alert('Sincronização', 'Sincronização iniciada com sucesso');
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível sincronizar');
-  
-  }
+    }
   }, [sincronizar]);
 
   const handleClearData = useCallback(() => {
@@ -130,326 +98,98 @@ export default function SettingsScreen() {
             } catch (error) {
               Alert.alert('Erro', 'Não foi possível limpar os dados');
               logger.error('Erro ao limpar dados locais', error, 'Settings');
-          
-  }
+            }
           },
         },
       ]
     );
   }, []);
-
-  const handleResetSettings = useCallback(() => {
-    Alert.alert(
-      'Restaurar Padrões',
-      'Deseja restaurar todas as configurações para os valores padrão?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Restaurar',
-          style: 'destructive',
-          onPress: () => {
-            setSettings({
-              autoSync: true,
-              syncInterval: 15,              syncOnStart: true,
-              syncOnResume: true,
-              darkMode: false,
-              notifications: true,
-              language: 'pt-BR',
-            });
-            Alert.alert('Sucesso', 'Configurações restauradas');
-          },
-        },
-      ]
-    );
-  }, []);
-
-  const handleSupport = useCallback(() => {
-    if (supportEmail) {
-      Linking.openURL(`mailto:${supportEmail}`);
-  
-  }
-  }, [supportEmail]);
-
-  // ==========================================================================
-  // GRUPOS DE CONFIGURAÇÃO
-  // ==========================================================================
-
-  const settingGroups: SettingGroup[] = [
-    {
-      id: 'user',
-      title: 'Usuário',
-      items: [
-        {
-          id: 'userInfo',
-          title: user?.nome || 'Usuário',
-          subtitle: user?.email || user?.cpf,
-          type: 'info',
-          icon: 'person',
-        },
-        {
-          id: 'userRole',
-          title: 'Tipo de Acesso',
-          subtitle: user?.tipoPermissao || 'Administrador',
-          type: 'info',
-          icon: 'shield-checkmark',
-        },
-      ],
-    },
-    {
-      id: 'sync',
-      title: 'Sincronização',
-      items: [
-        {
-          id: 'autoSync',          title: 'Sincronização Automática',
-          subtitle: 'Sincronizar em segundo plano',
-          type: 'toggle',
-          value: settings.autoSync,
-          icon: 'sync',
-          onToggle: (value) => handleToggle('autoSync', value),
-        },
-        {
-          id: 'syncInterval',
-          title: 'Intervalo de Sync',
-          subtitle: `${settings.syncInterval} minutos`,
-          type: 'select',
-          value: settings.syncInterval,
-          options: [
-            { label: '5 minutos', value: 5 },
-            { label: '15 minutos', value: 15 },
-            { label: '30 minutos', value: 30 },
-            { label: '1 hora', value: 60 },
-          ],
-          icon: 'time',
-        },
-        {
-          id: 'syncOnStart',
-          title: 'Sync ao Iniciar',
-          subtitle: 'Sincronizar ao abrir o app',
-          type: 'toggle',
-          value: settings.syncOnStart,
-          icon: 'power',
-          onToggle: (value) => handleToggle('syncOnStart', value),
-        },
-        {
-          id: 'syncNow',
-          title: 'Sincronizar Agora',
-          subtitle: lastSyncAt 
-            ? `Última: ${new Date(lastSyncAt).toLocaleTimeString('pt-BR')}`
-            : 'Nunca sincronizado',
-          type: 'button',
-          icon: isSyncing ? 'sync' : 'cloud-download',
-          onPress: handleSyncNow,
-          disabled: isSyncing,
-        },
-      ],
-    },
-    {
-      id: 'appearance',
-      title: 'Aparência',
-      items: [
-        {
-          id: 'darkMode',
-          title: 'Modo Escuro',          subtitle: 'Tema escuro para o aplicativo',
-          type: 'toggle',
-          value: settings.darkMode,
-          icon: 'moon',
-          onToggle: (value) => handleToggle('darkMode', value),
-          disabled: true, // Implementar quando tiver tema escuro
-        },
-        {
-          id: 'language',
-          title: 'Idioma',
-          subtitle: settings.language === 'pt-BR' ? 'Português (Brasil)' : 'English',
-          type: 'select',
-          value: settings.language,
-          options: [
-            { label: 'Português (Brasil)', value: 'pt-BR' },
-            { label: 'English', value: 'en' },
-          ],
-          icon: 'language',
-        },
-      ],
-    },
-    {
-      id: 'notifications',
-      title: 'Notificações',
-      items: [
-        {
-          id: 'notifications',
-          title: 'Notificações Push',
-          subtitle: 'Alertas de cobranças e sincronização',
-          type: 'toggle',
-          value: settings.notifications,
-          icon: 'notifications',
-          onToggle: (value) => handleToggle('notifications', value),
-        },
-      ],
-    },
-    {
-      id: 'data',
-      title: 'Dados',
-      items: [
-        {
-          id: 'clearData',
-          title: 'Limpar Dados Locais',
-          subtitle: 'Apagar cache e dados offline',
-          type: 'button',
-          icon: 'trash',
-          onPress: handleClearData,
-          danger: true,
-        },
-        {          id: 'resetSettings',
-          title: 'Restaurar Padrões',
-          subtitle: 'Voltar configurações ao original',
-          type: 'button',
-          icon: 'refresh',
-          onPress: handleResetSettings,
-          danger: true,
-        },
-      ],
-    },
-    {
-      id: 'about',
-      title: 'Sobre',
-      items: [
-        {
-          id: 'appVersion',
-          title: 'Versão do App',
-          subtitle: `v${ENV.APP_VERSION}`,
-          type: 'info',
-          icon: 'information-circle',
-        },
-        {
-          id: 'appName',
-          title: 'Aplicativo',
-          subtitle: appName,
-          type: 'info',
-          icon: 'apps',
-        },
-        {
-          id: 'support',
-          title: 'Suporte Técnico',
-          subtitle: supportEmail || 'suporte@empresa.com.br',
-          type: 'button',
-          icon: 'headset',
-          onPress: handleSupport,
-        },
-        {
-          id: 'privacy',
-          title: 'Política de Privacidade',
-          type: 'button',
-          icon: 'shield-checkmark',
-          onPress: () => Alert.alert('Política de Privacidade', 'Conteúdo em desenvolvimento'),
-        },
-        {
-          id: 'terms',
-          title: 'Termos de Uso',
-          type: 'button',
-          icon: 'document-text',
-          onPress: () => Alert.alert('Termos de Uso', 'Conteúdo em desenvolvimento'),
-        },      ],
-    },
-  ];
-
-  // ==========================================================================
-  // RENDERIZAÇÃO DE ITENS
-  // ==========================================================================
-
-  const renderSettingItem = useCallback((item: SettingItem) => {
-    const iconColor = item.danger ? '#DC2626' : primaryColor;
-
-    return (
-      <TouchableOpacity
-        key={item.id}
-        style={[
-          styles.settingItem,
-          item.type === 'button' && styles.settingItemButton,
-          item.danger && styles.settingItemDanger,
-          item.disabled && styles.settingItemDisabled,
-        ]}
-        onPress={item.type === 'toggle' ? undefined : item.onPress}
-        disabled={item.type === 'toggle' || item.disabled}
-        activeOpacity={item.disabled ? 1 : 0.7}
-      >
-        {/* Ícone */}
-        {item.icon && (
-          <View style={[
-            styles.settingIcon,
-            { backgroundColor: `${iconColor}1A` },
-          ]}>
-            <Ionicons 
-              name={item.icon as any} 
-              size={20} 
-              color={item.danger ? '#DC2626' : iconColor} 
-            />
-          </View>
-        )}
-
-        {/* Texto */}
-        <View style={styles.settingTextContainer}>
-          <Text style={[
-            styles.settingTitle,
-            item.danger && { color: '#DC2626' },
-            item.disabled && { opacity: 0.5 },
-          ]}>
-            {item.title}
-          </Text>
-          {item.subtitle && (
-            <Text style={[
-              styles.settingSubtitle,              item.danger && { color: '#991B1B' },
-              item.disabled && { opacity: 0.5 },
-            ]}>
-              {item.subtitle}
-            </Text>
-          )}
-        </View>
-
-        {/* Controle */}
-        {item.type === 'toggle' && (
-          <Switch
-            value={item.value as boolean}
-            onValueChange={(value) => item.onToggle?.(value)}
-            trackColor={{ false: '#CBD5E1', true: `${primaryColor}80` }}
-            thumbColor="#FFFFFF"
-            ios_backgroundColor="#CBD5E1"
-            disabled={item.disabled}
-          />
-        )}
-
-        {item.type === 'select' && (
-          <View style={styles.selectContainer}>
-            <Text style={styles.selectValue}>{item.subtitle}</Text>
-            <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
-          </View>
-        )}
-
-        {item.type === 'button' && (
-          <>
-            {item.disabled && isSyncing && (
-              <ActivityIndicator size="small" color={primaryColor} />
-            )}
-            <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
-          </>
-        )}
-
-        {item.type === 'info' && (
-          <Ionicons name="chevron-forward" size={20} color="#E2E8F0" />
-        )}
-      </TouchableOpacity>
-    );
-  }, [primaryColor, isSyncing]);
 
   // ==========================================================================
   // RENDER
   // ==========================================================================
 
+  const renderSettingItem = (
+    id: string,
+    title: string,
+    subtitle: string | undefined,
+    icon: keyof typeof Ionicons.glyphMap,
+    options: {
+      type?: 'toggle' | 'button' | 'info' | 'navigation';
+      value?: boolean;
+      onPress?: () => void;
+      onToggle?: (value: boolean) => void;
+      danger?: boolean;
+      disabled?: boolean;
+      iconColor?: string;
+    } = {}
+  ) => {
+    const {
+      type = 'button',
+      value,
+      onPress,
+      onToggle,
+      danger = false,
+      disabled = false,
+      iconColor,
+    } = options;
+    
+    const color = danger ? '#DC2626' : (iconColor || primaryColor);
+
+    return (
+      <TouchableOpacity
+        key={id}
+        style={[
+          styles.settingItem,
+          danger && styles.settingItemDanger,
+          disabled && styles.settingItemDisabled,
+        ]}
+        onPress={type === 'toggle' ? undefined : onPress}
+        disabled={type === 'toggle' || disabled}
+        activeOpacity={disabled ? 1 : 0.7}
+      >
+        <View style={[styles.settingIcon, { backgroundColor: `${color}1A` }]}>
+          <Ionicons name={icon} size={20} color={color} />
+        </View>
+
+        <View style={styles.settingTextContainer}>
+          <Text style={[styles.settingTitle, danger && { color: '#DC2626' }]}>
+            {title}
+          </Text>
+          {subtitle && (
+            <Text style={[styles.settingSubtitle, danger && { color: '#991B1B' }]}>
+              {subtitle}
+            </Text>
+          )}
+        </View>
+
+        {type === 'toggle' && (
+          <Switch
+            value={value ?? false}
+            onValueChange={onToggle}
+            trackColor={{ false: '#CBD5E1', true: `${primaryColor}80` }}
+            thumbColor="#FFFFFF"
+            ios_backgroundColor="#CBD5E1"
+            disabled={disabled}
+          />
+        )}
+
+        {(type === 'navigation' || type === 'button') && !disabled && (
+          <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
+        )}
+
+        {type === 'button' && disabled && isSyncing && (
+          <ActivityIndicator size="small" color={primaryColor} />
+        )}
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="chevron-back" size={24} color="#1E293B" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Configurações</Text>
@@ -457,28 +197,97 @@ export default function SettingsScreen() {
       </View>
 
       {/* Configurações */}
-      <ScrollView 
-        style={styles.scrollView} 
+      <ScrollView
+        style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {settingGroups.map((group) => (
-          <View key={group.id} style={styles.section}>
-            <Text style={styles.sectionTitle}>{group.title}</Text>
+        {/* Gerenciamento - Apenas Admin */}
+        {podeGerenciar && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Gerenciamento</Text>
             <View style={styles.sectionCard}>
-              {group.items.map(renderSettingItem)}
+              {renderSettingItem('rotas', 'Rotas', 'Gerenciar rotas de cobrança', 'map', {
+                type: 'navigation',
+                iconColor: '#2563EB',
+                onPress: () => navigation.navigate('RotasGerenciar'),
+              })}
+              {renderSettingItem('atributos', 'Atributos de Produto', 'Tipos, descrições e tamanhos', 'cube', {
+                type: 'navigation',
+                iconColor: '#16A34A',
+                onPress: () => navigation.navigate('AtributosProdutoGerenciar'),
+              })}
             </View>
           </View>
-        ))}
+        )}
 
-        {/* Espaço extra */}
+        {/* Usuário */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Usuário</Text>
+          <View style={styles.sectionCard}>
+            {renderSettingItem('userInfo', user?.nome || 'Usuário', user?.email || user?.cpf, 'person', {
+              type: 'info',
+              iconColor: '#64748B',
+            })}
+            {renderSettingItem('userRole', 'Tipo de Acesso', user?.tipoPermissao || 'Administrador', 'shield-checkmark', {
+              type: 'info',
+              iconColor: '#64748B',
+            })}
+          </View>
+        </View>
+
+        {/* Sincronização */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Sincronização</Text>
+          <View style={styles.sectionCard}>
+            {renderSettingItem('autoSync', 'Sincronização Automática', 'Sincronizar em segundo plano', 'sync', {
+              type: 'toggle',
+              value: settings.autoSync,
+              onToggle: (value) => handleToggle('autoSync', value),
+            })}
+            {renderSettingItem('syncNow', 'Sincronizar Agora', 
+              lastSyncAt ? `Última: ${new Date(lastSyncAt).toLocaleTimeString('pt-BR')}` : 'Nunca sincronizado',
+              isSyncing ? 'sync' : 'cloud-download', {
+              type: 'button',
+              onPress: handleSyncNow,
+              disabled: isSyncing,
+            })}
+          </View>
+        </View>
+
+        {/* Dados */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Dados</Text>
+          <View style={styles.sectionCard}>
+            {renderSettingItem('clearData', 'Limpar Dados Locais', 'Apagar cache e dados offline', 'trash', {
+              type: 'button',
+              danger: true,
+              onPress: handleClearData,
+            })}
+          </View>
+        </View>
+
+        {/* Sobre */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Sobre</Text>
+          <View style={styles.sectionCard}>
+            {renderSettingItem('appVersion', 'Versão do App', `v${ENV.APP_VERSION}`, 'information-circle', {
+              type: 'info',
+              iconColor: '#64748B',
+            })}
+            {renderSettingItem('appName', 'Aplicativo', appName, 'apps', {
+              type: 'info',
+              iconColor: '#64748B',
+            })}
+          </View>
+        </View>
+
+        {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
             {appName} © {new Date().getFullYear()}
           </Text>
-          <Text style={styles.footerVersion}>
-            v{ENV.APP_VERSION}
-          </Text>
+          <Text style={styles.footerVersion}>v{ENV.APP_VERSION}</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -494,7 +303,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -513,16 +321,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1E293B',
   },
-
-  // ScrollView
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: 16,
   },
-
-  // Section
   section: {
     marginBottom: 24,
   },
@@ -543,9 +347,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 2,  },
-
-  // Setting Item
+    elevation: 2,
+  },
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -554,12 +357,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
-  settingItemButton: {
-    // Estilo para itens do tipo button
-  },
-  settingItemDanger: {
-    // Estilo para itens perigosos
-  },
+  settingItemDanger: {},
   settingItemDisabled: {
     opacity: 0.5,
   },
@@ -583,18 +381,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
   },
-
-  // Select
-  selectContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  selectValue: {
-    fontSize: 13,
-    color: '#64748B',  },
-
-  // Footer
   footer: {
     alignItems: 'center',
     paddingVertical: 24,
