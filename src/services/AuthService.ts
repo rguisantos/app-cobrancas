@@ -269,31 +269,75 @@ class AuthService {
       // Garantir que o banco está inicializado
       await databaseService.initialize();
       
-      // Verificar se existe algum usuário, se não, criar admin padrão
-      const usuarios = await usuarioRepository.getAll();
+      logger.info('Verificando usuário admin...');
       
-      if (usuarios.length === 0) {
+      // Buscar admin existente diretamente do banco
+      const adminExistente = await databaseService.getUsuarioByEmail('admin@locacao.com');
+      
+      if (!adminExistente) {
+        // Criar novo admin
         logger.info('Criando usuário admin padrão...');
-        await usuarioRepository.save({
+        await databaseService.saveUsuario({
           id: 'usr_admin',
           tipo: 'usuario',
           nome: 'Administrador',
           email: 'admin@locacao.com',
-          senha: 'admin123', // Em produção, hash com bcrypt
+          senha: 'admin123',
           cpf: '',
           telefone: '',
           tipoPermissao: 'Administrador',
-          permissoes: PERMISSOES_PADRAO['Administrador'],
-          rotasPermitidas: [],
+          permissoesWeb: JSON.stringify(PERMISSOES_PADRAO['Administrador'].web),
+          permissoesMobile: JSON.stringify(PERMISSOES_PADRAO['Administrador'].mobile),
+          rotasPermitidas: '[]',
           status: 'Ativo',
           bloqueado: false,
           syncStatus: 'pending',
           needsSync: true,
           version: 1,
           deviceId: '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         });
-        logger.info('Usuário admin padrão criado: admin@locacao.com / admin123');
+        logger.info('Usuário admin criado: admin@locacao.com / admin123');
+      } else {
+        // Garantir que o admin tem a senha correta
+        logger.info('Admin já existe, verificando credenciais...');
+        
+        if ((adminExistente as any).senha !== 'admin123' || (adminExistente as any).status !== 'Ativo') {
+          logger.info('Atualizando credenciais do admin...');
+          await databaseService.saveUsuario({
+            id: adminExistente.id || 'usr_admin',
+            tipo: 'usuario',
+            nome: 'Administrador',
+            email: 'admin@locacao.com',
+            senha: 'admin123',
+            cpf: (adminExistente as any).cpf || '',
+            telefone: (adminExistente as any).telefone || '',
+            tipoPermissao: 'Administrador',
+            permissoesWeb: JSON.stringify(PERMISSOES_PADRAO['Administrador'].web),
+            permissoesMobile: JSON.stringify(PERMISSOES_PADRAO['Administrador'].mobile),
+            rotasPermitidas: '[]',
+            status: 'Ativo',
+            bloqueado: false,
+            syncStatus: 'pending',
+            needsSync: true,
+            version: ((adminExistente as any).version || 0) + 1,
+            deviceId: '',
+            createdAt: (adminExistente as any).createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+          logger.info('Credenciais do admin atualizadas');
+        }
       }
+      
+      // Verificar se ficou correto
+      const verificado = await databaseService.getUsuarioByEmail('admin@locacao.com');
+      logger.info('Verificação admin:', { 
+        email: (verificado as any)?.email, 
+        senha: (verificado as any)?.senha ? '***definida***' : 'NÃO DEFINIDA',
+        status: (verificado as any)?.status 
+      });
+      
     } catch (error) {
       logger.error('Erro ao inicializar autenticação:', error);
     }

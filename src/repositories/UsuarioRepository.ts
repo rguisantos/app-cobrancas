@@ -205,43 +205,62 @@ class UsuarioRepository {
    */
   async autenticar(email: string, senha: string): Promise<UsuarioLogin | null> {
     try {
-      const usuario = await this.getByEmail(email);
+      console.log('[UsuarioRepository] Tentando autenticar:', email);
       
-      if (!usuario) {
+      // Buscar usuário diretamente do banco para ter todos os campos
+      const result = await databaseService.getUsuarioByEmail(email);
+      
+      if (!result) {
         console.log('[UsuarioRepository] Usuário não encontrado:', email);
         return null;
       }
+      
+      console.log('[UsuarioRepository] Usuário encontrado:', {
+        email: (result as any).email,
+        status: (result as any).status,
+        bloqueado: (result as any).bloqueado,
+        temSenha: !!(result as any).senha,
+      });
 
-      if (usuario.status !== 'Ativo') {
+      if ((result as any).status !== 'Ativo') {
         console.log('[UsuarioRepository] Usuário inativo:', email);
         return null;
       }
 
-      if (usuario.bloqueado) {
+      if ((result as any).bloqueado) {
         console.log('[UsuarioRepository] Usuário bloqueado:', email);
         return null;
       }
 
-      // Buscar a senha armazenada
-      const result = await databaseService.getUsuarioByEmail(email);
-      const senhaArmazenada = (result as any)?.senha;
+      const senhaArmazenada = (result as any).senha;
+      
+      console.log('[UsuarioRepository] Comparando senhas:', {
+        senhaFornecida: senha,
+        senhaArmazenada: senhaArmazenada ? '***' + senhaArmazenada.slice(-3) : 'VAZIA',
+      });
 
       // Comparar senha (em produção usar bcrypt ou similar)
       if (senhaArmazenada && senhaArmazenada === senha) {
+        console.log('[UsuarioRepository] Senha correta! Login autorizado.');
+        
         // Atualizar último acesso
-        await this.atualizarUltimoAcesso(usuario.id, 'Mobile');
+        await this.atualizarUltimoAcesso((result as any).id, 'Mobile');
         
         return {
-          id: usuario.id,
-          email: usuario.email,
-          nome: usuario.nome,
-          tipoPermissao: usuario.tipoPermissao,
-          permissoes: usuario.permissoes,
-          rotasPermitidas: usuario.rotasPermitidas,
-          status: usuario.status,
+          id: (result as any).id,
+          email: (result as any).email,
+          nome: (result as any).nome,
+          tipoPermissao: (result as any).tipoPermissao,
+          permissoes: {
+            web: this.parseJSON((result as any).permissoesWeb, {}),
+            mobile: this.parseJSON((result as any).permissoesMobile, {}),
+          },
+          rotasPermitidas: this.parseJSON((result as any).rotasPermitidas, []),
+          status: (result as any).status,
         };
       }
 
+      console.log('[UsuarioRepository] Senha incorreta para:', email);
       return null;
     } catch (error) {
       console.error('[UsuarioRepository] Erro na autenticação:', error);
