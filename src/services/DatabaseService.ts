@@ -1172,36 +1172,80 @@ class DatabaseService {
     if (!this.db) throw new Error('Database não inicializado');
     const now = new Date().toISOString();
     
-    const usuarioData = {
-      ...usuario,
-      email: usuario.email?.toLowerCase().trim(),
-      updatedAt: now,
+    const usuarioData: Record<string, any> = {
+      id: usuario.id || `usr_${Date.now()}`,
+      tipo: usuario.tipo || 'usuario',
+      nome: usuario.nome || '',
+      cpf: usuario.cpf || '',
+      telefone: usuario.telefone || '',
+      email: usuario.email?.toLowerCase().trim() || '',
+      senha: usuario.senha || '',
+      tipoPermissao: usuario.tipoPermissao || 'AcessoControlado',
+      permissoesWeb: usuario.permissoesWeb || '{}',
+      permissoesMobile: usuario.permissoesMobile || '{}',
+      rotasPermitidas: usuario.rotasPermitidas || '[]',
+      status: usuario.status || 'Ativo',
+      bloqueado: usuario.bloqueado ? 1 : 0,
+      dataUltimoAcesso: usuario.dataUltimoAcesso || null,
+      ultimoAcessoDispositivo: usuario.ultimoAcessoDispositivo || null,
+      syncStatus: usuario.syncStatus || 'pending',
+      lastSyncedAt: usuario.lastSyncedAt || null,
       needsSync: 1,
+      version: usuario.version || 1,
+      deviceId: usuario.deviceId || '',
+      createdAt: usuario.createdAt || now,
+      updatedAt: now,
+      deletedAt: null,
     };
     
-    // Verificar se existe
-    const existente = await this.getUsuarioByEmail(usuario.email);
-    
-    if (existente) {
-      // Update
-      const fields = Object.keys(usuarioData).filter(k => k !== 'id');
-      const setClause = fields.map(f => `${f} = ?`).join(', ');
-      await this.db.runAsync(
-        `UPDATE ${TABLES.USUARIOS} SET ${setClause} WHERE id = ?`,
-        [...fields.map(f => usuarioData[f]), usuario.id]
-      );
-    } else {
-      // Insert
-      usuarioData.createdAt = now;
-      const fields = Object.keys(usuarioData);
-      const placeholders = fields.map(() => '?').join(', ');
-      await this.db.runAsync(
-        `INSERT INTO ${TABLES.USUARIOS} (${fields.join(', ')}) VALUES (${placeholders})`,
-        ...fields.map(f => usuarioData[f])
-      );
+    try {
+      // Verificar se existe
+      const existente = await this.getUsuarioByEmail(usuario.email);
+      
+      if (existente) {
+        // Update
+        const fields = Object.keys(usuarioData).filter(k => k !== 'id');
+        const setClause = fields.map(f => `${f} = ?`).join(', ');
+        await this.db.runAsync(
+          `UPDATE ${TABLES.USUARIOS} SET ${setClause} WHERE id = ?`,
+          [...fields.map(f => usuarioData[f]), usuarioData.id]
+        );
+        console.log('[Database] Usuário atualizado:', usuario.email);
+      } else {
+        // Insert
+        const fields = Object.keys(usuarioData);
+        const placeholders = fields.map(() => '?').join(', ');
+        const values = fields.map(f => usuarioData[f]);
+        
+        console.log('[Database] Inserindo usuário:', { 
+          email: usuario.email, 
+          fields: fields.join(', '),
+          valuesCount: values.length 
+        });
+        
+        await this.db.runAsync(
+          `INSERT INTO ${TABLES.USUARIOS} (${fields.join(', ')}) VALUES (${placeholders})`,
+          values
+        );
+        console.log('[Database] Usuário inserido:', usuario.email);
+      }
+      
+      // Verificar se foi salvo
+      const verificado = await this.getUsuarioByEmail(usuario.email);
+      if (verificado) {
+        console.log('[Database] ✅ Usuário verificado:', { 
+          email: (verificado as any).email, 
+          senha: (verificado as any).senha ? '***' : 'VAZIA',
+          status: (verificado as any).status 
+        });
+      } else {
+        console.error('[Database] ❌ Usuário não encontrado após insert!');
+      }
+      
+    } catch (error) {
+      console.error('[Database] Erro ao salvar usuário:', error);
+      throw error;
     }
-    
-    console.log('[Database] Usuário salvo:', usuario.email);
   }
 
   // ==========================================================================
@@ -1259,6 +1303,43 @@ class DatabaseService {
       }
       console.log('[Database] Rotas padrão inicializadas');
     }
+  }
+
+  /**
+   * Diagnóstico do banco de dados - verifica se tudo está funcionando
+   */
+  async diagnosticar(): Promise<void> {
+    console.log('=== DIAGNÓSTICO DO BANCO DE DADOS ===');
+    
+    try {
+      if (!this.db) {
+        console.log('❌ Banco não inicializado');
+        return;
+      }
+      
+      console.log('✅ Banco está inicializado');
+      
+      // Verificar tabelas existentes
+      const tabelas = await this.db.getAllAsync<{name: string}>(
+        `SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`
+      );
+      console.log('📋 Tabelas:', tabelas?.map(t => t.name).join(', '));
+      
+      // Verificar usuários
+      const usuarios = await this.db.getAllAsync(
+        `SELECT id, email, nome, status, senha FROM ${TABLES.USUARIOS}`
+      );
+      console.log('👤 Usuários:', JSON.stringify(usuarios, null, 2));
+      
+      // Verificar rotas
+      const rotas = await this.getRotas();
+      console.log('🗺️ Rotas:', rotas.length);
+      
+    } catch (error) {
+      console.error('❌ Erro no diagnóstico:', error);
+    }
+    
+    console.log('=== FIM DO DIAGNÓSTICO ===');
   }
 }
 

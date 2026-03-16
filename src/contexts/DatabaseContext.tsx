@@ -61,6 +61,9 @@ export function DatabaseProvider({ children }: DatabaseProviderProps) {
       await AuthService.inicializar();
       logger.info('[DatabaseContext] Auth inicializado');
       
+      // 4. Diagnóstico
+      await databaseService.diagnosticar();
+      
       setIsReady(true);
       logger.info('[DatabaseContext] ✅ Pronto para uso');
       
