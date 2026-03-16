@@ -12,7 +12,7 @@
  */
 
 import React from 'react';
-import { StatusBar, LogBox, View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { StatusBar, LogBox, View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AppNavigator from './src/navigation/AppNavigator';
 
 // Contexts
+import { DatabaseProvider, useDatabase } from './src/contexts/DatabaseContext';
 import { AuthProvider } from './src/contexts/AuthContext';
 import { SyncProvider } from './src/contexts/SyncContext';
 import { DashboardProvider } from './src/contexts/DashboardContext';
@@ -36,8 +37,6 @@ import { getBrandingConfig } from './src/config/branding';
 
 // Services
 import { apiService } from './src/services/ApiService';
-import { databaseService } from './src/services/DatabaseService';
-import AuthService from './src/services/AuthService';
 import logger from './src/utils/logger';
 
 // Config
@@ -49,7 +48,8 @@ import { ENV } from './src/config/env';
 
 // Ignorar warnings específicos do React Native em desenvolvimento
 if (__DEV__) {
-  LogBox.ignoreLogs([    'Non-serializable values were found in the navigation state',
+  LogBox.ignoreLogs([
+    'Non-serializable values were found in the navigation state',
     'VirtualizedLists should never be nested',
   ]);
   logger.setEnabled(true);
@@ -80,9 +80,6 @@ class ErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     logger.error('ErrorBoundary caught error', { error, errorInfo }, 'App');
-    
-    // Opcional: enviar para serviço de monitoramento
-    // Sentry.captureException(error, { extra: { errorInfo } });
   }
 
   handleRetry = () => {
@@ -94,11 +91,12 @@ class ErrorBoundary extends React.Component<
       return (
         <SafeAreaProvider>
           <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-          <ErrorScreen 
-            error={this.state.error} 
-            onRetry={this.handleRetry} 
+          <ErrorScreen
+            error={this.state.error}
+            onRetry={this.handleRetry}
           />
-        </SafeAreaProvider>      );
+        </SafeAreaProvider>
+      );
     }
 
     return this.props.children;
@@ -118,10 +116,6 @@ function ErrorScreen({ error, onRetry }: ErrorScreenProps) {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      {/* 
-        Em produção, substitua por um componente real de erro
-        com branding dinâmico via useBranding()
-      */}
       <GestureHandlerRootView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <ErrorScreenContent error={error} onRetry={onRetry} />
@@ -132,35 +126,36 @@ function ErrorScreen({ error, onRetry }: ErrorScreenProps) {
 
 function ErrorScreenContent({ error, onRetry }: ErrorScreenProps) {
   const { primaryColor } = getBrandingConfig();
-  
+
   return (
     <GestureHandlerRootView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: '#FFFFFF' }}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
+
       {/* Ícone de erro */}
-      <View style={{ 
-        width: 80, 
-        height: 80, 
-        borderRadius: 40, 
-        backgroundColor: `${primaryColor}1A`, 
-        justifyContent: 'center', 
+      <View style={{
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: `${primaryColor}1A`,
+        justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 24 
+        marginBottom: 24
       }}>
-        <Ionicons name="alert-circle" size={40} color={primaryColor} />      </View>
-      
+        <Ionicons name="alert-circle" size={40} color={primaryColor} />
+      </View>
+
       {/* Título */}
       <Text style={{ fontSize: 20, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>
         Oops! Algo deu errado
       </Text>
-      
+
       {/* Mensagem */}
       <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 24 }}>
-        {__DEV__ && error?.message 
-          ? error.message 
+        {__DEV__ && error?.message
+          ? error.message
           : 'Ocorreu um erro inesperado. Tente novamente ou entre em contato com o suporte.'}
       </Text>
-      
+
       {/* Botão de retry */}
       <TouchableOpacity
         onPress={onRetry}
@@ -179,7 +174,7 @@ function ErrorScreenContent({ error, onRetry }: ErrorScreenProps) {
           Tentar novamente
         </Text>
       </TouchableOpacity>
-      
+
       {/* Debug info (apenas em dev) */}
       {__DEV__ && error && (
         <ScrollView style={{ marginTop: 24, maxHeight: 200 }}>
@@ -193,10 +188,29 @@ function ErrorScreenContent({ error, onRetry }: ErrorScreenProps) {
 }
 
 // ============================================================================
+// TELA DE LOADING
+// ============================================================================
+
+function LoadingScreen() {
+  const { primaryColor } = getBrandingConfig();
+  
+  return (
+    <GestureHandlerRootView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <ActivityIndicator size="large" color={primaryColor} />
+      <Text style={{ marginTop: 16, fontSize: 16, color: '#64748B' }}>
+        Inicializando banco de dados...
+      </Text>
+    </GestureHandlerRootView>
+  );
+}
+
+// ============================================================================
 // COMPONENTE PRINCIPAL DO APP
 // ============================================================================
 
-function AppContent() {  return (
+function AppContent() {
+  return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <StatusBar
@@ -212,122 +226,95 @@ function AppContent() {  return (
 }
 
 // ============================================================================
-// APP WRAPPER COM TODOS PROVIDERS
+// APP WRAPPER - AGUARDA BANCO PRONTO
+// ============================================================================
+
+function AppWithDatabase() {
+  const { isReady, isLoading, error } = useDatabase();
+
+  // Configurar API no início
+  React.useEffect(() => {
+    if (ENV.API_URL) {
+      apiService.setBaseURL(ENV.API_URL);
+      logger.info('API configurada', { url: ENV.API_URL }, 'App');
+    }
+
+    if (ENV.USE_MOCK) {
+      logger.warn('Modo MOCK ativado - dados fictícios em uso', undefined, 'App');
+    }
+
+    logger.info('Aplicação configurada', {
+      appName: ENV.APP_NAME,
+      version: ENV.APP_VERSION,
+      debug: ENV.DEBUG
+    }, 'App');
+  }, []);
+
+  // Mostrar erro se houver
+  if (error) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <ErrorScreen
+          error={new Error(error)}
+          onRetry={() => window.location?.reload?.()}
+        />
+      </SafeAreaProvider>
+    );
+  }
+
+  // Mostrar loading enquanto inicializa
+  if (isLoading || !isReady) {
+    return <LoadingScreen />;
+  }
+
+  // App pronto
+  return (
+    <AuthProvider>
+      <SyncProvider
+        config={{
+          autoSyncEnabled: true,
+          autoSyncInterval: ENV.SYNC_INTERVAL,
+          syncOnAppStart: true,
+          syncOnAppResume: true,
+          warnBeforeLargeSync: true,
+          maxRecordsPerSync: ENV.MAX_RECORDS_PER_SYNC,
+        }}
+      >
+        <DashboardProvider
+          usuarioNome="Usuário"
+          usuarioTipo="Administrador"
+        >
+          <LocacaoProvider>
+            <ClienteProvider>
+              <ProdutoProvider>
+                <CobrancaProvider>
+                  <RotaProvider>
+                    <AppContent />
+                  </RotaProvider>
+                </CobrancaProvider>
+              </ProdutoProvider>
+            </ClienteProvider>
+          </LocacaoProvider>
+        </DashboardProvider>
+      </SyncProvider>
+    </AuthProvider>
+  );
+}
+
+// ============================================================================
+// APP PRINCIPAL
 // ============================================================================
 
 export default function App() {
-  // Configurar API e serviços no início
-  React.useEffect(() => {
-    const inicializarApp = async () => {
-      try {
-        // Configurar URL da API
-        if (ENV.API_URL) {
-          apiService.setBaseURL(ENV.API_URL);
-          logger.info('API configurada', { url: ENV.API_URL }, 'App');
-        }
-        
-        // Configurar modo mock
-        if (ENV.USE_MOCK) {
-          logger.warn('Modo MOCK ativado - dados fictícios em uso', undefined, 'App');
-        }
-        
-        // Inicializar banco de dados
-        await databaseService.initialize();
-        logger.info('Banco de dados inicializado', undefined, 'App');
-        
-        // Inicializar dados padrão (atributos de produto, usuário admin)
-        await databaseService.inicializarAtributosPadrao();
-        await databaseService.inicializarRotasPadrao();
-        await AuthService.inicializar();
-        logger.info('Dados padrão inicializados', undefined, 'App');
-        
-        logger.info('Aplicação inicializada', { 
-          appName: ENV.APP_NAME, 
-          version: ENV.APP_VERSION,
-          debug: ENV.DEBUG 
-        }, 'App');
-      } catch (error) {
-        logger.error('Erro ao inicializar aplicação', error, 'App');
-      }
-    };
-    
-    inicializarApp();
-    
-    // Cleanup
-    return () => {
-      logger.info('Aplicação encerrada', undefined, 'App');
-    };
-  }, []);
-
-  // Obter clientId dinamicamente (ex: do AsyncStorage ou API)
-  // Em produção, busque do perfil do usuário ou configuração remota
-  const clientId = undefined; // ou: await AsyncStorage.getItem('@app:clientId')
+  const clientId = undefined;
 
   return (
     <ErrorBoundary>
-      {/* 
-        ORDEM DOS PROVIDERS É IMPORTANTE!
-        Providers que dependem de outros devem vir depois.
-        BrandingProvider deve ser o primeiro para aplicar cores em todos.
-      */}
-      
-      {/* 0. White Label - Branding (aplica cores e textos em todo o app) */}
       <BrandingProvider clientId={clientId}>
-        
-        {/* 1. Auth - Base para autenticação e permissões */}
-        <AuthProvider>
-          
-          {/* 2. Sync - Sincronização offline-first (depende de Auth para dispositivo) */}
-          <SyncProvider
-            config={{
-              autoSyncEnabled: true,
-              autoSyncInterval: ENV.SYNC_INTERVAL,
-              syncOnAppStart: true,
-              syncOnAppResume: true,
-              warnBeforeLargeSync: true,
-              maxRecordsPerSync: ENV.MAX_RECORDS_PER_SYNC,
-            }}
-          >
-            
-            {/* 3. Dashboard - Métricas e resumo (pode depender de Auth e Sync) */}
-            <DashboardProvider
-              usuarioNome="Usuário"
-              usuarioTipo="Administrador"
-            >
-              
-              {/* 4. Locacao - Core do negócio de locações */}
-              <LocacaoProvider>
-                
-                {/* 5. Cliente - Gestão de clientes */}
-                <ClienteProvider>
-                  
-                  {/* 6. Produto - Gestão de produtos/equipamentos */}
-                  <ProdutoProvider>
-                    
-                    {/* 7. Cobranca - Fluxo de cobranças e pagamentos */}
-                    <CobrancaProvider>
-                      
-                      {/* 8. Rota - Rotas de atendimento */}
-                      <RotaProvider>
-                        
-                        {/* App Content - Navegação e telas */}                        <AppContent />
-                        
-                      </RotaProvider>
-                      
-                    </CobrancaProvider>
-                    
-                  </ProdutoProvider>
-                  
-                </ClienteProvider>
-                
-              </LocacaoProvider>
-              
-            </DashboardProvider>
-            
-          </SyncProvider>
-          
-        </AuthProvider>
-        
+        <DatabaseProvider>
+          <AppWithDatabase />
+        </DatabaseProvider>
       </BrandingProvider>
     </ErrorBoundary>
   );

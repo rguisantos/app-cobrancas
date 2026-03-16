@@ -47,6 +47,26 @@ const TABLES = {
 class DatabaseService {
   private db: SQLite.SQLiteDatabase | null = null;
   private isInitialized = false;
+  private initPromise: Promise<void> | null = null;
+
+  /**
+   * Verifica se o banco está pronto
+   */
+  isReady(): boolean {
+    return this.isInitialized && this.db !== null;
+  }
+
+  /**
+   * Aguarda o banco estar pronto
+   */
+  async waitForReady(): Promise<void> {
+    if (this.isInitialized) return;
+    if (this.initPromise) {
+      await this.initPromise;
+      return;
+    }
+    throw new Error('Banco de dados não foi inicializado');
+  }
 
   // ==========================================================================
   // INICIALIZAÇÃO
@@ -55,13 +75,30 @@ class DatabaseService {
    * Inicializa o banco de dados e cria as tabelas se necessário
    */
   async initialize(): Promise<void> {
-    try {
-      if (this.isInitialized) {
-        console.log('[Database] Já inicializado');
-        return;
+    // Se já inicializado, retorna imediatamente
+    if (this.isInitialized) {
+      console.log('[Database] Já inicializado');
+      return;
+    }
+
+    // Se já está inicializando, aguarda
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+
+    // Inicia a inicialização
+    this.initPromise = this._doInitialize();
     
+    try {
+      await this.initPromise;
+    } catch (error) {
+      this.initPromise = null;
+      throw error;
+    }
   }
 
+  private async _doInitialize(): Promise<void> {
+    try {
       console.log('[Database] Inicializando banco de dados...');
       
       // Abrir/criar banco de dados
@@ -82,9 +119,7 @@ class DatabaseService {
     } catch (error) {
       console.error('[Database] Erro ao inicializar:', error);
       throw new Error(`Falha ao inicializar banco de dados: ${error}`);
-  
-  }
-
+    }
   }
 
   /**
@@ -419,6 +454,9 @@ class DatabaseService {
     entityType: EntityType,
     entity: T
   ): Promise<void> {
+    if (!this.isReady()) {
+      await this.waitForReady();
+    }
     if (!this.db) throw new Error('Database não inicializado');
 
     const tableName = this.getTableName(entityType);
@@ -438,7 +476,7 @@ class DatabaseService {
             ...entity,
             createdAt: now,
             updatedAt: now,
-            needsSync: true,
+            needsSync: 1,
           } as T;
           await this.insert(tableName, newEntity);
       
@@ -470,6 +508,9 @@ class DatabaseService {
    * Busca entidade por ID
    */
   async getById<T>(entityType: EntityType, id: string): Promise<T | null> {
+    if (!this.isReady()) {
+      await this.waitForReady();
+    }
     if (!this.db) throw new Error('Database não inicializado');
 
     const tableName = this.getTableName(entityType);
@@ -496,6 +537,9 @@ class DatabaseService {
     where?: string,
     params: any[] = []
   ): Promise<T[]> {
+    if (!this.isReady()) {
+      await this.waitForReady();
+    }
     if (!this.db) throw new Error('Database não inicializado');
 
     const tableName = this.getTableName(entityType);
@@ -526,6 +570,9 @@ class DatabaseService {
     entityType: EntityType,
     entity: T
   ): Promise<void> {
+    if (!this.isReady()) {
+      await this.waitForReady();
+    }
     if (!this.db) throw new Error('Database não inicializado');
 
     const tableName = this.getTableName(entityType);
@@ -577,6 +624,9 @@ class DatabaseService {
    * Remove entidade (soft delete)
    */
   async delete(entityType: EntityType, id: string): Promise<void> {
+    if (!this.isReady()) {
+      await this.waitForReady();
+    }
     if (!this.db) throw new Error('Database não inicializado');
 
     const tableName = this.getTableName(entityType);
@@ -869,7 +919,7 @@ class DatabaseService {
 
     await this.db.runAsync(
       `INSERT INTO ${tableName} (${fields.join(', ')}) VALUES (${placeholders})`,
-      ...values
+      values
     );
 
   }
@@ -914,6 +964,9 @@ class DatabaseService {
    * Busca todos os tipos de produto
    */
   async getTiposProduto(): Promise<Array<{id: string, nome: string}>> {
+    if (!this.isReady()) {
+      await this.waitForReady();
+    }
     if (!this.db) throw new Error('Database não inicializado');
     try {
       const results = await this.db.getAllAsync<{id: string, nome: string}>(
@@ -1093,6 +1146,9 @@ class DatabaseService {
    * Busca usuário por email
    */
   async getUsuarioByEmail(email: string): Promise<any | null> {
+    if (!this.isReady()) {
+      await this.waitForReady();
+    }
     if (!this.db) throw new Error('Database não inicializado');
     try {
       const result = await this.db.getFirstAsync(
@@ -1110,6 +1166,9 @@ class DatabaseService {
    * Salva usuário
    */
   async saveUsuario(usuario: any): Promise<void> {
+    if (!this.isReady()) {
+      await this.waitForReady();
+    }
     if (!this.db) throw new Error('Database não inicializado');
     const now = new Date().toISOString();
     
@@ -1153,6 +1212,9 @@ class DatabaseService {
    * Busca todas as rotas ativas
    */
   async getRotas(): Promise<Array<{id: string, descricao: string, status: string}>> {
+    if (!this.isReady()) {
+      await this.waitForReady();
+    }
     if (!this.db) throw new Error('Database não inicializado');
     try {
       const results = await this.db.getAllAsync<{id: string, descricao: string, status: string}>(

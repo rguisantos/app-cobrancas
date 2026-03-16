@@ -141,17 +141,27 @@ class ClienteRepository {
   async save(cliente: Omit<Cliente, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'> & { id?: string }): Promise<Cliente> {
     try {
       // Gerar ID único se não existir
+      const id = cliente.id || this.generateId();
+      const now = new Date().toISOString();
+      
+      // Mapear cpfCnpj para cpf ou cnpj baseado no tipoPessoa
+      const cpf = cliente.tipoPessoa === 'Fisica' ? (cliente.cpfCnpj || cliente.cpf || '') : '';
+      const cnpj = cliente.tipoPessoa === 'Juridica' ? (cliente.cpfCnpj || cliente.cnpj || '') : '';
+      
       const clienteCompleto: Cliente = {
         ...cliente,
-        id: cliente.id || this.generateId(),
+        id,
+        cpf,
+        cnpj,
         tipo: this.entityType,
+        identificador: cliente.tipoPessoa === 'Fisica' ? cpf : cnpj,
         syncStatus: 'pending',
         lastSyncedAt: undefined,
-        needsSync: true,
+        needsSync: 1, // Integer para SQLite
         version: 0,
         deviceId: await databaseService.getDeviceId(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
       };
 
       await databaseService.save(this.entityType, clienteCompleto);

@@ -124,7 +124,7 @@ class UsuarioRepository {
         permissoesMobile: JSON.stringify(usuario.permissoes?.mobile || {}),
         rotasPermitidas: JSON.stringify(usuario.rotasPermitidas || []),
         syncStatus: 'pending',
-        needsSync: true,
+        needsSync: 1, // Integer para SQLite
         createdAt: now,
         updatedAt: now,
       };

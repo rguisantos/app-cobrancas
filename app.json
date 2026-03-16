@@ -41,6 +41,7 @@
     },
     "plugins": [
       "expo-sqlite",
+      "expo-updates",
       [
         "expo-build-properties",
         {
@@ -50,6 +51,8 @@
         }
       ]
     ],
+    "updates": {},
+    "runtimeVersion": "1.0.0",
     "extra": {
       "API_URL": "https://api.suaempresa.com.br",
       "USE_MOCK": "true",
@@ -60,8 +63,9 @@
       "MAX_RECORDS_PER_SYNC": "100",
       "TIMEOUT": "30000",
       "eas": {
-        "projectId": "775e65c2-83ca-493c-aa5e-bce591d1bec8"
+        "projectId": "591a2817-9aed-4a61-81a0-588489597cb6"
       }
-    }
+    },
+    "owner": "rguisantoss"
   }
 }

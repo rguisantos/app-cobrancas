@@ -209,8 +209,9 @@ class ProdutoRepository {
         tipo: this.entityType,
         syncStatus: 'pending',
         lastSyncedAt: undefined,
-        needsSync: true,
-        version: 0,        deviceId: await databaseService.getDeviceId(),
+        needsSync: 1, // Integer para SQLite
+        version: 0,
+        deviceId: await databaseService.getDeviceId(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -319,15 +320,20 @@ class ProdutoRepository {
   }
 
   /**
-   * Busca avançada (identificador, tipo, descrição, tamanho)   */
+   * Busca avançada (identificador, tipo, descrição, tamanho)
+   */
   async search(termo: string): Promise<ProdutoListItem[]> {
     if (!termo || termo.trim().length === 0) {
       return this.getAll({ statusProduto: 'Ativo' });
-  
+    }
+    return this.getAll({ termoBusca: termo });
   }
 
-    return this.getAll({ termoBusca: termo });
-
+  /**
+   * Alias para search (compatibilidade)
+   */
+  async buscar(termo: string): Promise<ProdutoListItem[]> {
+    return this.search(termo);
   }
 
   /**

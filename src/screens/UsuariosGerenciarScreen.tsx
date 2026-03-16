@@ -164,7 +164,7 @@ export default function UsuariosGerenciarScreen() {
         status: formData.status,
         bloqueado: false,
         syncStatus: 'pending',
-        needsSync: true,
+        needsSync: 1,
         version: 1,
         deviceId: '',
       };

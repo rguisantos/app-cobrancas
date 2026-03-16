@@ -6,6 +6,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Produto, ProdutoListItem, ProdutoFilters } from '../types';
 import { produtoRepository } from '../repositories/ProdutoRepository';
+import { useDatabase } from './DatabaseContext';
 
 // ============================================================================
 // INTERFACES
@@ -46,6 +47,9 @@ interface ProdutoProviderProps {
 }
 
 export function ProdutoProvider({ children }: ProdutoProviderProps) {
+  // Verificar se o banco está pronto
+  const { isReady } = useDatabase();
+  
   const [produtos, setProdutos] = useState<ProdutoListItem[]>([]);
   const [produtoSelecionado, setProdutoSelecionado] = useState<Produto | null>(null);  const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -153,12 +157,16 @@ export function ProdutoProvider({ children }: ProdutoProviderProps) {
   }
   }, []);
 
-  const refresh = useCallback(async () => {    await carregarProdutos();
+  const refresh = useCallback(async () => {
+    await carregarProdutos();
   }, [carregarProdutos]);
 
   useEffect(() => {
-    carregarProdutos();
-  }, [carregarProdutos]);
+    // Só carregar dados quando o banco estiver pronto
+    if (isReady) {
+      carregarProdutos();
+    }
+  }, [carregarProdutos, isReady]);
 
   const contextValue: ProdutoContextData = {
     produtos,

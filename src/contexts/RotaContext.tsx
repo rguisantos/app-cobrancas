@@ -6,6 +6,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Rota } from '../types';
 import { rotaRepository } from '../repositories/RotaRepository';
+import { useDatabase } from './DatabaseContext';
 
 // ============================================================================
 // INTERFACES
@@ -41,6 +42,9 @@ interface RotaProviderProps {
 }
 
 export function RotaProvider({ children }: RotaProviderProps) {
+  // Verificar se o banco está pronto
+  const { isReady } = useDatabase();
+  
   const [rotas, setRotas] = useState<Rota[]>([]);
   const [rotaSelecionada, setRotaSelecionada] = useState<Rota | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -96,8 +100,11 @@ export function RotaProvider({ children }: RotaProviderProps) {
   }, [carregarRotas]);
 
   useEffect(() => {
-    carregarRotas();
-  }, [carregarRotas]);
+    // Só carregar dados quando o banco estiver pronto
+    if (isReady) {
+      carregarRotas();
+    }
+  }, [carregarRotas, isReady]);
 
   const contextValue: RotaContextData = {    rotas,
     rotaSelecionada,

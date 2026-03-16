@@ -1,12 +1,13 @@
 /**
  * ClienteContext.tsx
  * Contexto para gerenciamento de estado de Clientes
- * Integração: Repositórios + Types
+ * Integração: Repositórios + Types + DatabaseContext
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { Cliente, ClienteListItem, ClienteFilters } from '../types';
 import { clienteRepository } from '../repositories/ClienteRepository';
+import { useDatabase } from './DatabaseContext';
 
 // ============================================================================
 // INTERFACES
@@ -55,6 +56,9 @@ interface ClienteProviderProps {
 }
 
 export function ClienteProvider({ children }: ClienteProviderProps) {
+  // Verificar se o banco está pronto
+  const { isReady } = useDatabase();
+  
   // Estado
   const [clientes, setClientes] = useState<ClienteListItem[]>([]);
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
@@ -223,8 +227,11 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
   // ==========================================================================
 
   useEffect(() => {
-    carregarClientes();
-  }, [carregarClientes]);
+    // Só carregar dados quando o banco estiver pronto
+    if (isReady) {
+      carregarClientes();
+    }
+  }, [carregarClientes, isReady]);
 
   // ==========================================================================
   // ESTADO DO CONTEXT

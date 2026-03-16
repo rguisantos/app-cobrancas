@@ -115,7 +115,7 @@ class AuthService {
       status: 'Ativo',
       bloqueado: false,
       syncStatus: 'pending',
-      needsSync: true,
+      needsSync: 1,
       version: 1,
       deviceId: '',
     });
@@ -156,7 +156,7 @@ class AuthService {
         status: 'Ativo',
         bloqueado: false,
         syncStatus: 'pending',
-        needsSync: true,
+        needsSync: 1,
         version: 1,
         deviceId: '',
       });

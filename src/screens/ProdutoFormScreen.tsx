@@ -41,40 +41,17 @@ import { ProdutosStackParamList } from '../navigation/ProdutosStack';
 import { masks } from '../utils/masks';
 import { validators } from '../utils/validators';
 
+// Services
+import atributosProdutoService, { AtributoItem } from '../services/AtributosProdutoService';
+
 // ============================================================================
 // TIPOS DE ROTA
 // ============================================================================
 
 type ProdutoFormRouteProp = RouteProp<ProdutosStackParamList, 'ProdutoForm'>;
 
-// ============================================================================// DADOS PARA SELECTS (mock - em produção viriam da API)
+// ============================================================================// DADOS PARA SELECTS
 // ============================================================================
-
-const TIPOS_PRODUTO = [
-  { id: '1', nome: 'Bilhar' },
-  { id: '2', nome: 'Jukebox Padrão Grande' },
-  { id: '3', nome: 'Jukebox Padrão Pequeno' },
-  { id: '4', nome: 'Mesa' },
-  { id: '5', nome: 'Grua' },
-  { id: '6', nome: 'Ficha' },
-];
-
-const DESCRICOES_PRODUTO = [
-  { id: '1', nome: 'Azul' },
-  { id: '2', nome: 'Branco/Carijo' },
-  { id: '3', nome: 'Preto' },
-  { id: '4', nome: 'Vermelho' },
-  { id: '5', nome: 'Verde' },
-];
-
-const TAMANHOS_PRODUTO = [
-  { id: '1', nome: '2,00' },
-  { id: '2', nome: '2,20' },
-  { id: '3', nome: '2,40' },
-  { id: '4', nome: 'Grande' },
-  { id: '5', nome: 'Média' },
-  { id: '6', nome: 'Pequena' },
-];
 
 const CONSERVACOES: Conservacao[] = ['Ótima', 'Boa', 'Regular', 'Ruim', 'Péssima'];
 const STATUS_PRODUTO: StatusProduto[] = ['Ativo', 'Inativo', 'Manutenção'];
@@ -115,6 +92,39 @@ export default function ProdutoFormScreen() {
   const [showConservacaoPicker, setShowConservacaoPicker] = useState(false);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [carregandoProduto, setCarregandoProduto] = useState(false);
+  
+  // Atributos carregados do banco
+  const [tiposProduto, setTiposProduto] = useState<AtributoItem[]>([]);
+  const [descricoesProduto, setDescricoesProduto] = useState<AtributoItem[]>([]);
+  const [tamanhosProduto, setTamanhosProduto] = useState<AtributoItem[]>([]);
+  const [carregandoAtributos, setCarregandoAtributos] = useState(false);
+
+  // ==========================================================================
+  // CARREGAMENTO DE ATRIBUTOS DO BANCO
+  // ==========================================================================
+
+  useEffect(() => {
+    carregarAtributos();
+  }, []);
+
+  const carregarAtributos = async () => {
+    setCarregandoAtributos(true);
+    try {
+      const [tipos, descricoes, tamanhos] = await Promise.all([
+        atributosProdutoService.getAll('tipo'),
+        atributosProdutoService.getAll('descricao'),
+        atributosProdutoService.getAll('tamanho'),
+      ]);
+      setTiposProduto(tipos);
+      setDescricoesProduto(descricoes);
+      setTamanhosProduto(tamanhos);
+      console.log('[ProdutoFormScreen] Atributos carregados:', { tipos: tipos.length, descricoes: descricoes.length, tamanhos: tamanhos.length });
+    } catch (error) {
+      console.error('[ProdutoFormScreen] Erro ao carregar atributos:', error);
+    } finally {
+      setCarregandoAtributos(false);
+    }
+  };
 
   // ==========================================================================
   // CARREGAMENTO (MODO EDIÇÃO)
@@ -461,8 +471,8 @@ export default function ProdutoFormScreen() {
               {renderPicker(
                 'Tipo *',
                 formData.tipoNome || '',
-                'Selecionar tipo',
-                TIPOS_PRODUTO,
+                carregandoAtributos ? 'Carregando...' : 'Selecionar tipo',
+                tiposProduto,
                 handleSelectTipo,
                 showTipoPicker,
                 () => setShowTipoPicker(!showTipoPicker),
@@ -473,8 +483,8 @@ export default function ProdutoFormScreen() {
               {renderPicker(
                 'Descrição *',
                 formData.descricaoNome || '',
-                'Selecionar descrição',
-                DESCRICOES_PRODUTO,
+                carregandoAtributos ? 'Carregando...' : 'Selecionar descrição',
+                descricoesProduto,
                 handleSelectDescricao,
                 showDescricaoPicker,
                 () => setShowDescricaoPicker(!showDescricaoPicker),
@@ -485,8 +495,8 @@ export default function ProdutoFormScreen() {
               {renderPicker(
                 'Tamanho *',
                 formData.tamanhoNome || '',
-                'Selecionar tamanho',
-                TAMANHOS_PRODUTO,
+                carregandoAtributos ? 'Carregando...' : 'Selecionar tamanho',
+                tamanhosProduto,
                 handleSelectTamanho,
                 showTamanhoPicker,
                 () => setShowTamanhoPicker(!showTamanhoPicker),

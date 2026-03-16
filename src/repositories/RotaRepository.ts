@@ -94,7 +94,7 @@ class RotaRepository {
         status: status as 'Ativo' | 'Inativo',
         tipo: 'rota',
         syncStatus: 'pending',
-        needsSync: true,
+        needsSync: 1,
         version: 1,
         deviceId: '',
         createdAt: new Date().toISOString(),
