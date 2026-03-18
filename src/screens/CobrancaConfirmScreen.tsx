@@ -1,453 +1,288 @@
 /**
  * CobrancaConfirmScreen.tsx
- * Tela de confirmação de cobrança - FLUXO PRINCIPAL
- * 
- * Funcionalidades:
- * - Leitura do relógio atual
- * - Cálculo automático de valores
- * - Desconto em partidas e dinheiro
- * - Aplicação de percentual
- * - Confirmação de pagamento
- * - Registro de saldo devedor
+ * ✅ Corrigido: usa dados reais da locação + atualiza ultimaLeituraRelogio após salvar
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
+  View, Text, StyleSheet, ScrollView, TextInput,
+  TouchableOpacity, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }      from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView }  from 'react-native-safe-area-context';
 
-// Contexts
-import { useLocacao } from '../contexts/LocacaoContext';
-import { useCobranca } from '../contexts/CobrancaContext';
-import { useAuth } from '../contexts/AuthContext';
-
-// Types
-import { Locacao, HistoricoCobranca } from '../types';
+import { useLocacao }    from '../contexts/LocacaoContext';
+import { useCobranca }   from '../contexts/CobrancaContext';
+import { cobrancaService } from '../services/CobrancaService';
+import { formatarMoeda, formatarNumero } from '../utils/currency';
+import { masks }         from '../utils/masks';
 import { CobrancasStackParamList } from '../navigation/CobrancasStack';
 
-// Services
-import { cobrancaService } from '../services/CobrancaService';
-
-// Utils
-import { formatarMoeda, formatarNumero } from '../utils/currency';
-import { masks } from '../utils/masks';
-
-// ============================================================================
-// TIPOS DE ROTA
-// ============================================================================
 type CobrancaConfirmRouteProp = RouteProp<CobrancasStackParamList, 'CobrancaConfirm'>;
 
-// ============================================================================
-// COMPONENTE PRINCIPAL
-// ============================================================================
-
 export default function CobrancaConfirmScreen() {
-  const route = useRoute<CobrancaConfirmRouteProp>();
+  const route      = useRoute<CobrancaConfirmRouteProp>();
   const navigation = useNavigation();
-  const { locacaoSelecionada, selecionarLocacao, carregarLocacoesPorCliente } = useLocacao();
+
+  const { locacaoSelecionada, selecionarLocacao, atualizarLocacao } = useLocacao();
   const { registrarCobranca, carregando } = useCobranca();
-  const { user } = useAuth();
 
   const { locacaoId, cobrancaId, modo } = route.params;
 
-  // Estado de cálculo
-  const [relogioAnterior, setRelogioAnterior] = useState<number>(0);
-  const [relogioAtual, setRelogioAtual] = useState<string>('');
-  const [descontoPartidas, setDescontoPartidas] = useState<string>('');
-  const [descontoDinheiro, setDescontoDinheiro] = useState<string>('');
-  const [valorRecebido, setValorRecebido] = useState<string>('');
-  const [observacao, setObservacao] = useState<string>('');
-
-  // Estado de cálculo (resultado)
-  const [calculo, setCalculo] = useState<any>(null);
-  const [validacao, setValidacao] = useState<any>(null);
-
-  // ==========================================================================
-  // CARREGAMENTO
-  // ==========================================================================
+  const [relogioAnterior, setRelogioAnterior] = useState(0);
+  const [relogioAtual,    setRelogioAtual]    = useState('');
+  const [descontoPartidas,setDescontoPartidas]= useState('');
+  const [descontoDinheiro,setDescontoDinheiro]= useState('');
+  const [valorRecebido,   setValorRecebido]   = useState('');
+  const [observacao,      setObservacao]      = useState('');
+  const [calculo,         setCalculo]         = useState<any>(null);
+  const [validacao,       setValidacao]       = useState<any>(null);
 
   useEffect(() => {
-    // Carregar dados reais da locação pelo ID
-    if (locacaoId) {
-      selecionarLocacao(locacaoId);
-    }
+    if (locacaoId) selecionarLocacao(locacaoId);
   }, [locacaoId, selecionarLocacao]);
 
-  // Atualizar relógio anterior quando a locação for carregada
   useEffect(() => {
     if (locacaoSelecionada) {
-      const relogioAnteriorValue = parseInt(
-        locacaoSelecionada.ultimaLeituraRelogio?.toString() || 
-        locacaoSelecionada.numeroRelogio || 
-        '0', 
-        10
+      setRelogioAnterior(
+        parseInt(locacaoSelecionada.ultimaLeituraRelogio?.toString() || locacaoSelecionada.numeroRelogio || '0', 10)
       );
-      setRelogioAnterior(relogioAnteriorValue);
     }
   }, [locacaoSelecionada]);
 
-  // ==========================================================================
-  // CÁLCULOS
-  // ==========================================================================
-
   useEffect(() => {
-    if (!relogioAtual) {
-      setCalculo(null);
-      return;
-  
-  }
-
-    const relogioAtualNum = parseInt(relogioAtual.replace(/\D/g, ''), 10);
-    
-    if (isNaN(relogioAtualNum) || relogioAtualNum < relogioAnterior) {
-      setValidacao({
-        valida: false,
-        erros: ['Relógio atual não pode ser menor que o anterior'],
-        avisos: [],
-      });
-      setCalculo(null);
-      return;
-  
-  }
-
+    if (!relogioAtual) { setCalculo(null); setValidacao(null); return; }
+    const atual = parseInt(relogioAtual.replace(/\D/g, ''), 10);
+    if (isNaN(atual)) { setCalculo(null); return; }
     const descontoPartidasNum = parseInt(descontoPartidas.replace(/\D/g, ''), 10) || 0;
-    const descontoDinheiroStr = descontoDinheiro.replace(',', '.');
-    const descontoDinheiroNum = parseFloat(descontoDinheiroStr) || 0;
-
-    // Usar valores da locação selecionada ou defaults
-    const valorFicha = locacaoSelecionada?.precoFicha || 3.00;
+    const descontoDinheiroNum = parseFloat(descontoDinheiro.replace(',', '.')) || 0;
+    const valorFicha      = locacaoSelecionada?.precoFicha      || 3.00;
     const percentualEmpresa = locacaoSelecionada?.percentualEmpresa || 50;
-
-    // Usar o serviço de cálculo
     const input = {
-      relogioAnterior,
-      relogioAtual: relogioAtualNum,
-      valorFicha,
-      percentualEmpresa,
-      descontoPartidasQtd: descontoPartidasNum,
-      descontoDinheiro: descontoDinheiroNum,
-      formaPagamento: 'PercentualReceber' as const,
+      relogioAnterior, relogioAtual: atual, valorFicha, percentualEmpresa,
+      descontoPartidasQtd: descontoPartidasNum, descontoDinheiro: descontoDinheiroNum,
+      formaPagamento: (locacaoSelecionada?.formaPagamento || 'PercentualReceber') as any,
     };
-
-    const resultado = cobrancaService.calcularCobranca(input);
-    const validacaoResultado = cobrancaService.validarCobranca(input);
-
-    setCalculo(resultado);
-    setValidacao(validacaoResultado);
+    setCalculo(cobrancaService.calcularCobranca(input));
+    setValidacao(cobrancaService.validarCobranca(input));
   }, [relogioAtual, relogioAnterior, descontoPartidas, descontoDinheiro, locacaoSelecionada]);
 
-  // ==========================================================================
-  // HANDLERS
-  // ==========================================================================
+  const valorRecebidoNum = parseFloat(valorRecebido.replace(',', '.')) || 0;
+  const saldoDevedor = calculo ? Math.max(0, calculo.totalClientePaga - valorRecebidoNum) : 0;
+  const troco        = calculo ? Math.max(0, valorRecebidoNum - calculo.totalClientePaga) : 0;
+
   const handleConfirmar = useCallback(async () => {
     if (!calculo || !validacao?.valida) {
-      Alert.alert('Erro', 'Por favor, verifique os dados da cobrança');
-      return;
-  
-  }
-
-    if (!locacaoSelecionada) {
-      Alert.alert('Erro', 'Locação não encontrada');
+      Alert.alert('Dados inválidos', validacao?.erros?.join('\n') || 'Verifique os dados');
       return;
     }
-
-    const valorRecebidoNum = parseFloat(valorRecebido.replace(',', '.')) || 0;
-
-    if (valorRecebidoNum < 0) {
-      Alert.alert('Erro', 'Valor recebido não pode ser negativo');
-      return;
-  
-  }
+    if (!locacaoSelecionada) { Alert.alert('Erro', 'Locação não encontrada'); return; }
+    if (valorRecebidoNum < 0) { Alert.alert('Erro', 'Valor recebido não pode ser negativo'); return; }
 
     try {
-      // Usar valores da locação selecionada
-      const valorFicha = locacaoSelecionada.precoFicha || 3.00;
-      const percentualEmpresa = locacaoSelecionada.percentualEmpresa || 50;
-
-      // Preparar dados para salvar usando dados reais da locação
+      const relogioAtualNum = parseInt(relogioAtual.replace(/\D/g, ''), 10);
       const dadosCobranca = {
-        locacaoId: String(locacaoSelecionada.id),
-        clienteId: String(locacaoSelecionada.clienteId),
-        clienteNome: locacaoSelecionada.clienteNome || '',
-        produtoIdentificador: locacaoSelecionada.produtoIdentificador || '',
-        dataInicio: new Date().toISOString(),
-        dataFim: new Date().toISOString(),
-        relogioAnterior,
-        relogioAtual: parseInt(relogioAtual.replace(/\D/g, ''), 10),
-        fichasRodadas: calculo.fichasRodadas,
-        valorFicha,
-        totalBruto: calculo.totalBruto,
-        descontoPartidasQtd: parseInt(descontoPartidas.replace(/\D/g, ''), 10) || 0,
+        locacaoId:             String(locacaoSelecionada.id),
+        clienteId:             String(locacaoSelecionada.clienteId),
+        clienteNome:           locacaoSelecionada.clienteNome || '',
+        produtoIdentificador:  locacaoSelecionada.produtoIdentificador || '',
+        dataInicio:            locacaoSelecionada.dataUltimaCobranca || locacaoSelecionada.dataLocacao || new Date().toISOString(),
+        dataFim:               new Date().toISOString(),
+        relogioAnterior,       relogioAtual: relogioAtualNum,
+        fichasRodadas:         calculo.fichasRodadas,
+        valorFicha:            locacaoSelecionada.precoFicha || 3.00,
+        totalBruto:            calculo.totalBruto,
+        descontoPartidasQtd:   parseInt(descontoPartidas.replace(/\D/g, ''), 10) || 0,
         descontoPartidasValor: calculo.descontoPartidasValor,
-        descontoDinheiro: calculo.descontoDinheiroValor,
-        percentualEmpresa,
+        descontoDinheiro:      calculo.descontoDinheiroValor,
+        percentualEmpresa:     locacaoSelecionada.percentualEmpresa || 50,
         subtotalAposDescontos: calculo.subtotalAposDescontoDinheiro,
-        valorPercentual: calculo.valorPercentual,
-        totalClientePaga: calculo.totalClientePaga,
-        valorRecebido: valorRecebidoNum,
+        valorPercentual:       calculo.valorPercentual,
+        totalClientePaga:      calculo.totalClientePaga,
+        valorRecebido:         valorRecebidoNum,
         observacao,
       };
 
       const cobranca = await registrarCobranca(dadosCobranca);
-
       if (cobranca) {
-        Alert.alert(
-          'Sucesso',
-          `Cobrança registrada!\nTotal: ${formatarMoeda(calculo.totalClientePaga)}\nRecebido: ${formatarMoeda(valorRecebidoNum)}`,
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.goBack(),
-            },          ]
-        );
+        // ✅ Atualizar leitura do relógio para próxima cobrança
+        await atualizarLocacao({
+          id:                   String(locacaoSelecionada.id),
+          ultimaLeituraRelogio: relogioAtualNum,
+          dataUltimaCobranca:   new Date().toISOString(),
+        });
+
+        const msg = [
+          `Total: ${formatarMoeda(calculo.totalClientePaga)}`,
+          `Recebido: ${formatarMoeda(valorRecebidoNum)}`,
+          saldoDevedor > 0 ? `Saldo devedor: ${formatarMoeda(saldoDevedor)}` : null,
+          troco        > 0 ? `Troco: ${formatarMoeda(troco)}` : null,
+        ].filter(Boolean).join('\n');
+
+        Alert.alert('Cobrança Registrada!', msg, [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
       } else {
         Alert.alert('Erro', 'Não foi possível registrar a cobrança');
-    
-  }
-    } catch (error) {
-      Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao registrar cobrança');
-  
-  }
-  }, [calculo, validacao, valorRecebido, locacaoSelecionada, relogioAnterior, relogioAtual, descontoPartidas, observacao, registrarCobranca, navigation]);
+      }
+    } catch (e) {
+      Alert.alert('Erro', e instanceof Error ? e.message : 'Erro ao registrar cobrança');
+    }
+  }, [calculo, validacao, valorRecebidoNum, locacaoSelecionada, relogioAnterior,
+      relogioAtual, descontoPartidas, observacao, saldoDevedor, troco,
+      registrarCobranca, atualizarLocacao, navigation]);
 
-  // ==========================================================================
-  // RENDER
-  // ==========================================================================
+  if (!locacaoSelecionada && locacaoId) {
+    return (
+      <SafeAreaView style={s.container}>
+        <View style={s.center}><ActivityIndicator size="large" color="#2563EB" /><Text style={s.loadingText}>Carregando...</Text></View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* ========================================================================== */}
-          {/* HEADER */}
-          {/* ========================================================================== */}
-          <View style={styles.header}>
-            <View style={styles.headerInfo}>
-              <Text style={styles.headerTitle}>Confirmar Cobrança</Text>
-              <Text style={styles.headerSubtitle}>
-                {modo === 'nova' ? 'Nova cobrança' : modo === 'parcial' ? 'Pagamento parcial' : 'Editar cobrança'}
+    <SafeAreaView style={s.container}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}
+          showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
+          {/* Header info locação */}
+          <View style={s.headerCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.clienteNome}>{locacaoSelecionada?.clienteNome || '—'}</Text>
+              <Text style={s.produtoInfo}>
+                Produto N° {locacaoSelecionada?.produtoIdentificador || '—'}
+                {locacaoSelecionada?.produtoTipo ? ` · ${locacaoSelecionada.produtoTipo}` : ''}
+              </Text>
+              <Text style={s.pagamentoInfo}>
+                {locacaoSelecionada?.percentualEmpresa}% empresa · R$ {(locacaoSelecionada?.precoFicha || 0).toFixed(2)}/ficha
               </Text>
             </View>
-            <View style={styles.headerStatus}>
-              <Text style={styles.statusLabel}>Status</Text>
-              <View style={[styles.statusBadge, styles.statusPendente]}>
-                <Text style={styles.statusText}>Pendente</Text>
-              </View>
-            </View>
           </View>
 
-          {/* ========================================================================== */}
-          {/* LEITURA DO RELÓGIO */}
-          {/* ========================================================================== */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Leitura do Relógio</Text>
-            <View style={styles.sectionCard}>
-              <View style={styles.relogioRow}>                <View style={styles.relogioField}>
-                  <Text style={styles.relogioLabel}>Relógio Anterior</Text>
-                  <Text style={styles.relogioValue}>{formatarNumero(relogioAnterior)}</Text>
+          {/* Relógio */}
+          <View style={s.section}><Text style={s.sectionTitle}>Leitura do Relógio</Text>
+            <View style={s.sectionCard}>
+              <View style={s.relogioRow}>
+                <View style={s.relogioField}>
+                  <Text style={s.relogioLabel}>Anterior</Text>
+                  <View style={s.relogioDisplay}><Text style={s.relogioValue}>{formatarNumero(relogioAnterior)}</Text></View>
                 </View>
-                <View style={styles.relogioField}>
-                  <Text style={styles.relogioLabel}>Relógio Atual *</Text>
+                <View style={{ paddingTop: 20 }}><Ionicons name="arrow-forward" size={20} color="#94A3B8" /></View>
+                <View style={s.relogioField}>
+                  <Text style={s.relogioLabel}>Atual *</Text>
                   <TextInput
-                    style={[styles.relogioInput, !validacao?.valida && styles.inputError]}
-                    placeholder="00000"
-                    placeholderTextColor="#94A3B8"
+                    style={[s.relogioInput, validacao && !validacao.valida && s.inputError]}
+                    placeholder="0" placeholderTextColor="#CBD5E1"
                     value={relogioAtual}
-                    onChangeText={(value) => setRelogioAtual(masks.relogio(value))}
-                    keyboardType="numeric"
+                    onChangeText={v => setRelogioAtual(masks.relogio(v))}
+                    keyboardType="numeric" maxLength={10}
                   />
                 </View>
               </View>
-
               {calculo && (
-                <View style={styles.calculoRow}>
-                  <Text style={styles.calculoLabel}>Fichas Rodadas</Text>
-                  <Text style={styles.calculoValue}>{formatarNumero(calculo.fichasRodadas)}</Text>
+                <View style={s.fichasRow}>
+                  <Text style={s.fichasLabel}>Fichas rodadas</Text>
+                  <Text style={s.fichasValue}>{formatarNumero(calculo.fichasRodadas)}</Text>
                 </View>
               )}
-
-              {validacao?.erros?.map((erro: string, index: number) => (
-                <View key={index} style={styles.errorRow}>
-                  <Ionicons name="warning" size={16} color="#DC2626" />
-                  <Text style={styles.errorText}>{erro}</Text>
-                </View>
+              {validacao?.erros?.map((e: string, i: number) => (
+                <View key={i} style={s.erroRow}><Ionicons name="close-circle" size={16} color="#DC2626" /><Text style={s.erroText}>{e}</Text></View>
               ))}
-
-              {validacao?.avisos?.map((aviso: string, index: number) => (
-                <View key={index} style={styles.warningRow}>
-                  <Ionicons name="information-circle" size={16} color="#EA580C" />
-                  <Text style={styles.warningText}>{aviso}</Text>
-                </View>
+              {validacao?.avisos?.map((a: string, i: number) => (
+                <View key={i} style={s.avisoRow}><Ionicons name="information-circle" size={16} color="#EA580C" /><Text style={s.avisoText}>{a}</Text></View>
               ))}
             </View>
           </View>
 
-          {/* ========================================================================== */}
-          {/* DESCONTOS */}
-          {/* ========================================================================== */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Descontos</Text>
-            <View style={styles.sectionCard}>
-              <View style={styles.inputRow}>
-                <View style={styles.inputField}>
-                  <Text style={styles.inputLabel}>Desconto em Partidas</Text>
-                  <TextInput                    style={styles.input}
-                    placeholder="0"
-                    placeholderTextColor="#94A3B8"
-                    value={descontoPartidas}
-                    onChangeText={(value) => setDescontoPartidas(masks.number(value))}
-                    keyboardType="numeric"
-                  />
+          {/* Descontos */}
+          <View style={s.section}><Text style={s.sectionTitle}>Descontos</Text>
+            <View style={s.sectionCard}>
+              <View style={s.descontosRow}>
+                <View style={s.descontoField}>
+                  <Text style={s.inputLabel}>Partidas grátis (qtd)</Text>
+                  <TextInput style={s.descontoInput} placeholder="0" placeholderTextColor="#CBD5E1"
+                    value={descontoPartidas} onChangeText={v => setDescontoPartidas(masks.number(v))} keyboardType="numeric" />
+                  {calculo && calculo.descontoPartidasValor > 0 && (
+                    <Text style={s.descontoValorText}>= {formatarMoeda(calculo.descontoPartidasValor)}</Text>
+                  )}
                 </View>
-                <View style={styles.inputField}>
-                  <Text style={styles.inputLabel}>Desconto em Dinheiro</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="R$ 0,00"
-                    placeholderTextColor="#94A3B8"
-                    value={descontoDinheiro}
-                    onChangeText={(value) => setDescontoDinheiro(value)}
-                    keyboardType="numeric"
-                  />
+                <View style={s.descontoField}>
+                  <Text style={s.inputLabel}>Desconto em R$</Text>
+                  <TextInput style={s.descontoInput} placeholder="0,00" placeholderTextColor="#CBD5E1"
+                    value={descontoDinheiro} onChangeText={setDescontoDinheiro} keyboardType="numeric" />
                 </View>
               </View>
-
-              {calculo && calculo.descontoPartidasValor > 0 && (
-                <View style={styles.calculoRow}>
-                  <Text style={styles.calculoLabel}>Valor Desconto Partidas</Text>
-                  <Text style={styles.calculoValue}>{formatarMoeda(calculo.descontoPartidasValor)}</Text>
-                </View>
-              )}
             </View>
           </View>
 
-          {/* ========================================================================== */}
-          {/* RESUMO DE VALORES */}
-          {/* ========================================================================== */}
+          {/* Resumo */}
           {calculo && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Resumo de Valores</Text>
-              <View style={styles.sectionCard}>
-                <View style={styles.resumoRow}>
-                  <Text style={styles.resumoLabel}>Total Bruto</Text>
-                  <Text style={styles.resumoValue}>{formatarMoeda(calculo.totalBruto)}</Text>
-                </View>
-
-                <View style={styles.resumoRow}>
-                  <Text style={styles.resumoLabel}>Subtotal (após descontos)</Text>
-                  <Text style={styles.resumoValue}>{formatarMoeda(calculo.subtotalAposDescontoDinheiro)}</Text>
-                </View>
-
-                <View style={styles.resumoRow}>
-                  <Text style={styles.resumoLabel}>Percentual Empresa (50%)</Text>
-                  <Text style={styles.resumoValue}>{formatarMoeda(calculo.valorPercentual)}</Text>                </View>
-
-                <View style={[styles.resumoRow, styles.resumoTotal]}>
-                  <Text style={styles.resumoTotalLabel}>Total a Pagar</Text>
-                  <Text style={styles.resumoTotalValue}>{formatarMoeda(calculo.totalClientePaga)}</Text>
+            <View style={s.section}><Text style={s.sectionTitle}>Resumo de Valores</Text>
+              <View style={s.sectionCard}>
+                <View style={s.resumoLinha}><Text style={s.resumoLabel}>Total Bruto</Text><Text style={s.resumoValor}>{formatarMoeda(calculo.totalBruto)}</Text></View>
+                {calculo.descontoPartidasValor > 0 && (
+                  <View style={s.resumoLinha}><Text style={s.resumoLabel}>– Desc. Partidas</Text><Text style={[s.resumoValor, { color: '#DC2626' }]}>– {formatarMoeda(calculo.descontoPartidasValor)}</Text></View>
+                )}
+                {calculo.descontoDinheiroValor > 0 && (
+                  <View style={s.resumoLinha}><Text style={s.resumoLabel}>– Desc. Dinheiro</Text><Text style={[s.resumoValor, { color: '#DC2626' }]}>– {formatarMoeda(calculo.descontoDinheiroValor)}</Text></View>
+                )}
+                <View style={s.resumoLinha}><Text style={s.resumoLabel}>Empresa ({locacaoSelecionada?.percentualEmpresa || 50}%)</Text><Text style={s.resumoValor}>{formatarMoeda(calculo.valorPercentual)}</Text></View>
+                <View style={s.divider} />
+                <View style={[s.resumoLinha, s.resumoTotal]}>
+                  <Text style={s.resumoTotalLabel}>Total a Pagar</Text>
+                  <Text style={s.resumoTotalValor}>{formatarMoeda(calculo.totalClientePaga)}</Text>
                 </View>
               </View>
             </View>
           )}
 
-          {/* ========================================================================== */}
-          {/* PAGAMENTO */}
-          {/* ========================================================================== */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Pagamento</Text>
-            <View style={styles.sectionCard}>
-              <View style={styles.inputField}>
-                <Text style={styles.inputLabel}>Valor Recebido *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="R$ 0,00"
-                  placeholderTextColor="#94A3B8"
-                  value={valorRecebido}
-                  onChangeText={(value) => setValorRecebido(value)}
-                  keyboardType="numeric"
-                />
-              </View>
-
-              {calculo && valorRecebido && (
-                <>
-                  <View style={styles.calculoRow}>
-                    <Text style={styles.calculoLabel}>Troco</Text>
-                    <Text style={[styles.calculoValue, { color: '#16A34A' }]}>
-                      {formatarMoeda(Math.max(0, parseFloat(valorRecebido.replace(',', '.')) || 0 - calculo.totalClientePaga))}
-                    </Text>
-                  </View>
-
-                  {calculo.totalClientePaga > (parseFloat(valorRecebido.replace(',', '.')) || 0) && (
-                    <View style={styles.saldoDevedorRow}>
-                      <Ionicons name="alert-circle" size={20} color="#DC2626" />
-                      <Text style={styles.saldoDevedorText}>
-                        Saldo devedor: {formatarMoeda(calculo.totalClientePaga - (parseFloat(valorRecebido.replace(',', '.')) || 0))}
-                      </Text>
-                    </View>
+          {/* Pagamento */}
+          <View style={s.section}><Text style={s.sectionTitle}>Pagamento</Text>
+            <View style={s.sectionCard}>
+              <Text style={s.inputLabel}>Valor Recebido *</Text>
+              <TextInput style={s.valorInput} placeholder="0,00" placeholderTextColor="#CBD5E1"
+                value={valorRecebido} onChangeText={setValorRecebido} keyboardType="numeric" />
+              {calculo && valorRecebido !== '' && (
+                <View style={{ marginTop: 12, gap: 8 }}>
+                  {troco > 0 && (
+                    <View style={s.trocoRow}><Ionicons name="return-down-back" size={18} color="#16A34A" /><Text style={s.trocoText}>Troco: {formatarMoeda(troco)}</Text></View>
                   )}
-                </>
+                  {saldoDevedor > 0 && (
+                    <View style={s.saldoDevedorRow}><Ionicons name="alert-circle" size={18} color="#DC2626" /><Text style={s.saldoDevedorText}>Saldo devedor: {formatarMoeda(saldoDevedor)}</Text></View>
+                  )}
+                  {saldoDevedor === 0 && troco === 0 && (
+                    <View style={s.pagoExatoRow}><Ionicons name="checkmark-circle" size={18} color="#16A34A" /><Text style={s.pagoExatoText}>Valor exato — sem troco</Text></View>
+                  )}
+                </View>
               )}
             </View>
           </View>
-          {/* ========================================================================== */}
-          {/* OBSERVAÇÃO */}
-          {/* ========================================================================== */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Observação (opcional)</Text>
-            <View style={styles.sectionCard}>
-              <TextInput
-                style={[styles.input, styles.inputMultiline]}
-                placeholder="Adicione uma observação..."
-                placeholderTextColor="#94A3B8"
-                value={observacao}
-                onChangeText={setObservacao}
-                multiline
-                numberOfLines={3}
-              />
+
+          {/* Observação */}
+          <View style={s.section}><Text style={s.sectionTitle}>Observação</Text>
+            <View style={s.sectionCard}>
+              <TextInput style={s.observacaoInput} placeholder="Observação (opcional)..."
+                placeholderTextColor="#CBD5E1" value={observacao} onChangeText={setObservacao}
+                multiline numberOfLines={3} textAlignVertical="top" />
             </View>
           </View>
 
-          {/* Espaço extra */}
-          <View style={styles.footer} />
+          <View style={{ height: 24 }} />
         </ScrollView>
 
-        {/* ========================================================================== */}
-        {/* BOTÃO CONFIRMAR */}
-        {/* ========================================================================== */}
-        <View style={styles.bottomBar}>
+        <View style={s.bottomBar}>
           <TouchableOpacity
-            style={[
-              styles.confirmButton,
-              (!calculo || !validacao?.valida || carregando) && styles.confirmButtonDisabled,
-            ]}
-            onPress={handleConfirmar}
-            disabled={!calculo || !validacao?.valida || carregando}
+            style={[s.confirmButton, (!calculo || !validacao?.valida || carregando) && s.confirmButtonDisabled]}
+            onPress={handleConfirmar} disabled={!calculo || !validacao?.valida || carregando} activeOpacity={0.85}
           >
-            {carregando ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
+            {carregando ? <ActivityIndicator color="#FFFFFF" /> : (
               <>
-                <Ionicons name="checkmark-circle" size={24} color="#FFFFFF" />
-                <Text style={styles.confirmButtonText}>Confirmar Cobrança</Text>
+                <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
+                <Text style={s.confirmButtonText}>
+                  {calculo ? `Confirmar · ${formatarMoeda(calculo.totalClientePaga)}` : 'Confirmar Cobrança'}
+                </Text>
               </>
             )}
           </TouchableOpacity>
@@ -457,271 +292,55 @@ export default function CobrancaConfirmScreen() {
   );
 }
 
-// ============================================================================// ESTILOS
-// ============================================================================
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-
-  // Header
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  headerInfo: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#64748B',
-    marginTop: 4,
-  },
-  headerStatus: {
-    alignItems: 'flex-end',
-  },
-  statusLabel: {
-    fontSize: 11,
-    color: '#94A3B8',
-    marginBottom: 4,
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,    borderRadius: 12,
-  },
-  statusPendente: {
-    backgroundColor: '#FFFBEB',
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#EA580C',
-  },
-
-  // Section
-  section: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 12,
-  },
-  sectionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-
-  // Relógio
-  relogioRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
-  },
-  relogioField: {
-    flex: 1,
-  },
-  relogioLabel: {
-    fontSize: 12,
-    color: '#64748B',
-    marginBottom: 6,
-  },
-  relogioValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',  },
-  relogioInput: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    paddingVertical: 8,
-  },
-
-  // Cálculos
-  calculoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  calculoLabel: {
-    fontSize: 13,
-    color: '#64748B',
-  },
-  calculoValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-
-  // Inputs
-  inputRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  inputField: {
-    flex: 1,
-  },
-  inputLabel: {
-    fontSize: 12,
-    color: '#64748B',
-    marginBottom: 6,
-  },
-  input: {
-    fontSize: 16,
-    color: '#1E293B',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    paddingVertical: 8,
-  },
-  inputMultiline: {    minHeight: 80,
-    textAlignVertical: 'top',
-    borderBottomWidth: 0,
-  },
-  inputError: {
-    borderBottomColor: '#DC2626',
-  },
-
-  // Erros e Avisos
-  errorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-    padding: 8,
-    backgroundColor: '#FEF2F2',
-    borderRadius: 8,
-  },
-  errorText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#DC2626',
-  },
-  warningRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-    padding: 8,
-    backgroundColor: '#FFFBEB',
-    borderRadius: 8,
-  },
-  warningText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#EA580C',
-  },
-
-  // Resumo
-  resumoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  resumoLabel: {
-    fontSize: 13,
-    color: '#64748B',  },
-  resumoValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-  resumoTotal: {
-    borderBottomWidth: 0,
-    paddingTop: 16,
-    marginTop: 8,
-  },
-  resumoTotalLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  resumoTotalValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#2563EB',
-  },
-
-  // Saldo Devedor
-  saldoDevedorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: '#FEF2F2',
-    borderRadius: 12,
-  },
-  saldoDevedorText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#DC2626',
-  },
-
-  // Footer
-  footer: {
-    height: 20,
-  },
-
-  // Bottom Bar
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,    padding: 16,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-  },
-  confirmButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2563EB',
-    padding: 16,
-    borderRadius: 12,
-    gap: 12,
-  },
-  confirmButtonDisabled: {
-    backgroundColor: '#93C5FD',
-  },
-  confirmButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
+const s = StyleSheet.create({
+  container:       { flex: 1, backgroundColor: '#F8FAFC' },
+  center:          { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
+  loadingText:     { color: '#64748B', fontSize: 15 },
+  scroll:          { flex: 1 },
+  scrollContent:   { padding: 16, paddingBottom: 110 },
+  headerCard:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', backgroundColor: '#1E293B', borderRadius: 16, padding: 16, marginBottom: 20 },
+  clienteNome:     { fontSize: 17, fontWeight: '700', color: '#F8FAFC', marginBottom: 4 },
+  produtoInfo:     { fontSize: 13, color: '#94A3B8', marginBottom: 2 },
+  pagamentoInfo:   { fontSize: 12, color: '#64748B' },
+  section:         { marginBottom: 16 },
+  sectionTitle:    { fontSize: 14, fontWeight: '700', color: '#1E293B', marginBottom: 10 },
+  sectionCard:     { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 },
+  relogioRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  relogioField:    { flex: 1 },
+  relogioLabel:    { fontSize: 11, color: '#94A3B8', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  relogioDisplay:  { backgroundColor: '#F1F5F9', borderRadius: 10, padding: 12, alignItems: 'center' },
+  relogioValue:    { fontSize: 22, fontWeight: '800', color: '#1E293B' },
+  relogioInput:    { fontSize: 22, fontWeight: '800', color: '#2563EB', backgroundColor: '#EFF6FF', borderRadius: 10, padding: 12, textAlign: 'center', borderWidth: 2, borderColor: '#BFDBFE' },
+  inputError:      { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2', color: '#DC2626' },
+  fichasRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 10, padding: 12 },
+  fichasLabel:     { fontSize: 13, color: '#64748B', fontWeight: '500' },
+  fichasValue:     { fontSize: 18, fontWeight: '800', color: '#1E293B' },
+  erroRow:         { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, padding: 10, backgroundColor: '#FEF2F2', borderRadius: 8 },
+  erroText:        { flex: 1, fontSize: 12, color: '#DC2626' },
+  avisoRow:        { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, padding: 10, backgroundColor: '#FFFBEB', borderRadius: 8 },
+  avisoText:       { flex: 1, fontSize: 12, color: '#EA580C' },
+  descontosRow:    { flexDirection: 'row', gap: 12 },
+  descontoField:   { flex: 1 },
+  inputLabel:      { fontSize: 11, color: '#94A3B8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  descontoInput:   { fontSize: 18, fontWeight: '700', color: '#1E293B', borderBottomWidth: 2, borderBottomColor: '#E2E8F0', paddingBottom: 8, paddingTop: 4 },
+  descontoValorText:{ fontSize: 11, color: '#64748B', marginTop: 4 },
+  resumoLinha:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 9 },
+  resumoLabel:     { fontSize: 14, color: '#64748B' },
+  resumoValor:     { fontSize: 14, fontWeight: '600', color: '#1E293B' },
+  divider:         { height: 1, backgroundColor: '#E2E8F0', marginVertical: 4 },
+  resumoTotal:     { paddingTop: 12 },
+  resumoTotalLabel:{ fontSize: 16, fontWeight: '700', color: '#1E293B' },
+  resumoTotalValor:{ fontSize: 22, fontWeight: '800', color: '#2563EB' },
+  valorInput:      { fontSize: 28, fontWeight: '800', color: '#1E293B', borderBottomWidth: 2, borderBottomColor: '#2563EB', paddingBottom: 8, paddingTop: 4 },
+  trocoRow:        { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, backgroundColor: '#F0FDF4', borderRadius: 10 },
+  trocoText:       { fontSize: 14, fontWeight: '600', color: '#16A34A' },
+  saldoDevedorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, backgroundColor: '#FEF2F2', borderRadius: 10 },
+  saldoDevedorText:{ fontSize: 14, fontWeight: '600', color: '#DC2626' },
+  pagoExatoRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, backgroundColor: '#F0FDF4', borderRadius: 10 },
+  pagoExatoText:   { fontSize: 14, fontWeight: '600', color: '#16A34A' },
+  observacaoInput: { fontSize: 15, color: '#1E293B', minHeight: 72 },
+  bottomBar:       { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#E2E8F0' },
+  confirmButton:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#2563EB', padding: 16, borderRadius: 14, gap: 10 },
+  confirmButtonDisabled: { backgroundColor: '#BFDBFE' },
+  confirmButtonText:     { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
 });

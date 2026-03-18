@@ -188,10 +188,11 @@ export function useClienteNavigate() {
     });
   }, [navigation]);
 
-  const toRelocar = useCallback((produtoId: string, clienteId: string) => {
+  const toRelocar = useCallback((locacaoId: string, produtoId: string, clienteId: string) => {
     navigation.navigate('LocacaoForm', {
       clienteId,
       produtoId,
+      locacaoId,
       modo: 'relocar',
     });
   }, [navigation]);

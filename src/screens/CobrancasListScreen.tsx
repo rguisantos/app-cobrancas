@@ -108,7 +108,7 @@ export default function CobrancasListScreen() {
     return (
       <TouchableOpacity
         style={styles.card}
-        onPress={() => navigateCobranca.toDetail(item.id)}
+        onPress={() => navigateCobranca.toDetail(String(item.id), String(item.locacaoId ?? ''))}
         activeOpacity={0.7}
       >
         <View style={styles.cardHeader}>

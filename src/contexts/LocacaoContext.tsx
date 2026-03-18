@@ -346,9 +346,19 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     setErro(null);
 
     try {
+      // Buscar locação antes de finalizar para ter o produtoId
+      const locacao = await locacaoRepository.getById(id);
       const sucesso = await locacaoRepository.finalizarLocacao(id, motivo);
       
       if (sucesso) {
+        // Atualizar produto para disponível (não locado)
+        if (locacao?.produtoId) {
+          await produtoRepository.update({
+            id: String(locacao.produtoId),
+            estaLocado: false,
+            locacaoAtual: undefined,
+          } as any);
+        }
         // Atualizar lista
         await carregarLocacoes();
         console.log('[LocacaoContext] Locação finalizada:', id);

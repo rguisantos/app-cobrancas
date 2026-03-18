@@ -36,6 +36,7 @@ const TABLES = {
   TIPOS_PRODUTO: 'tipos_produto',
   DESCRICOES_PRODUTO: 'descricoes_produto',
   TAMANHOS_PRODUTO: 'tamanhos_produto',
+  ESTABELECIMENTOS: 'estabelecimentos',
   CHANGE_LOG: 'change_log',
   SYNC_METADATA: 'sync_metadata',
 };
@@ -352,6 +353,20 @@ class DatabaseService {
 
       // Tabela de Tamanhos de Produto
       `CREATE TABLE IF NOT EXISTS ${TABLES.TAMANHOS_PRODUTO} (
+        id TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        syncStatus TEXT,
+        lastSyncedAt TEXT,
+        needsSync INTEGER,
+        version INTEGER,
+        deviceId TEXT,
+        createdAt TEXT,
+        updatedAt TEXT,
+        deletedAt TEXT
+      )`,
+
+      // Tabela de Estabelecimentos (destinos de estoque)
+      `CREATE TABLE IF NOT EXISTS ${TABLES.ESTABELECIMENTOS} (
         id TEXT PRIMARY KEY,
         nome TEXT NOT NULL,
         syncStatus TEXT,
@@ -1122,6 +1137,34 @@ class DatabaseService {
     console.log('[Database] Tamanho de produto removido:', id);
   }
 
+  // ── ESTABELECIMENTOS ──────────────────────────────────────────────────────
+
+  async getEstabelecimentos(): Promise<Array<{id: string, nome: string}>> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const rows = await this.db.getAllAsync<{id: string, nome: string}>(
+      `SELECT id, nome FROM estabelecimentos WHERE deletedAt IS NULL ORDER BY nome`
+    );
+    return rows;
+  }
+
+  async saveEstabelecimento(id: string, nome: string): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO estabelecimentos (id, nome, createdAt, updatedAt, needsSync) VALUES (?, ?, ?, ?, 1)`,
+      [id, nome, now, now]
+    );
+  }
+
+  async deleteEstabelecimento(id: string): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `UPDATE estabelecimentos SET deletedAt = ?, needsSync = 1 WHERE id = ?`,
+      [now, id]
+    );
+  }
+
   /**
    * Inicializa dados padrão de atributos se não existirem
    */
@@ -1168,6 +1211,12 @@ class DatabaseService {
         await this.saveTamanhoProduto(tam.id, tam.nome);
       }
       console.log('[Database] Tamanhos padrão inicializados');
+    }
+
+    const estabelecimentosExistentes = await this.getEstabelecimentos();
+    if (estabelecimentosExistentes.length === 0) {
+      const pad = [{ id: 'est_1', nome: 'Barracão Principal' }, { id: 'est_2', nome: 'Depósito' }];
+      for (const e of pad) await this.saveEstabelecimento(e.id, e.nome);
     }
   }
 

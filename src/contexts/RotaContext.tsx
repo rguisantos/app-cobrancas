@@ -24,6 +24,7 @@ export interface RotaContextData extends RotaState {
   selecionarRota: (id: string | number) => Promise<void>;
   limparSelecao: () => void;
   salvarRota: (dados: Partial<Rota>) => Promise<Rota | null>;
+  excluirRota: (id: string | number) => Promise<boolean>;
   refresh: () => Promise<void>;
 }
 
@@ -106,6 +107,17 @@ export function RotaProvider({ children }: RotaProviderProps) {
     }
   }, [carregarRotas, isReady]);
 
+  const excluirRota = useCallback(async (id: string | number): Promise<boolean> => {
+    try {
+      const ok = await rotaRepository.delete(id);
+      if (ok) await carregarRotas();
+      return ok;
+    } catch (error) {
+      console.error('[RotaContext] Erro ao excluir rota:', error);
+      return false;
+    }
+  }, [carregarRotas]);
+
   const contextValue: RotaContextData = {    rotas,
     rotaSelecionada,
     carregando,
@@ -114,6 +126,7 @@ export function RotaProvider({ children }: RotaProviderProps) {
     selecionarRota,
     limparSelecao,
     salvarRota,
+    excluirRota,
     refresh,
   };
 

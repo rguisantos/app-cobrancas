@@ -12,7 +12,7 @@ export interface AtributoItem {
   nome: string;
 }
 
-type TipoAtributo = 'tipo' | 'descricao' | 'tamanho';
+type TipoAtributo = 'tipo' | 'descricao' | 'tamanho' | 'estabelecimento';
 
 class AtributosRepository {
   /**
@@ -59,6 +59,8 @@ class AtributosRepository {
         return this.getDescricoes();
       case 'tamanho':
         return this.getTamanhos();
+      case 'estabelecimento':
+        return this.getEstabelecimentos();
     }
   }
 
@@ -112,6 +114,9 @@ class AtributosRepository {
       case 'tamanho':
         await databaseService.saveTamanhoProduto(novoId, nome);
         break;
+      case 'estabelecimento':
+        await databaseService.saveEstabelecimento(novoId, nome);
+        break;
     }
 
     console.log(`[AtributosRepository] Item adicionado em ${tipo}:`, nome);
@@ -137,6 +142,9 @@ class AtributosRepository {
         case 'tamanho':
           await databaseService.saveTamanhoProduto(id, nome);
           break;
+        case 'estabelecimento':
+          await databaseService.saveEstabelecimento(id, nome);
+          break;
       }
 
       console.log(`[AtributosRepository] Item atualizado em ${tipo}:`, nome);
@@ -161,6 +169,9 @@ class AtributosRepository {
           break;
         case 'tamanho':
           await databaseService.deleteTamanhoProduto(id);
+          break;
+        case 'estabelecimento':
+          await databaseService.deleteEstabelecimento(id);
           break;
       }
 
@@ -191,7 +202,25 @@ class AtributosRepository {
       item.nome.toLowerCase() === nomeLower && item.id !== excludeId
     );
   }
+
+  async getEstabelecimentos(): Promise<AtributoItem[]> {
+    return databaseService.getEstabelecimentos();
+  }
+
+  async salvarEstabelecimentos(itens: AtributoItem[]): Promise<void> {
+    for (const item of itens) {
+      await databaseService.saveEstabelecimento(item.id, item.nome);
+    }
+  }
+
+  async salvarEstabelecimento(item: AtributoItem): Promise<void> {
+    await databaseService.saveEstabelecimento(item.id, item.nome);
+  }
+
+  async deleteEstabelecimento(id: string): Promise<void> {
+    await databaseService.deleteEstabelecimento(id);
+  }
 }
 
-export const atributosRepository = new AtributosRepository();
+const atributosRepository = new AtributosRepository();
 export default atributosRepository;

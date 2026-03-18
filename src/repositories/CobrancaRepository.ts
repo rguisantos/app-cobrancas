@@ -566,6 +566,59 @@ class CobrancaRepository {
 
   }
 
+  /**
+   * Retorna o saldo devedor pendente (não pago) de uma locação específica.
+   * Soma todos os saldoDevedorGerado das cobranças com status Parcial ou Pendente.
+   */
+  async getSaldoPendenteByLocacao(locacaoId: string): Promise<number> {
+    try {
+      const cobranças = await this.getAll({ locacaoId });
+      return cobranças
+        .filter(c => c.status === 'Parcial' || c.status === 'Pendente' || c.status === 'Atrasado')
+        .reduce((total, c) => total + (c.saldoDevedorGerado || 0), 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Verifica se existe saldo devedor pendente em cobranças finalizadas
+   * (produto removido do cliente mas ainda com débito).
+   * Retorna lista de cobranças com saldo pendente por produto.
+   */
+  async getSaldosPendentesFinalizados(clienteId: string): Promise<{
+    locacaoId: string;
+    produtoIdentificador: string;
+    saldoPendente: number;
+    cobranças: HistoricoCobranca[];
+  }[]> {
+    try {
+      const todas = await this.getAll({ clienteId });
+      const comSaldo = todas.filter(
+        c => (c.status === 'Parcial' || c.status === 'Pendente' || c.status === 'Atrasado')
+          && c.saldoDevedorGerado > 0
+      );
+
+      // Agrupar por locacaoId
+      const mapa: Record<string, HistoricoCobranca[]> = {};
+      for (const c of comSaldo) {
+        const lid = String(c.locacaoId);
+        if (!mapa[lid]) mapa[lid] = [];
+        mapa[lid].push(c);
+      }
+
+      return Object.entries(mapa).map(([locacaoId, lista]) => ({
+        locacaoId,
+        produtoIdentificador: lista[0].produtoIdentificador,
+        saldoPendente: lista.reduce((s, c) => s + c.saldoDevedorGerado, 0),
+        cobranças: lista,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+
   // ==========================================================================
   // MÉTODOS AUXILIARES PRIVADOS
   // ==========================================================================

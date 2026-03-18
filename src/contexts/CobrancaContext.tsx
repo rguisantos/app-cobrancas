@@ -6,6 +6,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { HistoricoCobranca, CobrancaFilters } from '../types';
 import { cobrancaRepository } from '../repositories/CobrancaRepository';
+import { useDatabase } from './DatabaseContext';
 
 // ============================================================================
 // INTERFACES
@@ -48,6 +49,8 @@ interface CobrancaProviderProps {
 }
 
 export function CobrancaProvider({ children }: CobrancaProviderProps) {
+  const { isReady } = useDatabase();
+
   const [cobrancas, setCobrancas] = useState<HistoricoCobranca[]>([]);
   const [cobrancaSelecionada, setCobrancaSelecionada] = useState<HistoricoCobranca | null>(null);
   const [carregando, setCarregando] = useState(false);  const [erro, setErro] = useState<string | null>(null);
@@ -138,8 +141,10 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
   }, [carregarCobrancas]);
 
   useEffect(() => {
-    carregarCobrancas();
-  }, [carregarCobrancas]);
+    if (isReady) {
+      carregarCobrancas();
+    }
+  }, [isReady, carregarCobrancas]);
 
   const contextValue: CobrancaContextData = {
     cobrancas,

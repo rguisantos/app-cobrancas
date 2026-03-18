@@ -23,7 +23,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Contexts
@@ -62,10 +62,12 @@ export default function ProdutoDetailScreen() {
   // CARREGAMENTO
   // ==========================================================================
 
-  useEffect(() => {
-    carregarProduto(route.params.produtoId);
-    carregarLocacoesPorProduto(route.params.produtoId);
-  }, [route.params.produtoId]);
+  useFocusEffect(
+    useCallback(() => {
+      carregarProduto(route.params.produtoId);
+      carregarLocacoesPorProduto(route.params.produtoId);
+    }, [route.params.produtoId])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -87,8 +89,14 @@ export default function ProdutoDetailScreen() {
   }, [navigateProduto, route.params.produtoId]);
 
   const handleNovaLocacao = useCallback(() => {
-    navigateProduto.toNovaLocacao(route.params.produtoId);
-  }, [navigateProduto, route.params.produtoId]);
+    // Navigate to Clientes tab to select a client first
+    // The user selects client → Detalhes → Locações → Nova Locação with produtoId pre-set
+    Alert.alert(
+      'Nova Locação',
+      'Para locar este produto, vá para a aba Clientes, selecione o cliente e adicione a locação.',
+      [{ text: 'OK' }]
+    );
+  }, []);
 
   const handleEnviarEstoque = useCallback(() => {
     if (produtoSelecionado?.locacaoAtiva) {

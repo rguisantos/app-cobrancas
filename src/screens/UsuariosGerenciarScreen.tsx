@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation , useFocusEffect} from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { usuarioRepository, UsuarioLogin } from '../repositories/UsuarioRepository';
 import { TipoPermissaoUsuario, PermissoesUsuario } from '../types';
@@ -73,14 +73,10 @@ export default function UsuariosGerenciarScreen() {
 
   const podeGerenciar = isAdmin() || user?.tipoPermissao === 'Administrador';
 
-  useEffect(() => {
-    carregarUsuarios();
-  }, []);
-
-  const carregarUsuarios = async () => {
+  const carregarUsuarios = useCallback(async () => {
     setCarregando(true);
     try {
-      const lista = await usuarioRepository.getAtivos();
+      const lista = await usuarioRepository.getAll();
       setUsuarios(lista.map(u => ({
         id: u.id,
         email: u.email,
@@ -96,7 +92,13 @@ export default function UsuariosGerenciarScreen() {
     } finally {
       setCarregando(false);
     }
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      carregarUsuarios();
+    }, [carregarUsuarios])
+  );
 
   const handleNovoUsuario = () => {
     setEditandoUsuario(null);

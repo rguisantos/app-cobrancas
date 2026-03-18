@@ -18,12 +18,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation , useFocusEffect} from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import atributosRepository, { AtributoItem } from '../repositories/AtributosRepository';
 
 // Tipos
-type TipoAtributo = 'tipo' | 'descricao' | 'tamanho';
+type TipoAtributo = 'tipo' | 'descricao' | 'tamanho' | 'estabelecimento';
 
 export default function AtributosProdutoGerenciarScreen() {
   const navigation = useNavigation();
@@ -55,8 +55,10 @@ export default function AtributosProdutoGerenciarScreen() {
         lista = await atributosRepository.getTipos();
       } else if (tipoAtivo === 'descricao') {
         lista = await atributosRepository.getDescricoes();
-      } else {
+      } else if (tipoAtivo === 'tamanho') {
         lista = await atributosRepository.getTamanhos();
+      } else {
+        lista = await atributosRepository.getEstabelecimentos();
       }
       
       setItens(lista);
@@ -158,6 +160,7 @@ export default function AtributosProdutoGerenciarScreen() {
       case 'tipo': return 'Tipos de Produto';
       case 'descricao': return 'Descrições de Produto';
       case 'tamanho': return 'Tamanhos de Produto';
+      case 'estabelecimento': return 'Estabelecimentos';
     }
   };
 
@@ -166,6 +169,7 @@ export default function AtributosProdutoGerenciarScreen() {
       case 'tipo': return 'Ex: Bilhar, Jukebox, Mesa';
       case 'descricao': return 'Ex: Azul, Branco, Preto';
       case 'tamanho': return 'Ex: 2,00, Grande, Média';
+      case 'estabelecimento': return 'Ex: Barracão Principal, Depósito Centro';
     }
   };
 
@@ -239,7 +243,7 @@ export default function AtributosProdutoGerenciarScreen() {
                     name={
                       tipoAtivo === 'tipo' ? 'cube' : 
                       tipoAtivo === 'descricao' ? 'color-palette' : 
-                      'resize'
+                      tipoAtivo === 'tamanho' ? 'resize' : 'home'
                     } 
                     size={18} 
                     color="#2563EB" 
@@ -280,7 +284,7 @@ export default function AtributosProdutoGerenciarScreen() {
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {editandoItem ? 'Editar' : 'Novo'} {tipoAtivo === 'tipo' ? 'Tipo' : tipoAtivo === 'descricao' ? 'Descrição' : 'Tamanho'}
+                {editandoItem ? 'Editar' : 'Novo'} {tipoAtivo === 'tipo' ? 'Tipo' : tipoAtivo === 'descricao' ? 'Descrição' : tipoAtivo === 'tamanho' ? 'Tamanho' : 'Estabelecimento'}
               </Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
                 <Ionicons name="close" size={24} color="#64748B" />

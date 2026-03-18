@@ -24,7 +24,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Contexts
@@ -63,10 +63,12 @@ export default function ClienteDetailScreen() {
   // CARREGAMENTO
   // ==========================================================================
 
-  useEffect(() => {
-    carregarCliente(route.params.clienteId);
-    carregarLocacoesPorCliente(route.params.clienteId);
-  }, [route.params.clienteId]);
+  useFocusEffect(
+    useCallback(() => {
+      carregarCliente(route.params.clienteId);
+      carregarLocacoesPorCliente(route.params.clienteId);
+    }, [route.params.clienteId])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -424,24 +426,32 @@ export default function ClienteDetailScreen() {
             </Text>
             <View style={styles.sectionCard}>
               {locacoesAtivas.slice(0, 3).map((locacao) => (
-                <View key={locacao.id} style={styles.locacaoItem}>
-                  <Text style={styles.locacaoProduto}>
-                    {locacao.produtoTipo} N° {locacao.produtoIdentificador}
-                  </Text>
-                  <Text style={styles.locacaoData}>
-                    Desde: {new Date(locacao.dataLocacao).toLocaleDateString('pt-BR')}
-                  </Text>
-                </View>
-              ))}
-              {locacoesAtivas.length > 3 && (
                 <TouchableOpacity
-                  style={styles.seeAllButton}
-                  onPress={() => navigateCliente.toLocacoes(clienteSelecionado.id)}
+                  key={locacao.id}
+                  style={styles.locacaoItem}
+                  onPress={() => navigateCliente.navigation.navigate('LocacaoDetail', { locacaoId: String(locacao.id) })}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.seeAllText}>Ver todas as locações</Text>
-                  <Ionicons name="chevron-forward" size={16} color="#2563EB" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.locacaoProduto}>
+                      {locacao.produtoTipo} N° {locacao.produtoIdentificador}
+                    </Text>
+                    <Text style={styles.locacaoData}>
+                      Desde: {new Date(locacao.dataLocacao).toLocaleDateString('pt-BR')}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color="#CBD5E1" />
                 </TouchableOpacity>
-              )}
+              ))}
+              <TouchableOpacity
+                style={styles.seeAllButton}
+                onPress={() => navigateCliente.toLocacoes(String(clienteSelecionado.id))}
+              >
+                <Text style={styles.seeAllText}>
+                  {locacoesAtivas.length > 3 ? `Ver todas (${locacoesAtivas.length})` : 'Gerenciar locações'}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color="#2563EB" />
+              </TouchableOpacity>
             </View>
           </View>
         )}

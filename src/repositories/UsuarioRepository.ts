@@ -48,7 +48,7 @@ class UsuarioRepository {
    */
   async getAll(filters?: UsuarioFilters): Promise<Usuario[]> {
     try {
-      const whereClauses: string[] = ['deletedAt IS NULL'];
+      const whereClauses: string[] = [];
       const params: any[] = [];
 
       if (filters?.status) {
@@ -67,7 +67,7 @@ class UsuarioRepository {
         params.push(termo, termo);
       }
 
-      const where = whereClauses.join(' AND ');
+      const where = whereClauses.length > 0 ? whereClauses.join(' AND ') : undefined;
       const usuarios = await databaseService.getAll<Usuario>(
         this.entityType,
         where,

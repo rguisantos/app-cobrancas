@@ -1,813 +1,745 @@
 /**
  * LocacaoFormScreen.tsx
- * Formulário de criação/edição/relocação de locações
- * 
- * Funcionalidades:
- * - Seleção de produto e cliente
- * - Forma de pagamento (Período, % Pagar, % Receber)
- * - Configuração de percentuais
- * - Dados do relógio
- * - Validações de negócio
+ * Formulário de locação — modos: criar | editar | relocar
+ *
+ * Modo CRIAR:
+ *   - Produto selecionável (disponíveis em estoque)
+ *   - Cliente fixo (vem da tela anterior)
+ *   - Preencher regras de negócio
+ *
+ * Modo RELOCAR:
+ *   - Produto fixo (somente leitura, carregado da locação existente)
+ *   - Busca e seleção de NOVO cliente
+ *   - Preencher novas regras de negócio
+ *   - Chama realizarRelocacao() que finaliza a locação antiga e cria nova
+ *
+ * Modo EDITAR:
+ *   - Produto fixo, cliente fixo
+ *   - Edita regras de negócio da locação existente
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
+  View, Text, StyleSheet, ScrollView, TextInput,
+  TouchableOpacity, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform, Modal, FlatList,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }     from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Contexts
-import { useLocacao } from '../contexts/LocacaoContext';
-import { useProduto } from '../contexts/ProdutoContext';
-import { useCliente } from '../contexts/ClienteContext';
-import { useAuth } from '../contexts/AuthContext';
+import { useLocacao }  from '../contexts/LocacaoContext';
+import { useProduto }  from '../contexts/ProdutoContext';
+import { useCliente }  from '../contexts/ClienteContext';
 
-// Types
-import { Locacao, FormaPagamentoLocacao, Periodicidade } from '../types';
+import { Locacao, FormaPagamentoLocacao } from '../types';
+import { locacaoRepository }    from '../repositories/LocacaoRepository';
 import { ClientesStackParamList } from '../navigation/ClientesStack';
-
-// Utils
-import { masks } from '../utils/masks';
-import { validators } from '../utils/validators';
-
-// ============================================================================
-// TIPOS DE ROTA
-// ============================================================================
+import { masks }       from '../utils/masks';
 
 type LocacaoFormRouteProp = RouteProp<ClientesStackParamList, 'LocacaoForm'>;
 
-// ============================================================================// COMPONENTE PRINCIPAL
-// ============================================================================
+// ─── constantes ─────────────────────────────────────────────────────────────
+const PERIODICIDADES = ['Mensal', 'Semanal', 'Quinzenal', 'Diária'];
 
+const FORMA_OPTS = [
+  { value: 'PercentualReceber', label: '% Receber', icon: 'trending-up'   },
+  { value: 'PercentualPagar',  label: '% Pagar',   icon: 'trending-down'  },
+  { value: 'Periodo',          label: 'Período',   icon: 'calendar'       },
+] as const;
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+function FieldError({ msg }: { msg?: string }) {
+  return msg ? <Text style={s.fieldError}>{msg}</Text> : null;
+}
+
+function Label({ text, required }: { text: string; required?: boolean }) {
+  return (
+    <Text style={s.label}>
+      {text}{required && <Text style={{ color: '#DC2626' }}> *</Text>}
+    </Text>
+  );
+}
+
+// ─── componente principal ────────────────────────────────────────────────────
 export default function LocacaoFormScreen() {
-  const route = useRoute<LocacaoFormRouteProp>();
+  const route      = useRoute<LocacaoFormRouteProp>();
   const navigation = useNavigation();
-  const { criarLocacao, atualizarLocacao, carregando } = useLocacao();
-  const { produtos, carregarProdutos } = useProduto();
-  const { clienteSelecionado } = useCliente();
-  const { user } = useAuth();
+
+  const { criarLocacao, atualizarLocacao, realizarRelocacao, carregando } = useLocacao();
+  const { produtos, carregarProdutos }                                    = useProduto();
+  const { clienteSelecionado, buscarCliente }                             = useCliente();
 
   const { clienteId, produtoId, modo, locacaoId } = route.params;
 
-  // Estado do formulário
-  const [formData, setFormData] = useState<Partial<Locacao>>({
-    clienteId,
-    clienteNome: clienteSelecionado?.nomeExibicao || '',
-    produtoId: produtoId || '',
+  // ── estado do formulário ──────────────────────────────────────────────────
+  const [form, setForm] = useState({
+    // identificação
+    clienteId:            clienteId || '',
+    clienteNome:          clienteSelecionado?.nomeExibicao || '',
+    produtoId:            produtoId || '',
     produtoIdentificador: '',
-    produtoTipo: '',
-    dataLocacao: new Date().toISOString(),
-    formaPagamento: 'PercentualReceber',
-    numeroRelogio: '',
-    precoFicha: 0,
-    percentualEmpresa: 50,
-    percentualCliente: 50,
-    status: 'Ativa',
+    produtoTipo:          '',
+    // regras de negócio
+    formaPagamento:       'PercentualReceber' as FormaPagamentoLocacao,
+    numeroRelogio:        '',
+    precoFicha:           '',
+    percentualEmpresa:    '50',
+    periodicidade:        '',
+    valorFixo:            '',
+    dataPrimeiraCobranca: '',
+    motivoRelocacao:      '',
+    observacao:           '',
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [showProdutoPicker, setShowProdutoPicker] = useState(false);
-  const [showPeriodicidadePicker, setShowPeriodicidadePicker] = useState(false);
+  const [errors,           setErrors]           = useState<Record<string, string>>({});
+  const [salvando,         setSalvando]         = useState(false);
+  const [carregandoInit,   setCarregandoInit]   = useState(modo !== 'criar');
 
-  // ==========================================================================
-  // CARREGAMENTO
-  // ==========================================================================
+  // modais
+  const [showProdutoPicker,  setShowProdutoPicker]  = useState(false);
+  const [showClientePicker,  setShowClientePicker]  = useState(false);
+  const [buscaCliente,       setBuscaCliente]       = useState('');
+  const [resultadosCliente,  setResultadosCliente]  = useState<any[]>([]);
+  const [buscandoCliente,    setBuscandoCliente]    = useState(false);
 
+  const buscaDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── carregamento inicial ──────────────────────────────────────────────────
+  // Para modo criar: carrega produtos disponíveis
+  // Para modo relocar/editar: carrega locação existente
   useEffect(() => {
-    carregarProdutos({ comLocacaoAtiva: false });
+    if (modo === 'criar') {
+      carregarProdutos({ comLocacaoAtiva: false });
+    } else if ((modo === 'relocar' || modo === 'editar') && locacaoId) {
+      setCarregandoInit(true);
+      locacaoRepository.getById(locacaoId).then(locacao => {
+        if (!locacao) return;
+        setForm(prev => ({
+          ...prev,
+          // produto vem da locação (somente leitura em ambos os modos)
+          produtoId:            String(locacao.produtoId),
+          produtoIdentificador: locacao.produtoIdentificador,
+          produtoTipo:          locacao.produtoTipo,
+          // em editar, cliente também é somente leitura
+          clienteId:            modo === 'editar' ? String(locacao.clienteId) : '',
+          clienteNome:          modo === 'editar' ? (locacao.clienteNome || '') : '',
+          // regras de negócio da locação atual como pré-preenchimento
+          formaPagamento:       locacao.formaPagamento || 'PercentualReceber',
+          numeroRelogio:        locacao.numeroRelogio || '',
+          precoFicha:           locacao.precoFicha ? String(locacao.precoFicha) : '',
+          percentualEmpresa:    locacao.percentualEmpresa ? String(locacao.percentualEmpresa) : '50',
+          periodicidade:        locacao.periodicidade || '',
+          valorFixo:            locacao.valorFixo ? String(locacao.valorFixo) : '',
+          observacao:           locacao.observacao || '',
+        }));
+      }).catch(() => Alert.alert('Erro', 'Não foi possível carregar a locação'))
+        .finally(() => setCarregandoInit(false));
+    }
   }, []);
 
+  // atualiza clienteNome quando clienteSelecionado muda (modo criar)
   useEffect(() => {
-    if (clienteSelecionado) {
-      setFormData(prev => ({
+    if (clienteSelecionado && modo === 'criar') {
+      setForm(prev => ({
         ...prev,
-        clienteId: clienteSelecionado.id,
+        clienteId:   String(clienteSelecionado.id),
         clienteNome: clienteSelecionado.nomeExibicao,
       }));
-  
-  }
-  }, [clienteSelecionado]);
-  // ==========================================================================
-  // VALIDAÇÕES
-  // ==========================================================================
+    }
+  }, [clienteSelecionado, modo]);
 
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {};
+  // ── busca de cliente (modo relocar) ───────────────────────────────────────
+  const handleBuscaCliente = useCallback((termo: string) => {
+    setBuscaCliente(termo);
+    if (buscaDebounce.current) clearTimeout(buscaDebounce.current);
+    if (!termo.trim()) { setResultadosCliente([]); return; }
+    buscaDebounce.current = setTimeout(async () => {
+      setBuscandoCliente(true);
+      try {
+        const res = await buscarCliente(termo);
+        setResultadosCliente(res);
+      } finally {
+        setBuscandoCliente(false);
+      }
+    }, 400);
+  }, [buscarCliente]);
 
-    // Produto
-    if (!formData.produtoId) {
-      newErrors.produtoId = 'Produto é obrigatório';
-  
-  }
-
-    // Relógio
-    if (!formData.numeroRelogio) {
-      newErrors.numeroRelogio = 'Número do relógio é obrigatório';
-  
-  }
-
-    // Preço da ficha
-    if (!formData.precoFicha || formData.precoFicha <= 0) {
-      newErrors.precoFicha = 'Preço da ficha deve ser maior que zero';
-  
-  }
-
-    // Percentual
-    if (formData.formaPagamento !== 'Periodo') {
-      if (!formData.percentualEmpresa || formData.percentualEmpresa < 0 || formData.percentualEmpresa > 100) {
-        newErrors.percentualEmpresa = 'Percentual deve estar entre 0 e 100';
-    
-  }
-  
-  }
-
-    // Período
-    if (formData.formaPagamento === 'Periodo') {
-      if (!formData.valorFixo || formData.valorFixo <= 0) {
-        newErrors.valorFixo = 'Valor fixo deve ser maior que zero';
-    
-  }
-      if (!formData.periodicidade) {
-        newErrors.periodicidade = 'Periodicidade é obrigatória';
-    
-  }
-  
-  }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  // ==========================================================================
-  // HANDLERS
-  // ==========================================================================
-
-  const handleInputChange = useCallback((field: keyof Locacao, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));    
-    if (errors[field]) {
-      const newErrors = { ...errors };
-      delete newErrors[field];
-      setErrors(newErrors);
-  
-  }
-
-    // Atualizar percentual cliente automaticamente
-    if (field === 'percentualEmpresa' && formData.formaPagamento !== 'Periodo') {
-      const percentualCliente = 100 - (value as number);
-      setFormData(prev => ({ ...prev, percentualCliente }));
-  
-  }
-  }, [errors, formData.formaPagamento]);
-
-  const handleSelectProduto = useCallback((produto: any) => {
-    setFormData(prev => ({
+  const handleSelecionarCliente = useCallback((cliente: any) => {
+    setForm(prev => ({
       ...prev,
-      produtoId: produto.id,
-      produtoIdentificador: produto.identificador,
-      produtoTipo: produto.tipoNome,
+      clienteId:   String(cliente.id),
+      clienteNome: cliente.nomeExibicao,
     }));
-    setShowProdutoPicker(false);
+    setShowClientePicker(false);
+    setBuscaCliente('');
+    setResultadosCliente([]);
+    clearError('clienteId');
   }, []);
 
-  const handleSubmit = useCallback(async () => {
-    if (!validateForm()) {
-      Alert.alert('Erro', 'Por favor, corrija os campos obrigatórios');
-      return;
-  
-  }
+  // ── seleção de produto ────────────────────────────────────────────────────
+  const handleSelecionarProduto = useCallback((produto: any) => {
+    setForm(prev => ({
+      ...prev,
+      produtoId:            String(produto.id),
+      produtoIdentificador: produto.identificador,
+      produtoTipo:          produto.tipoNome,
+    }));
+    setShowProdutoPicker(false);
+    clearError('produtoId');
+  }, []);
 
+  // ── helpers de input ──────────────────────────────────────────────────────
+  const setField = (field: string, value: string) => {
+    setForm(prev => {
+      const next: any = { ...prev, [field]: value };
+      // percentual cliente = 100 - empresa
+      if (field === 'percentualEmpresa') {
+        // keep in sync visually (calculated on submit)
+      }
+      return next;
+    });
+    clearError(field);
+  };
+
+  const clearError = (field: string) =>
+    setErrors(prev => { const n = { ...prev }; delete n[field]; return n; });
+
+  const percentualCliente = Math.max(0, 100 - (parseFloat(form.percentualEmpresa) || 0));
+
+  // ── validação ─────────────────────────────────────────────────────────────
+  const validate = (): boolean => {
+    const e: Record<string, string> = {};
+
+    if (!form.produtoId)    e.produtoId   = 'Produto é obrigatório';
+    if (!form.clienteId)    e.clienteId   = 'Cliente é obrigatório';
+    if (!form.numeroRelogio) e.numeroRelogio = 'Relógio é obrigatório';
+
+    if (form.formaPagamento !== 'Periodo') {
+      if (!form.precoFicha || parseFloat(form.precoFicha) <= 0)
+        e.precoFicha = 'Preço da ficha deve ser maior que zero';
+      const pct = parseFloat(form.percentualEmpresa);
+      if (isNaN(pct) || pct < 0 || pct > 100)
+        e.percentualEmpresa = 'Percentual entre 0 e 100';
+    } else {
+      if (!form.valorFixo || parseFloat(form.valorFixo) <= 0)
+        e.valorFixo = 'Valor fixo deve ser maior que zero';
+      if (!form.periodicidade)
+        e.periodicidade = 'Periodicidade é obrigatória';
+    }
+
+    if (modo === 'relocar' && !form.motivoRelocacao.trim())
+      e.motivoRelocacao = 'Informe o motivo da relocação';
+
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  // ── submit ────────────────────────────────────────────────────────────────
+  const handleSubmit = useCallback(async () => {
+    if (!validate()) { Alert.alert('Atenção', 'Corrija os campos obrigatórios'); return; }
+
+    setSalvando(true);
     try {
       if (modo === 'criar') {
-        const locacao = await criarLocacao(formData as any);
+        const locacao = await criarLocacao({
+          clienteId:            form.clienteId,
+          clienteNome:          form.clienteNome,
+          produtoId:            form.produtoId,
+          produtoIdentificador: form.produtoIdentificador,
+          produtoTipo:          form.produtoTipo,
+          dataLocacao:          new Date().toISOString(),
+          formaPagamento:       form.formaPagamento,
+          numeroRelogio:        form.numeroRelogio,
+          precoFicha:           parseFloat(form.precoFicha) || 0,
+          percentualEmpresa:    parseFloat(form.percentualEmpresa) || 50,
+          percentualCliente,
+          periodicidade:        form.periodicidade as any || undefined,
+          valorFixo:            form.valorFixo ? parseFloat(form.valorFixo) : undefined,
+          dataPrimeiraCobranca: form.dataPrimeiraCobranca || undefined,
+          observacao:           form.observacao || undefined,
+          status:               'Ativa',
+        } as any);
+
         if (locacao) {
           Alert.alert('Sucesso', 'Locação criada com sucesso', [
             { text: 'OK', onPress: () => navigation.goBack() },
           ]);
         } else {
           Alert.alert('Erro', 'Não foi possível criar a locação');
-      
-  }
+        }
+
       } else if (modo === 'editar') {
-        const sucesso = await atualizarLocacao({ ...formData, id: locacaoId! });
-        if (sucesso) {
+        const ok = await atualizarLocacao({
+          id:                locacaoId!,
+          formaPagamento:    form.formaPagamento,
+          numeroRelogio:     form.numeroRelogio,
+          precoFicha:        parseFloat(form.precoFicha) || 0,
+          percentualEmpresa: parseFloat(form.percentualEmpresa) || 50,
+          percentualCliente,
+          periodicidade:     form.periodicidade as any || undefined,
+          valorFixo:         form.valorFixo ? parseFloat(form.valorFixo) : undefined,
+          observacao:        form.observacao || undefined,
+        } as any);
+
+        if (ok) {
           Alert.alert('Sucesso', 'Locação atualizada com sucesso', [
             { text: 'OK', onPress: () => navigation.goBack() },
           ]);
         } else {
           Alert.alert('Erro', 'Não foi possível atualizar a locação');
-      
-  }
-    
-  }
-    } catch (error) {
-      Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao salvar locação');  
-  }
-  }, [formData, modo, locacaoId, criarLocacao, atualizarLocacao, navigation]);
+        }
 
-  // ==========================================================================
-  // RENDERIZAÇÃO DE CAMPOS
-  // ==========================================================================
+      } else if (modo === 'relocar') {
+        const ok = await realizarRelocacao({
+          produtoId:            form.produtoId,
+          produtoIdentificador: form.produtoIdentificador,
+          novoClienteId:        form.clienteId,
+          novoClienteNome:      form.clienteNome,
+          dataRelocacao:        new Date().toISOString(),
+          formaPagamento:       form.formaPagamento,
+          numeroRelogio:        form.numeroRelogio,
+          precoFicha:           parseFloat(form.precoFicha) || 0,
+          percentualEmpresa:    parseFloat(form.percentualEmpresa) || 50,
+          percentualCliente,
+          periodicidade:        form.periodicidade || undefined,
+          valorFixo:            form.valorFixo ? parseFloat(form.valorFixo) : undefined,
+          dataPrimeiraCobranca: form.dataPrimeiraCobranca || undefined,
+          motivoRelocacao:      form.motivoRelocacao,
+          observacao:           form.observacao || undefined,
+        });
 
-  const renderInput = useCallback((
-    label: string,
-    field: keyof Locacao,
-    placeholder: string,
-    options: {
-      keyboardType?: 'default' | 'numeric';
-      editable?: boolean;
-      mask?: (value: string) => string;
-    } = {}
-  ) => (
-    <View style={styles.inputGroup}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={[styles.inputContainer, errors[field] && styles.inputError]}>
-        <TextInput
-          style={styles.input}
-          placeholder={placeholder}
-          placeholderTextColor="#94A3B8"
-          value={String(formData[field] || '')}
-          onChangeText={(value) => {
-            const formatted = options.mask ? options.mask(value) : value;
-            handleInputChange(field, formatted);
-          }}
-          keyboardType={options.keyboardType || 'default'}
-          editable={options.editable !== false}
-        />
+        if (ok) {
+          Alert.alert(
+            'Relocação Realizada!',
+            `Produto ${form.produtoIdentificador} relocado para ${form.clienteNome}`,
+            [{ text: 'OK', onPress: () => { navigation.goBack(); navigation.goBack(); } }]
+          );
+        } else {
+          Alert.alert('Erro', 'Não foi possível realizar a relocação');
+        }
+      }
+    } catch (err) {
+      Alert.alert('Erro', err instanceof Error ? err.message : 'Erro ao salvar');
+    } finally {
+      setSalvando(false);
+    }
+  }, [form, modo, locacaoId, percentualCliente, criarLocacao, atualizarLocacao, realizarRelocacao, navigation]);
+
+  // ── loading inicial ───────────────────────────────────────────────────────
+  if (carregandoInit) {
+    return (
+      <View style={s.centered}>
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text style={s.loadingText}>Carregando...</Text>
       </View>
-      {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
-    </View>
-  ), [formData, errors, handleInputChange]);
+    );
+  }
 
-  const renderFormaPagamento = useCallback(() => (
-    <View style={styles.formaPagamentoContainer}>
-      {[
-        { value: 'PercentualReceber', label: '% Receber', icon: 'trending-up' },
-        { value: 'PercentualPagar', label: '% Pagar', icon: 'trending-down' },
-        { value: 'Periodo', label: 'Período', icon: 'calendar' },
-      ].map((option) => (
-        <TouchableOpacity
-          key={option.value}
-          style={[
-            styles.formaPagamentoOption,
-            formData.formaPagamento === option.value && styles.formaPagamentoOptionActive,
-          ]}          onPress={() => handleInputChange('formaPagamento', option.value)}
-        >
-          <Ionicons
-            name={option.icon as any}
-            size={20}
-            color={formData.formaPagamento === option.value ? '#FFFFFF' : '#64748B'}
-          />
-          <Text
-            style={[
-              styles.formaPagamentoText,
-              formData.formaPagamento === option.value && styles.formaPagamentoTextActive,
-            ]}
-          >
-            {option.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  ), [formData.formaPagamento, handleInputChange]);
+  const isRelocar = modo === 'relocar';
+  const tituloBtn = isRelocar ? 'Confirmar Relocação' : modo === 'criar' ? 'Criar Locação' : 'Salvar Alterações';
 
-  // ==========================================================================
-  // RENDER
-  // ==========================================================================
-
+  // ── render ────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* ========================================================================== */}
-          {/* DADOS DA LOCAÇÃO */}
-          {/* ========================================================================== */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Dados da Locação</Text>
-            <View style={styles.sectionCard}>
-              {/* Cliente (somente leitura) */}
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Cliente</Text>
-                <Text style={styles.infoValue}>{formData.clienteNome}</Text>
-              </View>
+    <SafeAreaView style={s.container}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
 
-              {/* Produto */}
-              <TouchableOpacity
-                style={styles.selectButton}                onPress={() => setShowProdutoPicker(true)}
-              >
-                <Text style={styles.selectLabel}>Produto *</Text>
-                <View style={styles.selectValue}>
-                  <Text style={formData.produtoId ? styles.selectValueText : styles.selectPlaceholder}>
-                    {formData.produtoId 
-                      ? `${formData.produtoTipo} N° ${formData.produtoIdentificador}`
-                      : 'Selecionar produto'}
-                  </Text>
-                  <Ionicons name="chevron-down" size={20} color="#64748B" />
-                </View>
-                {errors.produtoId && <Text style={styles.errorText}>{errors.produtoId}</Text>}
-              </TouchableOpacity>
-
-              {/* Data da Locação */}
-              {renderInput(
-                'Data da Locação',
-                'dataLocacao',
-                new Date().toLocaleDateString('pt-BR'),
-                { editable: false }
-              )}
-
-              {/* Observação */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Observação</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={[styles.input, styles.inputMultiline]}
-                    placeholder="Adicione uma observação..."
-                    placeholderTextColor="#94A3B8"
-                    value={formData.observacao || ''}
-                    onChangeText={(value) => handleInputChange('observacao', value)}
-                    multiline
-                    numberOfLines={3}
-                  />
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* ========================================================================== */}
-          {/* FORMA DE PAGAMENTO */}
-          {/* ========================================================================== */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Forma de Pagamento</Text>
-            <View style={styles.sectionCard}>
-              {renderFormaPagamento()}
-
-              {/* Campos específicos por forma de pagamento */}
-              {formData.formaPagamento !== 'Periodo' ? (                <>
-                  {/* Número do Relógio */}
-                  {renderInput(
-                    'Número do Relógio *',
-                    'numeroRelogio',
-                    '00000',
-                    { keyboardType: 'numeric', mask: masks.relogio }
-                  )}
-
-                  {/* Preço da Ficha */}
-                  {renderInput(
-                    'Preço da Ficha *',
-                    'precoFicha',
-                    'R$ 0,00',
-                    { keyboardType: 'numeric' }
-                  )}
-
-                  {/* Percentual Empresa */}
-                  {renderInput(
-                    '% Empresa *',
-                    'percentualEmpresa',
-                    '50',
-                    { keyboardType: 'numeric' }
-                  )}
-
-                  {/* Percentual Cliente (somente leitura) */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>% Cliente</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        style={[styles.input, styles.inputReadOnly]}
-                        value={`${formData.percentualCliente || 50}%`}
-                        editable={false}
-                      />
-                    </View>
+          {/* ── PRODUTO ─────────────────────────────────────────────── */}
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Produto</Text>
+            <View style={s.card}>
+              {/* Em relocar/editar o produto é somente leitura */}
+              {isRelocar || modo === 'editar' ? (
+                <View style={s.infoBox}>
+                  <View style={s.infoBoxIcon}>
+                    <Ionicons name="cube" size={22} color="#2563EB" />
                   </View>
-                </>
+                  <View>
+                    <Text style={s.infoBoxPrimary}>
+                      {form.produtoTipo} N° {form.produtoIdentificador}
+                    </Text>
+                    <Text style={s.infoBoxSub}>Produto fixo — não pode ser alterado</Text>
+                  </View>
+                </View>
               ) : (
                 <>
-                  {/* Periodicidade */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Periodicidade *</Text>
-                    <View style={styles.inputContainer}>
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.periodicidadeScroll}
-                      >
-                        {['Mensal', 'Semanal', 'Quinzenal', 'Diária'].map((periodo) => (
-                          <TouchableOpacity                            key={periodo}
-                            style={[
-                              styles.periodicidadeChip,
-                              formData.periodicidade === periodo && styles.periodicidadeChipActive,
-                            ]}
-                            onPress={() => handleInputChange('periodicidade', periodo)}
-                          >
-                            <Text
-                              style={[
-                                styles.periodicidadeChipText,
-                                formData.periodicidade === periodo && styles.periodicidadeChipTextActive,
-                              ]}
-                            >
-                              {periodo}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                    {errors.periodicidade && <Text style={styles.errorText}>{errors.periodicidade}</Text>}
-                  </View>
-
-                  {/* Valor Fixo */}
-                  {renderInput(
-                    'Valor Fixo *',
-                    'valorFixo',
-                    'R$ 0,00',
-                    { keyboardType: 'numeric' }
-                  )}
-
-                  {/* Data Primeira Cobrança */}
-                  {renderInput(
-                    'Data Primeira Cobrança',
-                    'dataPrimeiraCobranca',
-                    'DD/MM/AAAA'
-                  )}
+                  <Label text="Produto" required />
+                  <TouchableOpacity
+                    style={[s.selector, errors.produtoId && s.selectorError]}
+                    onPress={() => setShowProdutoPicker(true)}
+                  >
+                    <Text style={form.produtoId ? s.selectorValue : s.selectorPlaceholder}>
+                      {form.produtoId
+                        ? `${form.produtoTipo} N° ${form.produtoIdentificador}`
+                        : 'Selecionar produto disponível'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={18} color="#94A3B8" />
+                  </TouchableOpacity>
+                  <FieldError msg={errors.produtoId} />
                 </>
               )}
             </View>
           </View>
 
-          {/* ========================================================================== */}
-          {/* RESUMO */}
-          {/* ========================================================================== */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Resumo</Text>
-            <View style={styles.sectionCard}>
-              <View style={styles.resumoRow}>
-                <Text style={styles.resumoLabel}>Cliente</Text>
-                <Text style={styles.resumoValue}>{formData.clienteNome || '-'}</Text>              </View>
-              <View style={styles.resumoRow}>
-                <Text style={styles.resumoLabel}>Produto</Text>
-                <Text style={styles.resumoValue}>
-                  {formData.produtoId 
-                    ? `${formData.produtoTipo} N° ${formData.produtoIdentificador}`
-                    : '-'}
-                </Text>
-              </View>
-              <View style={styles.resumoRow}>
-                <Text style={styles.resumoLabel}>Forma de Pagamento</Text>
-                <Text style={styles.resumoValue}>
-                  {formData.formaPagamento === 'PercentualReceber' && '% Receber'}
-                  {formData.formaPagamento === 'PercentualPagar' && '% Pagar'}
-                  {formData.formaPagamento === 'Periodo' && 'Período'}
-                </Text>
-              </View>
+          {/* ── CLIENTE ─────────────────────────────────────────────── */}
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>
+              {isRelocar ? 'Novo Cliente' : 'Cliente'}
+            </Text>
+            <View style={s.card}>
+              {!isRelocar ? (
+                <View style={s.infoBox}>
+                  <View style={s.infoBoxIcon}>
+                    <Ionicons name="person" size={22} color="#16A34A" />
+                  </View>
+                  <View>
+                    <Text style={s.infoBoxPrimary}>{form.clienteNome || '—'}</Text>
+                    <Text style={s.infoBoxSub}>Cliente fixo</Text>
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <Label text="Selecionar novo cliente" required />
+                  <TouchableOpacity
+                    style={[s.selector, errors.clienteId && s.selectorError]}
+                    onPress={() => setShowClientePicker(true)}
+                  >
+                    <Text style={form.clienteId ? s.selectorValue : s.selectorPlaceholder}>
+                      {form.clienteId ? form.clienteNome : 'Buscar cliente...'}
+                    </Text>
+                    <Ionicons name="search" size={18} color="#94A3B8" />
+                  </TouchableOpacity>
+                  <FieldError msg={errors.clienteId} />
+                </>
+              )}
             </View>
           </View>
 
-          {/* Espaço extra */}
-          <View style={styles.footer} />
+          {/* ── FORMA DE PAGAMENTO ──────────────────────────────────── */}
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Forma de Pagamento</Text>
+            <View style={s.card}>
+              {/* Seletor visual */}
+              <View style={s.formaBtns}>
+                {FORMA_OPTS.map(opt => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[s.formaBtn, form.formaPagamento === opt.value && s.formaBtnActive]}
+                    onPress={() => setField('formaPagamento', opt.value)}
+                  >
+                    <Ionicons
+                      name={opt.icon as any} size={18}
+                      color={form.formaPagamento === opt.value ? '#FFF' : '#64748B'}
+                    />
+                    <Text style={[s.formaBtnText, form.formaPagamento === opt.value && s.formaBtnTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Relógio sempre visível */}
+              <Label text="Número do Relógio" required />
+              <TextInput
+                style={[s.input, errors.numeroRelogio && s.inputError]}
+                placeholder="00000"
+                placeholderTextColor="#CBD5E1"
+                value={form.numeroRelogio}
+                onChangeText={v => setField('numeroRelogio', masks.relogio(v))}
+                keyboardType="numeric"
+              />
+              <FieldError msg={errors.numeroRelogio} />
+
+              {form.formaPagamento !== 'Periodo' ? (<>
+                <Label text="Preço da Ficha (R$)" required />
+                <TextInput
+                  style={[s.input, errors.precoFicha && s.inputError]}
+                  placeholder="3,00"
+                  placeholderTextColor="#CBD5E1"
+                  value={form.precoFicha}
+                  onChangeText={v => setField('precoFicha', v)}
+                  keyboardType="numeric"
+                />
+                <FieldError msg={errors.precoFicha} />
+
+                <Label text="% Empresa" required />
+                <TextInput
+                  style={[s.input, errors.percentualEmpresa && s.inputError]}
+                  placeholder="50"
+                  placeholderTextColor="#CBD5E1"
+                  value={form.percentualEmpresa}
+                  onChangeText={v => setField('percentualEmpresa', v)}
+                  keyboardType="numeric"
+                />
+                <FieldError msg={errors.percentualEmpresa} />
+
+                <View style={s.percentualClienteRow}>
+                  <Text style={s.percentualClienteLabel}>% Cliente (automático)</Text>
+                  <Text style={s.percentualClienteValue}>{percentualCliente}%</Text>
+                </View>
+              </>) : (<>
+                <Label text="Periodicidade" required />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={s.chips}>
+                  {PERIODICIDADES.map(p => (
+                    <TouchableOpacity
+                      key={p}
+                      style={[s.chip, form.periodicidade === p && s.chipActive]}
+                      onPress={() => setField('periodicidade', p)}
+                    >
+                      <Text style={[s.chipText, form.periodicidade === p && s.chipTextActive]}>{p}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <FieldError msg={errors.periodicidade} />
+
+                <Label text="Valor Fixo (R$)" required />
+                <TextInput
+                  style={[s.input, errors.valorFixo && s.inputError]}
+                  placeholder="150,00"
+                  placeholderTextColor="#CBD5E1"
+                  value={form.valorFixo}
+                  onChangeText={v => setField('valorFixo', v)}
+                  keyboardType="numeric"
+                />
+                <FieldError msg={errors.valorFixo} />
+
+                <Label text="Data Primeira Cobrança" />
+                <TextInput
+                  style={s.input}
+                  placeholder="DD/MM/AAAA"
+                  placeholderTextColor="#CBD5E1"
+                  value={form.dataPrimeiraCobranca}
+                  onChangeText={v => setField('dataPrimeiraCobranca', masks.date(v))}
+                  keyboardType="numeric"
+                />
+              </>)}
+            </View>
+          </View>
+
+          {/* ── MOTIVO (só modo relocar) ─────────────────────────────── */}
+          {isRelocar && (
+            <View style={s.section}>
+              <Text style={s.sectionTitle}>Relocação</Text>
+              <View style={s.card}>
+                <Label text="Motivo da relocação" required />
+                <TextInput
+                  style={[s.input, errors.motivoRelocacao && s.inputError]}
+                  placeholder="Ex: Solicitação do cliente, problema técnico..."
+                  placeholderTextColor="#CBD5E1"
+                  value={form.motivoRelocacao}
+                  onChangeText={v => setField('motivoRelocacao', v)}
+                />
+                <FieldError msg={errors.motivoRelocacao} />
+              </View>
+            </View>
+          )}
+
+          {/* ── OBSERVAÇÃO ──────────────────────────────────────────── */}
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Observação</Text>
+            <View style={s.card}>
+              <TextInput
+                style={[s.input, s.inputMultiline]}
+                placeholder="Observação opcional..."
+                placeholderTextColor="#CBD5E1"
+                value={form.observacao}
+                onChangeText={v => setField('observacao', v)}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+            </View>
+          </View>
+
+          <View style={{ height: 100 }} />
         </ScrollView>
 
-        {/* ========================================================================== */}
-        {/* BOTÃO SALVAR */}
-        {/* ========================================================================== */}
-        <View style={styles.bottomBar}>
+        {/* ── BOTÃO CONFIRMAR ──────────────────────────────────────── */}
+        <View style={s.bottomBar}>
           <TouchableOpacity
-            style={[styles.saveButton, carregando && styles.saveButtonDisabled]}
+            style={[s.btnConfirm, (salvando || carregando) && s.btnDisabled]}
             onPress={handleSubmit}
-            disabled={carregando}
+            disabled={salvando || carregando}
+            activeOpacity={0.85}
           >
-            {carregando ? (
-              <ActivityIndicator color="#FFFFFF" />
+            {salvando || carregando ? (
+              <ActivityIndicator color="#FFF" />
             ) : (
               <>
-                <Ionicons name="checkmark-circle" size={24} color="#FFFFFF" />
-                <Text style={styles.saveButtonText}>
-                  {modo === 'criar' ? 'Criar Locação' : modo === 'relocar' ? 'Realocar' : 'Atualizar Locação'}
-                </Text>
+                <Ionicons
+                  name={isRelocar ? 'swap-horizontal' : 'checkmark-circle'}
+                  size={22} color="#FFF"
+                />
+                <Text style={s.btnConfirmText}>{tituloBtn}</Text>
               </>
             )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
 
-      {/* ========================================================================== */}
-      {/* MODAL DE SELEÇÃO DE PRODUTO (simplificado) */}
-      {/* ========================================================================== */}      {showProdutoPicker && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Selecionar Produto</Text>
+      {/* ── MODAL: SELECIONAR PRODUTO ────────────────────────────────── */}
+      <Modal visible={showProdutoPicker} animationType="slide" transparent onRequestClose={() => setShowProdutoPicker(false)}>
+        <View style={s.modalOverlay}>
+          <View style={s.modalSheet}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Produto Disponível</Text>
               <TouchableOpacity onPress={() => setShowProdutoPicker(false)}>
                 <Ionicons name="close" size={24} color="#1E293B" />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalList}>
-              {produtos.map((produto) => (
-                <TouchableOpacity
-                  key={produto.id}
-                  style={styles.produtoItem}
-                  onPress={() => handleSelectProduto(produto)}
-                >
-                  <Text style={styles.produtoItemText}>
-                    {produto.tipoNome} N° {produto.identificador}
-                  </Text>
-                  <Text style={styles.produtoItemSubtitle}>
-                    {produto.descricaoNome} • {produto.tamanhoNome}
-                  </Text>
+            <FlatList
+              data={produtos}
+              keyExtractor={item => String(item.id)}
+              contentContainerStyle={{ padding: 16 }}
+              ListEmptyComponent={() => (
+                <View style={s.modalEmpty}>
+                  <Ionicons name="cube-outline" size={48} color="#CBD5E1" />
+                  <Text style={s.modalEmptyText}>Nenhum produto disponível</Text>
+                </View>
+              )}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={s.modalItem} onPress={() => handleSelecionarProduto(item)}>
+                  <View style={s.modalItemIcon}>
+                    <Ionicons name="cube" size={20} color="#2563EB" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.modalItemPrimary}>{item.tipoNome} N° {item.identificador}</Text>
+                    <Text style={s.modalItemSub}>{item.descricaoNome}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
+              )}
+            />
           </View>
         </View>
-      )}
+      </Modal>
+
+      {/* ── MODAL: BUSCAR CLIENTE ───────────────────────────────────── */}
+      <Modal visible={showClientePicker} animationType="slide" transparent onRequestClose={() => setShowClientePicker(false)}>
+        <View style={s.modalOverlay}>
+          <View style={s.modalSheet}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Buscar Cliente</Text>
+              <TouchableOpacity onPress={() => { setShowClientePicker(false); setBuscaCliente(''); setResultadosCliente([]); }}>
+                <Ionicons name="close" size={24} color="#1E293B" />
+              </TouchableOpacity>
+            </View>
+            {/* Campo de busca */}
+            <View style={s.searchBox}>
+              <Ionicons name="search" size={18} color="#94A3B8" />
+              <TextInput
+                style={s.searchInput}
+                placeholder="Nome do cliente..."
+                placeholderTextColor="#94A3B8"
+                value={buscaCliente}
+                onChangeText={handleBuscaCliente}
+                autoFocus
+              />
+              {buscandoCliente && <ActivityIndicator size="small" color="#2563EB" />}
+            </View>
+            <FlatList
+              data={resultadosCliente}
+              keyExtractor={item => String(item.id)}
+              contentContainerStyle={{ padding: 16 }}
+              ListEmptyComponent={() => (
+                <View style={s.modalEmpty}>
+                  <Ionicons name="person-outline" size={48} color="#CBD5E1" />
+                  <Text style={s.modalEmptyText}>
+                    {buscaCliente.length > 0 ? 'Nenhum cliente encontrado' : 'Digite para buscar'}
+                  </Text>
+                </View>
+              )}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={s.modalItem} onPress={() => handleSelecionarCliente(item)}>
+                  <View style={[s.modalItemIcon, { backgroundColor: '#DCFCE7' }]}>
+                    <Ionicons name="person" size={20} color="#16A34A" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.modalItemPrimary}>{item.nomeExibicao}</Text>
+                    <Text style={s.modalItemSub}>{item.cidade} - {item.estado}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-// ============================================================================
-// ESTILOS
-// ============================================================================
+// ─── estilos ────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  container:   { flex: 1, backgroundColor: '#F8FAFC' },
+  centered:    { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
+  loadingText: { color: '#64748B', fontSize: 15 },
+  scroll:      { padding: 16 },
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 100,  },
+  section:      { marginBottom: 20 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1E293B', marginBottom: 10 },
+  card:         { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, elevation: 1 },
 
-  // Section
-  section: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 12,
-  },
-  sectionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
+  // info box (somente leitura)
+  infoBox:       { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  infoBoxIcon:   { width: 44, height: 44, borderRadius: 12, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' },
+  infoBoxPrimary:{ fontSize: 15, fontWeight: '700', color: '#1E293B' },
+  infoBoxSub:    { fontSize: 12, color: '#94A3B8', marginTop: 2 },
 
-  // Info Row
-  infoRow: {
-    marginBottom: 16,
-  },
-  infoLabel: {
-    fontSize: 12,
-    color: '#64748B',
-    marginBottom: 4,
-  },
-  infoValue: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
+  // label
+  label:  { fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 6, marginTop: 12 },
 
-  // Select Button
-  selectButton: {
-    marginBottom: 16,
-  },
-  selectLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 8,
-  },
-  selectValue: {
-    flexDirection: 'row',    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  selectValueText: {
-    fontSize: 15,
-    color: '#1E293B',
-  },
-  selectPlaceholder: {
-    fontSize: 15,
-    color: '#94A3B8',
-  },
+  // selector
+  selector:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, padding: 14 },
+  selectorError:   { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' },
+  selectorValue:   { fontSize: 15, color: '#1E293B', flex: 1 },
+  selectorPlaceholder: { fontSize: 15, color: '#94A3B8', flex: 1 },
 
-  // Inputs
-  inputGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 8,
-  },
-  inputContainer: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  inputError: {
-    borderColor: '#DC2626',
-    backgroundColor: '#FEF2F2',
-  },
-  input: {
-    fontSize: 16,
-    color: '#1E293B',
-  },
-  inputReadOnly: {
-    color: '#64748B',
-  },
-  inputMultiline: {
-    minHeight: 80,
-    textAlignVertical: 'top',  },
-  errorText: {
-    fontSize: 12,
-    color: '#DC2626',
-    marginTop: 4,
-  },
+  // input
+  input:         { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, padding: 14, fontSize: 15, color: '#1E293B' },
+  inputError:    { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' },
+  inputMultiline:{ minHeight: 80, textAlignVertical: 'top' },
+  fieldError:    { fontSize: 12, color: '#DC2626', marginTop: 4 },
 
-  // Forma de Pagamento
-  formaPagamentoContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
-  },
-  formaPagamentoOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  formaPagamentoOptionActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
-  },
-  formaPagamentoText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  formaPagamentoTextActive: {
-    color: '#FFFFFF',
-  },
+  // forma pagamento
+  formaBtns:         { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  formaBtn:          { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 10, borderRadius: 10, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
+  formaBtnActive:    { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  formaBtnText:      { fontSize: 12, fontWeight: '600', color: '#64748B' },
+  formaBtnTextActive:{ color: '#FFFFFF' },
 
-  // Periodicidade
-  periodicidadeScroll: {
-    gap: 8,
-  },
-  periodicidadeChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
-  },
-  periodicidadeChipActive: {
-    backgroundColor: '#2563EB',  },
-  periodicidadeChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  periodicidadeChipTextActive: {
-    color: '#FFFFFF',
-  },
+  // percentual cliente
+  percentualClienteRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, padding: 12, backgroundColor: '#F1F5F9', borderRadius: 10 },
+  percentualClienteLabel:{ fontSize: 13, color: '#64748B' },
+  percentualClienteValue:{ fontSize: 15, fontWeight: '700', color: '#1E293B' },
 
-  // Resumo
-  resumoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  resumoLabel: {
-    fontSize: 13,
-    color: '#64748B',
-  },
-  resumoValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
+  // chips periodicidade
+  chips:     { gap: 8, paddingBottom: 4 },
+  chip:      { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F1F5F9' },
+  chipActive:{ backgroundColor: '#2563EB' },
+  chipText:  { fontSize: 13, fontWeight: '600', color: '#64748B' },
+  chipTextActive: { color: '#FFFFFF' },
 
-  // Footer
-  footer: {
-    height: 20,
-  },
+  // bottom bar
+  bottomBar:    { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#E2E8F0' },
+  btnConfirm:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#2563EB', padding: 16, borderRadius: 14 },
+  btnDisabled:  { backgroundColor: '#BFDBFE' },
+  btnConfirmText:{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
 
-  // Bottom Bar
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 16,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-  },
-  saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2563EB',    padding: 16,
-    borderRadius: 12,
-    gap: 12,
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#93C5FD',
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-
-  // Modal
-  modalOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '70%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  modalList: {
-    padding: 16,
-  },
-  produtoItem: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },  produtoItemText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-  produtoItemSubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 2,
-  },
+  // modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalSheet:   { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '75%' },
+  modalHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  modalTitle:   { fontSize: 18, fontWeight: '700', color: '#1E293B' },
+  modalEmpty:   { alignItems: 'center', paddingVertical: 40, gap: 8 },
+  modalEmptyText:{ fontSize: 15, color: '#94A3B8' },
+  modalItem:    { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  modalItemIcon:{ width: 40, height: 40, borderRadius: 10, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' },
+  modalItemPrimary:{ fontSize: 15, fontWeight: '600', color: '#1E293B' },
+  modalItemSub: { fontSize: 12, color: '#64748B', marginTop: 2 },
+  searchBox:    { flexDirection: 'row', alignItems: 'center', margin: 16, padding: 12, backgroundColor: '#F8FAFC', borderRadius: 12, gap: 8, borderWidth: 1, borderColor: '#E2E8F0' },
+  searchInput:  { flex: 1, fontSize: 15, color: '#1E293B' },
 });

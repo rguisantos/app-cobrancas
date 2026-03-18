@@ -1,488 +1,263 @@
 /**
  * HomeScreen.tsx
- * Tela inicial do aplicativo mobile - Dashboard
- * 
- * Funcionalidades:
- * - Saudação personalizada (Bom dia, Boa tarde, Boa noite)
- * - Métricas rápidas (Clientes, Cobranças Pendentes, Produtos)
- * - Acesso rápido às principais funções
- * - Status de sincronização
- * - Atalhos para módulos (Clientes, Produtos, Cobranças)
+ * Dashboard principal do aplicativo
  */
 
 import React, { useState, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  RefreshControl,
-  ActivityIndicator,
+  View, Text, StyleSheet, ScrollView,
+  TouchableOpacity, RefreshControl, ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { Ionicons }     from '@expo/vector-icons';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Contexts
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth }      from '../contexts/AuthContext';
 import { useDashboard } from '../contexts/DashboardContext';
-import { useSync } from '../contexts/SyncContext';
-
-// Types
+import { useSync }      from '../contexts/SyncContext';
 import { AppTabsParamList } from '../navigation/AppNavigator';
-
-// Components
-import MetricCard from '../components/MetricCard';
+import MetricCard  from '../components/MetricCard';
 import QuickAction from '../components/QuickAction';
 import SyncIndicator from '../components/SyncIndicator';
 
-// ============================================================================
-// TIPOS E INTERFACES
-// ============================================================================
-
-interface QuickActionItem {
-  id: string;
-  title: string;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  screen: keyof AppTabsParamList;
-  color: string;
-  permission?: boolean;
+// ─── helper: saudação ───────────────────────────────────────────────────────
+function getSaudacao(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Bom dia';
+  if (h < 18) return 'Boa tarde';
+  return 'Boa noite';
 }
 
-// ============================================================================
-// COMPONENTE PRINCIPAL
-// ============================================================================
+function formatSyncTime(lastSyncAt: string | null): string {
+  if (!lastSyncAt) return 'Nunca';
+  const diff = Math.floor((Date.now() - new Date(lastSyncAt).getTime()) / 60000);
+  if (diff < 1)    return 'Agora mesmo';
+  if (diff < 60)   return `${diff} min atrás`;
+  if (diff < 1440) return `${Math.floor(diff / 60)} h atrás`;
+  return `${Math.floor(diff / 1440)} d atrás`;
+}
 
+// ─── componente ─────────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<AppTabsParamList>>();
-  
-  // Contexts
-  const { user, logout, isAdmin, hasPermission } = useAuth();
-  const { mobile, metricas, carregando, erro, refresh } = useDashboard();
-  const { 
-    status: syncStatus, 
-    isSyncing, 
-    lastSyncAt, 
-    mudancasPendentes,
-    sincronizar 
-  } = useSync();
+  const { user, isAdmin, hasPermission } = useAuth();
+  const { metricas, carregando, erro, refresh } = useDashboard();
+  const { status: syncStatus, isSyncing, lastSyncAt, mudancasPendentes, sincronizar } = useSync();
 
-  // Estado local
   const [refreshing, setRefreshing] = useState(false);
 
-  // ==========================================================================
-  // HANDLERS
-  // ==========================================================================
+  // Recarrega ao focar a tab
+  useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
 
-  /**
-   * Atualiza dashboard com pull-to-refresh
-   */
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refresh();
     setRefreshing(false);
   }, [refresh]);
 
-  /**
-   * Navega para módulo específico
-   */
-  const navigateToModule = useCallback((module: keyof AppTabsParamList) => {
-    navigation.navigate(module as any);
+  const nav = useCallback((tab: keyof AppTabsParamList) => {
+    navigation.navigate(tab as any);
   }, [navigation]);
 
-  /**
-   * Força sincronização manual
-   */
-  const handleSync = useCallback(async () => {
-    await sincronizar(true);
-  }, [sincronizar]);
-  // ==========================================================================
-  // DADOS COMPUTADOS
-  // ==========================================================================
+  const navModal = useCallback((screen: string) => {
+    const parent = navigation.getParent();
+    if (parent) (parent as any).navigate(screen);
+  }, [navigation]);
 
-  /**
-   * Ações rápidas baseadas em permissões
-   * Funcionalidades específicas, não duplicação das métricas
-   */
-  const quickActions: QuickActionItem[] = [
-    {
-      id: 'novo-cliente',
-      title: 'Novo Cliente',
-      icon: 'person-add' as const,
-      screen: 'Clientes' as keyof AppTabsParamList,
-      color: '#2563EB',
-      permission: isAdmin() || hasPermission('todosCadastros', 'mobile'),
-    },
-    {
-      id: 'nova-locacao',
-      title: 'Nova Locação',
-      icon: 'add-circle' as const,
-      screen: 'Clientes' as keyof AppTabsParamList,
-      color: '#9333EA',
-      permission: isAdmin() || hasPermission('locacaoRelocacaoEstoque', 'mobile'),
-    },
-    {
-      id: 'registrar-pagamento',
-      title: 'Registrar Pagamento',
-      icon: 'card' as const,
-      screen: 'Cobrancas' as keyof AppTabsParamList,
-      color: '#16A34A',
-      permission: isAdmin() || hasPermission('cobrancasFaturas', 'mobile'),
-    },
-    {
-      id: 'relatorios',
-      title: 'Relatórios',
-      icon: 'bar-chart' as const,
-      screen: 'Mais' as keyof AppTabsParamList,
-      color: '#EA580C',
-      permission: true, // Todos podem ver
-    },
-  ].filter(action => action.permission !== false);
+  // ─── ações rápidas baseadas em permissões ───────────────────────────────
+  const podeCadastrar  = isAdmin() || hasPermission('todosCadastros', 'mobile');
+  const podeLocar      = isAdmin() || hasPermission('locacaoRelocacaoEstoque', 'mobile');
+  const podeCobrar     = isAdmin() || hasPermission('cobrancasFaturas', 'mobile');
+  const podeRelogio    = isAdmin() || hasPermission('alteracaoRelogio', 'mobile');
 
-  /**
-   * Formata saudação baseada no horário
-   */
-  const getSaudacao = (): string => {
-    return mobile?.saudacao || 'Olá';
-  };
-
-  /**   * Formata data da última sincronização
-   */
-  const formatarSyncTime = (): string => {
-    if (!lastSyncAt) return 'Nunca';
-    const date = new Date(lastSyncAt);
-    const now = new Date();
-    const diffMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-    
-    if (diffMinutes < 1) return 'Agora mesmo';
-    if (diffMinutes < 60) return `${diffMinutes} min atrás`;
-    if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} h atrás`;
-    return `${Math.floor(diffMinutes / 1440)} d atrás`;
-  };
-
-  // ==========================================================================
-  // RENDER
-  // ==========================================================================
-
-  if (carregando && !mobile) {
+  if (carregando && !metricas) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={s.loadingContainer}>
         <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={styles.loadingText}>Carregando dashboard...</Text>
+        <Text style={s.loadingText}>Carregando dashboard...</Text>
       </View>
     );
-
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={s.container}>
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={s.scroll}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#2563EB']}
-            tintColor="#2563EB"
-          />
-      
-  }
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} tintColor="#2563EB" />
+        }
+        showsVerticalScrollIndicator={false}
       >
-        {/* ========================================================================== */}
-        {/* HEADER - SAUDAÇÃO E PERFIL */}
-        {/* ========================================================================== */}
-        <View style={styles.header}>
-          <View style={styles.headerTop}>
-            <View style={styles.greeting}>
-              <Text style={styles.greetingText}>{getSaudacao()}</Text>
-              <Text style={styles.userName}>{user?.nome || 'Usuário'}</Text>
-              <Text style={styles.userRole}>{user?.tipoPermissao || 'Administrador'}</Text>            </View>
-            
-            <TouchableOpacity 
-              style={styles.syncButton}
-              onPress={handleSync}
-              disabled={isSyncing}
-            >
-              <SyncIndicator 
-                status={syncStatus}
-                isSyncing={isSyncing}
-                size="small"
-              />
-            </TouchableOpacity>
+        {/* ── HEADER ──────────────────────────────────────────────────── */}
+        <View style={s.header}>
+          <View style={s.headerLeft}>
+            <Text style={s.saudacao}>{getSaudacao()},</Text>
+            <Text style={s.nomeUsuario}>{user?.nome || 'Usuário'}</Text>
+            <View style={s.permTag}>
+              <Text style={s.permTagText}>{user?.tipoPermissao || 'Administrador'}</Text>
+            </View>
           </View>
 
-          {/* Status de sincronização */}
-          <View style={styles.syncStatus}>
-            <Ionicons 
-              name={syncStatus === 'synced' ? 'checkmark-circle' : 'cloud-outline'} 
-              size={16} 
-              color={syncStatus === 'synced' ? '#16A34A' : '#64748B'} 
-            />
-            <Text style={styles.syncStatusText}>
-              {isSyncing ? 'Sincronizando...' : `Sync: ${formatarSyncTime()}`}
-            </Text>
-            {mudancasPendentes > 0 && (
-              <View style={styles.pendingBadge}>
-                <Text style={styles.pendingBadgeText}>{mudancasPendentes}</Text>
-              </View>
-            )}
-          </View>
+          <TouchableOpacity
+            style={s.syncBtn}
+            onPress={() => sincronizar(true)}
+            disabled={isSyncing}
+          >
+            <SyncIndicator status={syncStatus} isSyncing={isSyncing} size="small" />
+          </TouchableOpacity>
         </View>
 
-        {/* ========================================================================== */}
-        {/* MÉTRICAS PRINCIPAIS */}
-        {/* ========================================================================== */}
-        <View style={styles.metricsSection}>
-          <Text style={styles.sectionTitle}>Visão Geral</Text>
-          
-          <View style={styles.metricsGrid}>
-            {/* Clientes */}
-            <MetricCard
-              title="Clientes"
-              value={metricas?.totalClientes || 0}
-              icon="people"
+        {/* status sync */}
+        <View style={s.syncRow}>
+          <Ionicons
+            name={syncStatus === 'synced' ? 'checkmark-circle' : isSyncing ? 'sync' : 'cloud-outline'}
+            size={14}
+            color={syncStatus === 'synced' ? '#16A34A' : '#64748B'}
+          />
+          <Text style={s.syncText}>
+            {isSyncing ? 'Sincronizando...' : `Última sync: ${formatSyncTime(lastSyncAt)}`}
+          </Text>
+          {mudancasPendentes > 0 && (
+            <View style={s.pendBadge}><Text style={s.pendBadgeText}>{mudancasPendentes}</Text></View>
+          )}
+        </View>
+
+        {/* ── MÉTRICAS ──────────────────────────────────────────────── */}
+        <Text style={s.secTitle}>Visão Geral</Text>
+        <View style={s.metricsGrid}>
+          <MetricCard
+            title="Clientes Ativos"
+            value={metricas?.totalClientes || 0}
+            icon="people"
+            color="#2563EB"
+            onPress={() => nav('Clientes')}
+          />
+          <MetricCard
+            title="Cobranças Pendentes"
+            value={metricas?.cobrancasPendentes || 0}
+            icon="alert-circle"
+            color="#DC2626"
+            badge={metricas?.cobrancasPendentes || 0}
+            onPress={() => nav('Cobrancas')}
+          />
+          <MetricCard
+            title="Total Produtos"
+            value={metricas?.totalProdutos || 0}
+            icon="cube"
+            color="#16A34A"
+            onPress={() => nav('Produtos')}
+          />
+          <MetricCard
+            title="Produtos Locados"
+            value={metricas?.produtosLocados || 0}
+            icon="swap-horizontal"
+            color="#9333EA"
+            onPress={() => nav('Produtos')}
+          />
+        </View>
+
+        {/* ── AÇÕES RÁPIDAS ───────────────────────────────────────────── */}
+        <Text style={s.secTitle}>Ações Rápidas</Text>
+        <View style={s.actionsGrid}>
+          {podeCadastrar && (
+            <QuickAction
+              title="Novo Cliente"
+              icon="person-add"
               color="#2563EB"
-              onPress={() => navigateToModule('Clientes')}
+              onPress={() => navModal('ClienteForm')}
             />
-
-            {/* Cobranças Pendentes */}            <MetricCard
-              title="Cobranças Pendentes"
-              value={metricas?.cobrancasPendentes || 0}
-              icon="alert-circle"
-              color="#DC2626"
-              onPress={() => navigateToModule('Cobrancas')}
-              badge={metricas?.cobrancasPendentes || 0}
-            />
-
-            {/* Produtos */}
-            <MetricCard
-              title="Produtos"
-              value={metricas?.totalProdutos || 0}
-              icon="cube"
-              color="#16A34A"
-              onPress={() => navigateToModule('Produtos')}
-            />
-
-            {/* Produtos Locados */}
-            <MetricCard
-              title="Produtos Locados"
-              value={metricas?.produtosLocados || 0}
-              icon="swap-horizontal"
+          )}
+          {podeLocar && (
+            <QuickAction
+              title="Nova Locação"
+              icon="add-circle"
               color="#9333EA"
-              onPress={() => navigateToModule('Clientes')}
+              onPress={() => nav('Clientes')}
             />
-          </View>
+          )}
+          {podeCobrar && (
+            <QuickAction
+              title="Realizar Cobrança"
+              icon="cash"
+              color="#16A34A"
+              onPress={() => nav('Cobrancas')}
+            />
+          )}
+          {podeCadastrar && (
+            <QuickAction
+              title="Novo Produto"
+              icon="cube"
+              color="#EA580C"
+              onPress={() => navModal('ProdutoForm')}
+            />
+          )}
+          {podeRelogio && (
+            <QuickAction
+              title="Alterar Relógio"
+              icon="timer"
+              color="#0891B2"
+              onPress={() => nav('Produtos')}
+            />
+          )}
+          {isAdmin() && (
+            <QuickAction
+              title="Configurações"
+              icon="settings"
+              color="#64748B"
+              onPress={() => navModal('Settings')}
+            />
+          )}
         </View>
 
-        {/* ========================================================================== */}
-        {/* AÇÕES RÁPIDAS */}
-        {/* ========================================================================== */}
-        <View style={styles.actionsSection}>
-          <Text style={styles.sectionTitle}>Ações Rápidas</Text>
-          
-          <View style={styles.actionsGrid}>
-            {quickActions.map((action) => (
-              <QuickAction
-                key={action.id}
-                title={action.title}
-                icon={action.icon}
-                color={action.color}
-                onPress={() => navigateToModule(action.screen)}
-              />
-            ))}
-          </View>
-        </View>
-
-        {/* ========================================================================== */}
-        {/* ALERTAS E NOTIFICAÇÕES */}        {/* ========================================================================== */}
+        {/* ── ERRO ──────────────────────────────────────────────────── */}
         {erro && (
-          <View style={styles.errorCard}>
-            <Ionicons name="warning" size={20} color="#DC2626" />
-            <Text style={styles.errorText}>{erro}</Text>
+          <View style={s.errorCard}>
+            <Ionicons name="warning" size={18} color="#DC2626" />
+            <Text style={s.errorText}>{erro}</Text>
             <TouchableOpacity onPress={refresh}>
-              <Text style={styles.retryText}>Tentar novamente</Text>
+              <Text style={s.retryText}>Tentar novamente</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Espaço extra no final */}
-        <View style={styles.footer} />
+        <View style={{ height: 32 }} />
       </ScrollView>
-
-      {/* ========================================================================== */}
-      {/* BOTÃO DE LOGOUT (opcional, pode estar no menu Mais) */}
-      {/* ========================================================================== */}
-      <TouchableOpacity style={styles.logoutButton} onPress={logout}>
-        <Ionicons name="log-out-outline" size={20} color="#64748B" />
-        <Text style={styles.logoutText}>Sair</Text>
-      </TouchableOpacity>
     </SafeAreaView>
   );
 }
 
-// ============================================================================
-// ESTILOS
-// ============================================================================
+// ─── estilos ────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  container:       { flex: 1, backgroundColor: '#F8FAFC' },
+  loadingContainer:{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' },
+  loadingText:     { marginTop: 16, color: '#64748B', fontSize: 16 },
+  scroll:          { padding: 16 },
 
-const styles = StyleSheet.create({
-  // Container
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-  },
-  loadingText: {
-    marginTop: 16,
-    color: '#64748B',
-    fontSize: 16,
-  },
-  scrollView: {
-    flex: 1,
-  },  scrollContent: {
-    padding: 16,
-  },
+  // header
+  header:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+  headerLeft:      { flex: 1 },
+  saudacao:        { fontSize: 14, color: '#64748B', fontWeight: '500' },
+  nomeUsuario:     { fontSize: 26, fontWeight: '800', color: '#1E293B', marginTop: 2 },
+  permTag:         { alignSelf: 'flex-start', backgroundColor: '#DBEAFE', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, marginTop: 6 },
+  permTagText:     { fontSize: 11, fontWeight: '700', color: '#1E40AF' },
+  syncBtn:         { padding: 8, backgroundColor: '#F1F5F9', borderRadius: 10, marginTop: 4 },
 
-  // Header
-  header: {
-    marginBottom: 24,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  greeting: {
-    flex: 1,
-  },
-  greetingText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  userName: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginTop: 4,
-  },
-  userRole: {
-    fontSize: 12,
-    color: '#1E40AF',
-    fontWeight: '600',
-    marginTop: 4,
-    backgroundColor: '#DBEAFE',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  syncButton: {
-    padding: 8,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 8,
-  },
-  syncStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  syncStatusText: {
-    fontSize: 12,    color: '#64748B',
-  },
-  pendingBadge: {
-    backgroundColor: '#DC2626',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-  },
-  pendingBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
+  // sync row
+  syncRow:         { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 24 },
+  syncText:        { fontSize: 12, color: '#64748B' },
+  pendBadge:       { backgroundColor: '#DC2626', borderRadius: 10, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 5 },
+  pendBadgeText:   { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
 
-  // Sections
-  metricsSection: {
-    marginBottom: 24,
-  },
-  actionsSection: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 16,
-  },
+  // sections
+  secTitle:        { fontSize: 18, fontWeight: '700', color: '#1E293B', marginBottom: 14 },
 
-  // Metrics Grid
-  metricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  marginHorizontal: -4,
-  },
+  // grids
+  metricsGrid:     { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginHorizontal: -4, marginBottom: 28 },
+  actionsGrid:     { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginHorizontal: -4, marginBottom: 16 },
 
-  // Actions Grid
-  actionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginHorizontal: -4,
-  },
-
-  // Error Card
-  errorCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,    backgroundColor: '#FEF2F2',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  errorText: {
-    flex: 1,
-    color: '#DC2626',
-    fontSize: 14,
-  },
-  retryText: {
-    color: '#2563EB',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // Footer
-  footer: {
-    height: 40,
-  },
-
-  // Logout Button
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
-  },
-  logoutText: {
-    color: '#64748B',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  // error
+  errorCard:       { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FEF2F2', padding: 14, borderRadius: 12, marginBottom: 16 },
+  errorText:       { flex: 1, color: '#DC2626', fontSize: 14 },
+  retryText:       { color: '#2563EB', fontSize: 14, fontWeight: '600' },
 });

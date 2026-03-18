@@ -207,11 +207,13 @@ class ClienteRepository {
         return null;
       }
 
-      // Remover campos computados que não existem como colunas no banco
+      // Remover campos computados de AMBOS os objetos antes do merge
+      // (existing vem de parseCliente que já injeta cpfCnpj e rgIe)
+      const { cpfCnpj: _ea, rgIe: _eb, ...existingSemVirtuais } = existing as any;
       const { cpfCnpj, rgIe, ...clienteSemCamposVirtuais } = cliente as any;
 
       const clienteAtualizado: any = {
-        ...existing,
+        ...existingSemVirtuais,
         ...clienteSemCamposVirtuais,
         updatedAt: new Date().toISOString(),
         version: (existing.version || 0) + 1,
@@ -416,14 +418,22 @@ class ClienteRepository {
     totalLocacoesFinalizadas: number;
     saldoDevedorTotal: number;
   }> {
-    // TODO: Implementar quando LocacaoRepository for criado
-    // Por enquanto retorna valores padrão
-    return {
-      totalLocacoesAtivas: 0,
-      totalLocacoesFinalizadas: 0,
-      saldoDevedorTotal: 0,
-    };
-
+    try {
+      const { locacaoRepository }   = await import('./LocacaoRepository');
+      const { cobrancaRepository }  = await import('./CobrancaRepository');
+      const [ativas, finalizadas, saldo] = await Promise.all([
+        locacaoRepository.count({ clienteId, status: 'Ativa' }),
+        locacaoRepository.count({ clienteId, status: 'Finalizada' }),
+        cobrancaRepository.getTotalSaldoDevedorByCliente(clienteId),
+      ]);
+      return {
+        totalLocacoesAtivas:     ativas,
+        totalLocacoesFinalizadas: finalizadas,
+        saldoDevedorTotal:       saldo,
+      };
+    } catch {
+      return { totalLocacoesAtivas: 0, totalLocacoesFinalizadas: 0, saldoDevedorTotal: 0 };
+    }
   }
 }
 

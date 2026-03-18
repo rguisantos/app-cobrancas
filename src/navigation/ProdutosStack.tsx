@@ -39,8 +39,8 @@ export type ProdutosStackParamList = {
   LocacaoForm: {
     clienteId: string;
     produtoId?: string;
-    modo: 'criar' | 'editar' | 'relocar';
     locacaoId?: string;
+    modo: 'criar' | 'editar' | 'relocar';
   };
   LocacaoDetail: { locacaoId: string };
   EnviarEstoque: { locacaoId: string; produtoId: string };
@@ -223,7 +223,7 @@ export function useProdutoNavigate() {
     });
   }, [navigation, hasPermission, user]);
 
-  const toRelocar = useCallback((produtoId: string, clienteIdAtual: string) => {
+  const toRelocar = useCallback((locacaoId: string, produtoId: string, clienteIdAtual: string) => {
     if (!hasPermission('locacaoRelocacaoEstoque', 'mobile') && user?.tipoPermissao !== 'Administrador') {
       Alert.alert('Aviso', 'Você não tem permissão para relocar produtos');
       return;
@@ -231,6 +231,7 @@ export function useProdutoNavigate() {
     navigation.navigate('LocacaoForm', {
       clienteId: clienteIdAtual,
       produtoId,
+      locacaoId,
       modo: 'relocar',
     });
   }, [navigation, hasPermission, user]);

@@ -112,7 +112,7 @@ export type ModalStackParamList = {
   ProdutoForm: { produtoId?: string; modo: 'criar' | 'editar' };
   ProdutoAlterarRelogio: { produtoId: string };
   LocacoesList: { clienteId: string };
-  LocacaoForm: { clienteId: string; produtoId?: string; modo: 'criar' | 'editar' | 'relocar' };
+  LocacaoForm: { clienteId: string; produtoId?: string; locacaoId?: string; modo: 'criar' | 'editar' | 'relocar' };
   LocacaoDetail: { locacaoId: string };
   EnviarEstoque: { locacaoId: string; produtoId: string };
   CobrancaConfirm: { locacaoId: string };
