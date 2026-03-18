@@ -138,10 +138,10 @@ class CobrancaRepository {
     
   }
 
-      // Apenas cobranças não deletadas
-      whereClauses.push('deletedAt IS NULL');
+      // NOTA: deletedAt IS NULL já é adicionado automaticamente pelo databaseService.getAll()
+      // whereClauses.push('deletedAt IS NULL');
 
-      const where = whereClauses.length > 0 ? whereClauses.join(' AND ') : '1=1';
+      const where = whereClauses.length > 0 ? whereClauses.join(' AND ') : undefined;
       const cobranças = await databaseService.getAll<HistoricoCobranca>(
         this.entityType,
         where,

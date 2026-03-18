@@ -152,10 +152,11 @@ class LocacaoRepository {
     
   }
 
-      if (filters?.rotaId) {        whereClauses.push('rotaId = ?');
-        params.push(String(filters.rotaId));
-    
-  }
+      // NOTA: rotaId não existe na tabela locacoes - remover este filtro
+      // if (filters?.rotaId) {
+      //   whereClauses.push('rotaId = ?');
+      //   params.push(String(filters.rotaId));
+      // }
 
       if (filters?.dataInicio) {
         whereClauses.push('dataLocacao >= ?');
@@ -176,10 +177,10 @@ class LocacaoRepository {
     
   }
 
-      // Apenas locações não deletadas
-      whereClauses.push('deletedAt IS NULL');
+      // NOTA: deletedAt IS NULL já é adicionado automaticamente pelo databaseService.getAll()
+      // whereClauses.push('deletedAt IS NULL');
 
-      const where = whereClauses.length > 0 ? whereClauses.join(' AND ') : '1=1';
+      const where = whereClauses.length > 0 ? whereClauses.join(' AND ') : undefined;
       const locacoes = await databaseService.getAll<Locacao>(
         this.entityType,
         where,

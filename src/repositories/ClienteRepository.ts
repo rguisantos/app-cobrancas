@@ -161,6 +161,7 @@ class ClienteRepository {
         inscricaoEstadual,
         nomeCompleto: cliente.tipoPessoa === 'Fisica' ? cliente.nomeExibicao : '',
         razaoSocial: cliente.tipoPessoa === 'Juridica' ? cliente.nomeExibicao : '',
+        nomeFantasia: cliente.nomeFantasia || '',
         nomeExibicao: cliente.nomeExibicao,
         email: cliente.email || '',
         telefonePrincipal: cliente.telefonePrincipal || '',
@@ -206,16 +207,19 @@ class ClienteRepository {
         return null;
       }
 
+      // Remover campos computados que não existem como colunas no banco
+      const { cpfCnpj, rgIe, ...clienteSemCamposVirtuais } = cliente as any;
+
       const clienteAtualizado: any = {
         ...existing,
-        ...cliente,
+        ...clienteSemCamposVirtuais,
         updatedAt: new Date().toISOString(),
         version: (existing.version || 0) + 1,
       };
 
       // Serializar contatos se fornecido
-      if (cliente.contatos) {
-        clienteAtualizado.contatos = JSON.stringify(cliente.contatos);
+      if (clienteSemCamposVirtuais.contatos) {
+        clienteAtualizado.contatos = JSON.stringify(clienteSemCamposVirtuais.contatos);
       }
 
       await databaseService.update(this.entityType, clienteAtualizado);

@@ -578,6 +578,14 @@ class DatabaseService {
     const tableName = this.getTableName(entityType);
     const now = new Date().toISOString();
 
+    // Campos virtuais que não existem como colunas no banco
+    const CAMPOS_EXCLUIDOS = new Set([
+      'id', 'createdAt',
+      'cpfCnpj', 'rgIe',             // Campos computados do Cliente
+      'locacaoAtiva', 'estaLocado', 'locacaoAtual', // Campos computados do Produto
+      'totalLocacoesAtivas', 'totalLocacoesFinalizadas', 'saldoDevedorTotal' // Campos de join
+    ]);
+
     try {
       // Marcar como precisando de sync
       const entityWithSync = {
@@ -587,12 +595,20 @@ class DatabaseService {
         version: (entity.version || 0) + 1,
       } as T;
 
-      // Construir campos e valores dinamicamente
+      // Construir campos e valores dinamicamente, excluindo campos virtuais
       const fields = Object.keys(entityWithSync).filter(
-        (key) => key !== 'id' && key !== 'createdAt'
+        (key) => !CAMPOS_EXCLUIDOS.has(key) && (entityWithSync as any)[key] !== undefined
       );
       const setClause = fields.map((field) => `${field} = ?`).join(', ');
-      const values = fields.map((field) => (entityWithSync as any)[field]);
+      
+      // Serializar arrays e objetos para JSON antes de salvar
+      const values = fields.map((field) => {
+        const val = (entityWithSync as any)[field];
+        if (val !== null && val !== undefined && typeof val === 'object') {
+          return JSON.stringify(val);
+        }
+        return val;
+      });
 
       await this.db.runAsync(
         `UPDATE ${tableName} SET ${setClause} WHERE id = ?`,
@@ -913,9 +929,26 @@ class DatabaseService {
   private async insert(tableName: string, entity: any): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
 
-    const fields = Object.keys(entity);
+    // Campos virtuais que não existem como colunas no banco
+    const CAMPOS_EXCLUIDOS = new Set([
+      'cpfCnpj', 'rgIe',
+      'locacaoAtiva', 'estaLocado', 'locacaoAtual',
+      'totalLocacoesAtivas', 'totalLocacoesFinalizadas', 'saldoDevedorTotal'
+    ]);
+
+    const fields = Object.keys(entity).filter(
+      (key) => !CAMPOS_EXCLUIDOS.has(key) && entity[key] !== undefined
+    );
     const placeholders = fields.map(() => '?').join(', ');
-    const values = Object.values(entity) as any[];
+
+    // Serializar arrays e objetos para JSON antes de salvar
+    const values = fields.map((field) => {
+      const val = entity[field];
+      if (val !== null && val !== undefined && typeof val === 'object') {
+        return JSON.stringify(val);
+      }
+      return val;
+    });
 
     await this.db.runAsync(
       `INSERT INTO ${tableName} (${fields.join(', ')}) VALUES (${placeholders})`,

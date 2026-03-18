@@ -202,9 +202,12 @@ class ProdutoRepository {
    */
   async save(produto: Omit<Produto, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'> & { id?: string }): Promise<Produto> {
     try {
+      // Remover campo de relacionamento antes de salvar
+      const { locacaoAtiva, ...produtoSemRelacionamentos } = produto as any;
+
       // Gerar ID único se não existir
       const produtoCompleto: Produto = {
-        ...produto,
+        ...produtoSemRelacionamentos,
         id: produto.id || this.generateId(),
         tipo: this.entityType,
         syncStatus: 'pending',
