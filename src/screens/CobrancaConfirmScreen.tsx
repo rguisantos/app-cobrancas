@@ -56,7 +56,7 @@ type CobrancaConfirmRouteProp = RouteProp<CobrancasStackParamList, 'CobrancaConf
 export default function CobrancaConfirmScreen() {
   const route = useRoute<CobrancaConfirmRouteProp>();
   const navigation = useNavigation();
-  const { locacaoSelecionada, carregarLocacoesPorCliente } = useLocacao();
+  const { locacaoSelecionada, selecionarLocacao, carregarLocacoesPorCliente } = useLocacao();
   const { registrarCobranca, carregando } = useCobranca();
   const { user } = useAuth();
 
@@ -79,25 +79,24 @@ export default function CobrancaConfirmScreen() {
   // ==========================================================================
 
   useEffect(() => {
-    // Carregar dados da locação
-    // Em produção, buscaria do repositório
-    // Aqui simulamos com dados mock
-    carregarLocacaoMock();
-  }, [locacaoId]);
+    // Carregar dados reais da locação pelo ID
+    if (locacaoId) {
+      selecionarLocacao(locacaoId);
+    }
+  }, [locacaoId, selecionarLocacao]);
 
-  const carregarLocacaoMock = useCallback(() => {
-    // Mock de dados - em produção viria do repositório
-    const locacaoMock: Partial<Locacao> = {
-      id: locacaoId,
-      numeroRelogio: '64000',
-      precoFicha: 3.00,
-      percentualEmpresa: 50,
-      clienteNome: 'Cliente Exemplo',
-      produtoIdentificador: '170',
-      produtoTipo: 'Bilhar',
-    };
-    setRelogioAnterior(parseInt(locacaoMock.numeroRelogio || '0', 10));
-  }, [locacaoId]);
+  // Atualizar relógio anterior quando a locação for carregada
+  useEffect(() => {
+    if (locacaoSelecionada) {
+      const relogioAnteriorValue = parseInt(
+        locacaoSelecionada.ultimaLeituraRelogio?.toString() || 
+        locacaoSelecionada.numeroRelogio || 
+        '0', 
+        10
+      );
+      setRelogioAnterior(relogioAnteriorValue);
+    }
+  }, [locacaoSelecionada]);
 
   // ==========================================================================
   // CÁLCULOS
@@ -127,12 +126,16 @@ export default function CobrancaConfirmScreen() {
     const descontoDinheiroStr = descontoDinheiro.replace(',', '.');
     const descontoDinheiroNum = parseFloat(descontoDinheiroStr) || 0;
 
+    // Usar valores da locação selecionada ou defaults
+    const valorFicha = locacaoSelecionada?.precoFicha || 3.00;
+    const percentualEmpresa = locacaoSelecionada?.percentualEmpresa || 50;
+
     // Usar o serviço de cálculo
     const input = {
       relogioAnterior,
       relogioAtual: relogioAtualNum,
-      valorFicha: 3.00, // Em produção viria da locação
-      percentualEmpresa: 50, // Em produção viria da locação
+      valorFicha,
+      percentualEmpresa,
       descontoPartidasQtd: descontoPartidasNum,
       descontoDinheiro: descontoDinheiroNum,
       formaPagamento: 'PercentualReceber' as const,
@@ -143,7 +146,7 @@ export default function CobrancaConfirmScreen() {
 
     setCalculo(resultado);
     setValidacao(validacaoResultado);
-  }, [relogioAtual, relogioAnterior, descontoPartidas, descontoDinheiro]);
+  }, [relogioAtual, relogioAnterior, descontoPartidas, descontoDinheiro, locacaoSelecionada]);
 
   // ==========================================================================
   // HANDLERS
@@ -155,6 +158,11 @@ export default function CobrancaConfirmScreen() {
   
   }
 
+    if (!locacaoSelecionada) {
+      Alert.alert('Erro', 'Locação não encontrada');
+      return;
+    }
+
     const valorRecebidoNum = parseFloat(valorRecebido.replace(',', '.')) || 0;
 
     if (valorRecebidoNum < 0) {
@@ -164,23 +172,27 @@ export default function CobrancaConfirmScreen() {
   }
 
     try {
-      // Preparar dados para salvar
+      // Usar valores da locação selecionada
+      const valorFicha = locacaoSelecionada.precoFicha || 3.00;
+      const percentualEmpresa = locacaoSelecionada.percentualEmpresa || 50;
+
+      // Preparar dados para salvar usando dados reais da locação
       const dadosCobranca = {
-        locacaoId,
-        clienteId: 'cliente_mock', // Em produção viria da locação
-        clienteNome: 'Cliente Exemplo',
-        produtoIdentificador: '170',
+        locacaoId: String(locacaoSelecionada.id),
+        clienteId: String(locacaoSelecionada.clienteId),
+        clienteNome: locacaoSelecionada.clienteNome || '',
+        produtoIdentificador: locacaoSelecionada.produtoIdentificador || '',
         dataInicio: new Date().toISOString(),
         dataFim: new Date().toISOString(),
         relogioAnterior,
         relogioAtual: parseInt(relogioAtual.replace(/\D/g, ''), 10),
         fichasRodadas: calculo.fichasRodadas,
-        valorFicha: 3.00,
+        valorFicha,
         totalBruto: calculo.totalBruto,
         descontoPartidasQtd: parseInt(descontoPartidas.replace(/\D/g, ''), 10) || 0,
         descontoPartidasValor: calculo.descontoPartidasValor,
         descontoDinheiro: calculo.descontoDinheiroValor,
-        percentualEmpresa: 50,
+        percentualEmpresa,
         subtotalAposDescontos: calculo.subtotalAposDescontoDinheiro,
         valorPercentual: calculo.valorPercentual,
         totalClientePaga: calculo.totalClientePaga,
@@ -208,7 +220,7 @@ export default function CobrancaConfirmScreen() {
       Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao registrar cobrança');
   
   }
-  }, [calculo, validacao, valorRecebido, locacaoId, relogioAnterior, relogioAtual, descontoPartidas, observacao, registrarCobranca, navigation]);
+  }, [calculo, validacao, valorRecebido, locacaoSelecionada, relogioAnterior, relogioAtual, descontoPartidas, observacao, registrarCobranca, navigation]);
 
   // ==========================================================================
   // RENDER

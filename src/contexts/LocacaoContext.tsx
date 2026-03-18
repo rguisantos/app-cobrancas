@@ -4,11 +4,12 @@
  * Integração: Repositórios + Services + Tipos
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { Locacao, LocacaoListItem, StatusLocacao, FormaPagamentoLocacao } from '../types';
 import { locacaoRepository } from '../repositories/LocacaoRepository';
 import { produtoRepository } from '../repositories/ProdutoRepository';
 import { cobrancaService } from '../services/CobrancaService';
+import { useDatabase } from './DatabaseContext';
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -114,6 +115,9 @@ interface LocacaoProviderProps {
 }
 
 export function LocacaoProvider({ children }: LocacaoProviderProps) {
+  // Aguardar banco estar pronto
+  const { isReady } = useDatabase();
+  
   // Estado
   const [locacoes, setLocacoes] = useState<LocacaoListItem[]>([]);
   const [locacoesAtivas, setLocacoesAtivas] = useState<LocacaoListItem[]>([]);
@@ -125,6 +129,16 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   const [totalLocacoes, setTotalLocacoes] = useState(0);
   const [totalAtivas, setTotalAtivas] = useState(0);
   const [totalFinalizadas, setTotalFinalizadas] = useState(0);
+
+  // ==========================================================================
+  // INICIALIZAÇÃO - Aguardar banco estar pronto
+  // ==========================================================================
+
+  useEffect(() => {
+    if (isReady) {
+      carregarLocacoes();
+    }
+  }, [isReady]);
 
   // ==========================================================================
   // CARREGAMENTO DE DADOS
@@ -362,7 +376,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     try {
       const resultado = await locacaoRepository.realizarRelocacao(dados);
       
-      if (resultado.novaLocacao) {
+      if (resultado.novaLocacao || resultado.locacaoAntigaFinalizada) {
         // Atualizar lista
         await carregarLocacoes();
         console.log('[LocacaoContext] Relocação realizada:', dados.produtoId);

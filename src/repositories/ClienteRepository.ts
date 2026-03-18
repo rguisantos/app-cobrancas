@@ -80,7 +80,7 @@ class ClienteRepository {
         params.push(termo, termo, termo, termo);
       }
 
-      const where = whereClauses.join(' AND ');
+      const where = whereClauses.length > 0 ? whereClauses.join(' AND ') : undefined;
       const clientes = await databaseService.getAll<Cliente>(
         this.entityType,
         where,

@@ -236,10 +236,12 @@ class LocacaoRepository {
    */
   async getAtivasByCliente(clienteId: string): Promise<Locacao[]> {
     try {
-      return await this.getAll({ 
-        clienteId, 
-        status: 'Ativa' 
-      }) as unknown as Locacao[];
+      const locacoes = await databaseService.getAll<Locacao>(
+        this.entityType,
+        'clienteId = ? AND status = ?',
+        [String(clienteId), 'Ativa']
+      );
+      return locacoes;
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao buscar locações ativas do cliente:', error);
       return [];
@@ -382,6 +384,9 @@ class LocacaoRepository {
     locacaoAntigaFinalizada: Locacao | null;
     novaLocacao: Locacao | null;
   }> {
+    let locacaoAntigaFinalizada: Locacao | null = null;
+    let novaLocacao: Locacao | null = null;
+
     try {
       await databaseService.runTransaction(async () => {
         // 1. Buscar locação atual do produto
@@ -394,9 +399,10 @@ class LocacaoRepository {
 
         // 2. Finalizar locação antiga
         await this.finalizarLocacao(locacaoAtual.id, 'Relocação', data.motivoRelocacao);
+        locacaoAntigaFinalizada = locacaoAtual;
 
         // 3. Criar nova locação
-        const novaLocacao: Omit<Locacao, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'> = {
+        const novaLocacaoData: Omit<Locacao, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'> = {
           clienteId: data.novoClienteId,
           clienteNome: data.novoClienteNome,
           produtoId: data.produtoId,
@@ -420,20 +426,16 @@ class LocacaoRepository {
           ultimaLeituraRelogio: locacaoAtual.ultimaLeituraRelogio,
         };
 
-        await this.save(novaLocacao);
+        novaLocacao = await this.save(novaLocacaoData);
 
-        console.log('[LocacaoRepository] Relocação realizada:', data.produtoId);      });
+        console.log('[LocacaoRepository] Relocação realizada:', data.produtoId);
+      });
 
-      return {
-        locacaoAntigaFinalizada: null,
-        novaLocacao: null,
-      };
+      return { locacaoAntigaFinalizada, novaLocacao };
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao realizar relocação:', error);
       throw error;
-  
-  }
-
+    }
   }
 
   /**
@@ -542,11 +544,16 @@ class LocacaoRepository {
    */
   async getByProduto(produtoId: string): Promise<Locacao[]> {
     try {
-      return await this.getAll({ produtoId }) as unknown as Locacao[];
+      const locacoes = await databaseService.getAll<Locacao>(
+        this.entityType,
+        'produtoId = ?',
+        [String(produtoId)]
+      );
+      return locacoes;
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao buscar locações por produto:', error);
       return [];
-  
+    
   }
 
   }
