@@ -74,11 +74,11 @@ class ClienteRepository {
   }
 
       if (filters?.termoBusca) {
-        whereClauses.push('(nomeExibicao LIKE ? OR cpfCnpj LIKE ? OR telefonePrincipal LIKE ?)');
+        // Busca por nome, CPF ou CNPJ (colunas separadas) ou telefone
+        whereClauses.push('(nomeExibicao LIKE ? OR cpf LIKE ? OR cnpj LIKE ? OR telefonePrincipal LIKE ?)');
         const termo = `%${filters.termoBusca}%`;
-        params.push(termo, termo, termo);
-    
-  }
+        params.push(termo, termo, termo, termo);
+      }
 
       const where = whereClauses.join(' AND ');
       const clientes = await databaseService.getAll<Cliente>(
@@ -103,13 +103,11 @@ class ClienteRepository {
   async getById(id: string): Promise<Cliente | null> {
     try {
       const cliente = await databaseService.getById<Cliente>(this.entityType, id);
-      return cliente;
+      return cliente ? this.parseCliente(cliente) : null;
     } catch (error) {
       console.error('[ClienteRepository] Erro ao buscar cliente por ID:', error);
       return null;
-  
-  }
-
+    }
   }
 
   /**
@@ -148,16 +146,39 @@ class ClienteRepository {
       const cpf = cliente.tipoPessoa === 'Fisica' ? (cliente.cpfCnpj || cliente.cpf || '') : '';
       const cnpj = cliente.tipoPessoa === 'Juridica' ? (cliente.cpfCnpj || cliente.cnpj || '') : '';
       
-      const clienteCompleto: Cliente = {
-        ...cliente,
+      // Mapear rgIe para rg ou inscricaoEstadual
+      const rg = cliente.tipoPessoa === 'Fisica' ? ((cliente as any).rgIe || cliente.rg || '') : '';
+      const inscricaoEstadual = cliente.tipoPessoa === 'Juridica' ? ((cliente as any).rgIe || cliente.inscricaoEstadual || '') : '';
+      
+      const clienteCompleto: any = {
         id,
+        tipo: this.entityType,
+        tipoPessoa: cliente.tipoPessoa,
+        identificador: cliente.tipoPessoa === 'Fisica' ? cpf : cnpj,
         cpf,
         cnpj,
-        tipo: this.entityType,
-        identificador: cliente.tipoPessoa === 'Fisica' ? cpf : cnpj,
+        rg,
+        inscricaoEstadual,
+        nomeCompleto: cliente.tipoPessoa === 'Fisica' ? cliente.nomeExibicao : '',
+        razaoSocial: cliente.tipoPessoa === 'Juridica' ? cliente.nomeExibicao : '',
+        nomeExibicao: cliente.nomeExibicao,
+        email: cliente.email || '',
+        telefonePrincipal: cliente.telefonePrincipal || '',
+        contatos: JSON.stringify(cliente.contatos || []), // Serializar para JSON
+        cep: cliente.cep || '',
+        logradouro: cliente.logradouro || '',
+        numero: cliente.numero || '',
+        complemento: cliente.complemento || '',
+        bairro: cliente.bairro || '',
+        cidade: cliente.cidade || '',
+        estado: cliente.estado || '',
+        rotaId: cliente.rotaId || '',
+        rotaNome: cliente.rotaNome || '',
+        status: cliente.status || 'Ativo',
+        observacao: cliente.observacao || '',
         syncStatus: 'pending',
-        lastSyncedAt: undefined,
-        needsSync: 1, // Integer para SQLite
+        lastSyncedAt: null,
+        needsSync: 1,
         version: 0,
         deviceId: await databaseService.getDeviceId(),
         createdAt: now,
@@ -167,13 +188,11 @@ class ClienteRepository {
       await databaseService.save(this.entityType, clienteCompleto);
       
       console.log('[ClienteRepository] Cliente salvo:', clienteCompleto.id);
-      return clienteCompleto;
+      return this.parseCliente(clienteCompleto);
     } catch (error) {
       console.error('[ClienteRepository] Erro ao salvar cliente:', error);
       throw error;
-  
-  }
-
+    }
   }
 
   /**
@@ -185,26 +204,28 @@ class ClienteRepository {
       if (!existing) {
         console.warn('[ClienteRepository] Cliente não encontrado para atualização:', cliente.id);
         return null;
-    
-  }
+      }
 
-      const clienteAtualizado: Cliente = {
+      const clienteAtualizado: any = {
         ...existing,
         ...cliente,
         updatedAt: new Date().toISOString(),
         version: (existing.version || 0) + 1,
       };
 
+      // Serializar contatos se fornecido
+      if (cliente.contatos) {
+        clienteAtualizado.contatos = JSON.stringify(cliente.contatos);
+      }
+
       await databaseService.update(this.entityType, clienteAtualizado);
       
       console.log('[ClienteRepository] Cliente atualizado:', cliente.id);
-      return clienteAtualizado;
+      return this.parseCliente(clienteAtualizado);
     } catch (error) {
       console.error('[ClienteRepository] Erro ao atualizar cliente:', error);
       throw error;
-  
-  }
-
+    }
   }
 
   /**
@@ -218,9 +239,7 @@ class ClienteRepository {
     } catch (error) {
       console.error('[ClienteRepository] Erro ao remover cliente:', error);
       return false;
-  
-  }
-
+    }
   }
 
   // ==========================================================================
@@ -232,7 +251,6 @@ class ClienteRepository {
    */
   async getByRota(rotaId: string | number): Promise<ClienteListItem[]> {
     return this.getAll({ rotaId, status: 'Ativo' });
-
   }
 
   /**
@@ -240,7 +258,6 @@ class ClienteRepository {
    */
   async getAtivos(): Promise<ClienteListItem[]> {
     return this.getAll({ status: 'Ativo' });
-
   }
 
   /**
@@ -248,7 +265,6 @@ class ClienteRepository {
    */
   async getInativos(): Promise<ClienteListItem[]> {
     return this.getAll({ status: 'Inativo' });
-
   }
 
   /**
@@ -257,11 +273,8 @@ class ClienteRepository {
   async search(termo: string): Promise<ClienteListItem[]> {
     if (!termo || termo.trim().length === 0) {
       return this.getAtivos();
-  
-  }
-
+    }
     return this.getAll({ termoBusca: termo });
-
   }
 
   /**
@@ -274,14 +287,11 @@ class ClienteRepository {
         '(cpf = ? OR cnpj = ?)',
         [documento, documento]
       );
-
-      return clientes.length > 0 ? clientes[0] : null;
+      return clientes.length > 0 ? this.parseCliente(clientes[0]) : null;
     } catch (error) {
       console.error('[ClienteRepository] Erro ao buscar cliente por documento:', error);
       return null;
-  
-  }
-
+    }
   }
 
   /**
@@ -290,17 +300,13 @@ class ClienteRepository {
   async documentoExists(documento: string, excludeId?: string): Promise<boolean> {
     try {
       const cliente = await this.getByDocumento(documento);
-      
       if (!cliente) return false;
       if (excludeId && cliente.id === excludeId) return false;
-      
       return true;
     } catch (error) {
       console.error('[ClienteRepository] Erro ao verificar documento:', error);
       return false;
-  
-  }
-
+    }
   }
 
   /**
@@ -313,9 +319,7 @@ class ClienteRepository {
     } catch (error) {
       console.error('[ClienteRepository] Erro ao contar clientes:', error);
       return 0;
-  
-  }
-
+    }
   }
 
   /**
@@ -330,32 +334,50 @@ class ClienteRepository {
       );
 
       const clientesComSaldo: ClienteComLocacoes[] = [];
-
       for (const cliente of clientes) {
         const locacoesCount = await this.getLocacoesCount(cliente.id);
-        
         if (locacoesCount.saldoDevedorTotal > 0) {
           clientesComSaldo.push({
-            ...cliente,
+            ...this.parseCliente(cliente),
             ...locacoesCount,
           });
-      
-  }
-    
-  }
-
+        }
+      }
       return clientesComSaldo;
     } catch (error) {
       console.error('[ClienteRepository] Erro ao buscar clientes com saldo devedor:', error);
       return [];
-  
-  }
-
+    }
   }
 
   // ==========================================================================
   // MÉTODOS AUXILIARES PRIVADOS
   // ==========================================================================
+
+  /**
+   * Parseia dados do banco para objeto Cliente
+   * Converte campos JSON de volta para objetos/arrays
+   */
+  private parseCliente(data: any): Cliente {
+    return {
+      ...data,
+      cpfCnpj: data.cpfCnpj || data.cpf || data.cnpj || '',
+      rgIe: data.rgIe || data.rg || data.inscricaoEstadual || '',
+      contatos: this.parseJSON(data.contatos, []),
+    };
+  }
+
+  /**
+   * Parseia JSON com fallback
+   */
+  private parseJSON<T>(value: string | undefined | null, fallback: T): T {
+    if (!value) return fallback;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  }
 
   /**
    * Converte Cliente completo para ClienteListItem (mais leve)

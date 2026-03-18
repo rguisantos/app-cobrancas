@@ -583,7 +583,7 @@ class DatabaseService {
       const entityWithSync = {
         ...entity,
         updatedAt: now,
-        needsSync: true,
+        needsSync: 1, // Integer para SQLite
         version: (entity.version || 0) + 1,
       } as T;
 

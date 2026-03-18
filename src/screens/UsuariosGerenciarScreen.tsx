@@ -162,7 +162,7 @@ export default function UsuariosGerenciarScreen() {
         permissoes: PERMISSOES_PADRAO[formData.tipoPermissao],
         rotasPermitidas: [],
         status: formData.status,
-        bloqueado: false,
+        bloqueado: 0, // Integer para SQLite
         syncStatus: 'pending',
         needsSync: 1,
         version: 1,

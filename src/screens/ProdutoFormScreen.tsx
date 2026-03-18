@@ -400,16 +400,28 @@ export default function ProdutoFormScreen() {
               {/* Identificador (numeração física) */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Identificador (Placa) *</Text>
-                <View style={[styles.inputContainer, errors.identificador && styles.inputError]}>
+                <View style={[
+                  styles.inputContainer, 
+                  errors.identificador && styles.inputError,
+                  modo === 'editar' && styles.inputDisabled
+                ]}>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, modo === 'editar' && styles.inputTextDisabled]}
                     placeholder="Ex: 515"
                     placeholderTextColor="#94A3B8"
                     value={formData.identificador}
-                    onChangeText={(value) => handleInputChange('identificador', value)}                    keyboardType="numeric"
+                    onChangeText={(value) => handleInputChange('identificador', value)}
+                    keyboardType="numeric"
+                    editable={modo === 'criar'}
                   />
+                  {modo === 'editar' && (
+                    <Ionicons name="lock-closed" size={16} color="#94A3B8" style={styles.lockIcon} />
+                  )}
                 </View>
                 {errors.identificador && <Text style={styles.errorText}>{errors.identificador}</Text>}
+                {modo === 'editar' && (
+                  <Text style={styles.hintText}>O identificador não pode ser alterado</Text>
+                )}
               </View>
 
               {/* Número do Relógio */}
@@ -690,17 +702,36 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   inputError: {
     borderColor: '#DC2626',
     backgroundColor: '#FEF2F2',
   },
+  inputDisabled: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+  },
   input: {
     fontSize: 16,
     color: '#1E293B',
+    flex: 1,
+  },
+  inputTextDisabled: {
+    color: '#64748B',
   },
   inputMultiline: {    minHeight: 80,
     textAlignVertical: 'top',
+  },
+  lockIcon: {
+    marginLeft: 8,
+  },
+  hintText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   errorText: {
     fontSize: 12,

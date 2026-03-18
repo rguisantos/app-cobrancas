@@ -115,16 +115,25 @@ class UsuarioRepository {
       const now = new Date().toISOString();
       const id = usuario.id || `usr_${Date.now()}`;
       
+      // Campos que pertencem à tabela usuarios
       const usuarioData: any = {
-        ...usuario,
         id,
         tipo: 'usuario',
+        nome: usuario.nome,
+        cpf: usuario.cpf || '',
+        telefone: usuario.telefone || '',
         email: usuario.email.toLowerCase().trim(),
+        senha: usuario.senha || '',
+        tipoPermissao: usuario.tipoPermissao || 'AcessoControlado',
         permissoesWeb: JSON.stringify(usuario.permissoes?.web || {}),
         permissoesMobile: JSON.stringify(usuario.permissoes?.mobile || {}),
         rotasPermitidas: JSON.stringify(usuario.rotasPermitidas || []),
+        status: usuario.status || 'Ativo',
+        bloqueado: usuario.bloqueado ? 1 : 0, // Integer para SQLite
         syncStatus: 'pending',
         needsSync: 1, // Integer para SQLite
+        version: 1,
+        deviceId: '',
         createdAt: now,
         updatedAt: now,
       };
@@ -157,19 +166,40 @@ class UsuarioRepository {
         return null;
       }
 
+      const now = new Date().toISOString();
+      
+      // Construir objeto de atualização com campos válidos
       const usuarioAtualizado: any = {
-        ...existing,
-        ...usuario,
-        updatedAt: new Date().toISOString(),
+        id: usuario.id,
+        nome: usuario.nome || existing.nome,
+        email: usuario.email || existing.email,
+        telefone: usuario.telefone || existing.telefone,
+        cpf: usuario.cpf || existing.cpf,
+        tipoPermissao: usuario.tipoPermissao || existing.tipoPermissao,
+        status: usuario.status || existing.status,
+        bloqueado: usuario.bloqueado !== undefined ? (usuario.bloqueado ? 1 : 0) : (existing.bloqueado ? 1 : 0),
+        updatedAt: now,
       };
 
+      // Adicionar senha se fornecida
+      if (usuario.senha) {
+        usuarioAtualizado.senha = usuario.senha;
+      }
+
+      // Serializar permissões
       if (usuario.permissoes) {
         usuarioAtualizado.permissoesWeb = JSON.stringify(usuario.permissoes.web);
         usuarioAtualizado.permissoesMobile = JSON.stringify(usuario.permissoes.mobile);
+      } else {
+        usuarioAtualizado.permissoesWeb = JSON.stringify(existing.permissoes?.web || {});
+        usuarioAtualizado.permissoesMobile = JSON.stringify(existing.permissoes?.mobile || {});
       }
 
+      // Serializar rotas permitidas
       if (usuario.rotasPermitidas) {
         usuarioAtualizado.rotasPermitidas = JSON.stringify(usuario.rotasPermitidas);
+      } else {
+        usuarioAtualizado.rotasPermitidas = JSON.stringify(existing.rotasPermitidas || []);
       }
 
       await databaseService.update(this.entityType, usuarioAtualizado);
@@ -366,6 +396,7 @@ class UsuarioRepository {
   private parseUsuario(data: any): Usuario {
     return {
       ...data,
+      bloqueado: data.bloqueado === 1 || data.bloqueado === true,
       permissoes: {
         web: this.parseJSON(data.permissoesWeb, {}),
         mobile: this.parseJSON(data.permissoesMobile, {}),

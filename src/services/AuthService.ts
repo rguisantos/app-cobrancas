@@ -113,7 +113,7 @@ class AuthService {
       permissoes: PERMISSOES_PADRAO[tipoPermissao],
       rotasPermitidas: [],
       status: 'Ativo',
-      bloqueado: false,
+      bloqueado: 0, // Integer para SQLite
       syncStatus: 'pending',
       needsSync: 1,
       version: 1,
@@ -154,7 +154,7 @@ class AuthService {
         permissoes: PERMISSOES_PADRAO[tipoPermissao],
         rotasPermitidas: [],
         status: 'Ativo',
-        bloqueado: false,
+        bloqueado: 0, // Integer para SQLite
         syncStatus: 'pending',
         needsSync: 1,
         version: 1,
@@ -292,7 +292,7 @@ class AuthService {
           permissoesMobile: JSON.stringify(PERMISSOES_PADRAO['Administrador'].mobile),
           rotasPermitidas: '[]',
           status: 'Ativo',
-          bloqueado: false,
+          bloqueado: 0, // Integer para SQLite
           syncStatus: 'pending',
           needsSync: 1,
           version: 1,
@@ -320,7 +320,7 @@ class AuthService {
             permissoesMobile: JSON.stringify(PERMISSOES_PADRAO['Administrador'].mobile),
             rotasPermitidas: '[]',
             status: 'Ativo',
-            bloqueado: false,
+            bloqueado: 0, // Integer para SQLite
             syncStatus: 'pending',
             needsSync: 1,
             version: ((adminExistente as any).version || 0) + 1,
