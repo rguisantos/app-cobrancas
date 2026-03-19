@@ -14,7 +14,10 @@ import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 
 import { useCobranca }   from '../contexts/CobrancaContext';
 import { useLocacao }    from '../contexts/LocacaoContext';
+import { useProduto }    from '../contexts/ProdutoContext';
+import { manutencaoRepository } from '../repositories/ManutencaoRepository';
 import { formatarMoeda } from '../utils/currency';
+import { printService, DadosComprovante } from '../services/PrintService';
 import { masks }         from '../utils/masks';
 import {
   CobrancasStackParamList,
@@ -67,6 +70,30 @@ export default function ConfirmacaoPagamentoScreen() {
   const totalComSaldo  = dados.totalClientePaga + (isPagar ? 0 : saldoAnterior);
   const saldoDevedor   = Math.max(0, totalComSaldo - dados.valorRecebido);
   const hoje = new Date().toLocaleDateString('pt-BR');
+
+  const handleImprimir = useCallback(async () => {
+    const dadosComprovante: DadosComprovante = {
+      clienteNome:          dados.clienteNome,
+      produtoTipo:          dados.produtoTipo,
+      produtoIdentificador: dados.produtoIdentificador,
+      formaPagamento:       dados.formaPagamento,
+      dataCobranca:         new Date().toISOString(),
+      relogioAnterior:      dados.relogioAnterior || undefined,
+      relogioAtual:         dados.relogioAtual    || undefined,
+      fichasRodadas:        dados.fichasRodadas   || undefined,
+      totalBruto:           dados.totalBruto      || undefined,
+      descontoPartidas:     dados.descontoPartidasValor || undefined,
+      descontoDinheiro:     dados.descontoDinheiro     || undefined,
+      percentualEmpresa:    dados.percentualEmpresa,
+      valorEmpresaRecebe:   dados.valorPercentual,
+      totalClientePaga:     dados.totalClientePaga,
+      valorRecebido:        dados.valorRecebido > 0 ? dados.valorRecebido : undefined,
+      saldoDevedor:         saldoDevedor > 0 ? saldoDevedor : undefined,
+      troco:                troco > 0 ? troco : undefined,
+      observacao:           dados.observacao || undefined,
+    };
+    await printService.imprimirComprovante(dadosComprovante);
+  }, [dados, saldoDevedor, troco]);
 
   const handleConfirmar = useCallback(async () => {
     try {
@@ -328,6 +355,7 @@ const s = StyleSheet.create({
   checkboxSqChecked:{ borderColor: '#1976D2' },
   fisicLabel:     { fontSize: 14, color: '#212121' },
   footer:         { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#E0E0E0' },
+  btnImprimir:  { justifyContent: 'center', alignItems: 'center', backgroundColor: '#EFF6FF', padding: 16, borderRadius: 12, borderWidth: 1.5, borderColor: '#BFDBFE', marginBottom: 10 },
   btnConfirmar:   { backgroundColor: '#1565C0', borderRadius: 6, padding: 16, alignItems: 'center' },
   btnDisabled:    { backgroundColor: '#BDBDBD' },
   btnText:        { fontSize: 15, fontWeight: '700', color: '#FFFFFF', letterSpacing: 1 },

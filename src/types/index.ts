@@ -246,8 +246,10 @@ export interface ProdutoListItem {
   descricaoNome: string;
   tamanhoNome: string;
   statusProduto: StatusProduto;
-  clienteNome?: string; // Se estiver locado
-  locacaoId?: string; // ID da locação ativa, se houver
+  numeroRelogio?: string;
+  estaLocado?: boolean;
+  clienteNome?: string;
+  locacaoId?: string;
 }
 
 // Histórico de alteração do número do relógio

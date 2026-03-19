@@ -570,6 +570,33 @@ export default function CobrancaClienteScreen() {
                     value={valorRecebido} onChangeText={setValorRecebido} keyboardType="numeric"
                   />
                 </View>
+                {/* Saldo devedor / troco feedback */}
+                {valorRecebido.trim() && totalExibido > 0 && (() => {
+                  const recebido = parseFloat(valorRecebido.replace(',', '.')) || 0;
+                  const saldo = totalExibido - recebido;
+                  if (saldo > 0.005) return (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, padding: 8, backgroundColor: '#FEF2F2', borderRadius: 6 }}>
+                      <Ionicons name="alert-circle" size={16} color="#E53935" />
+                      <Text style={{ fontSize: 13, color: '#E53935', fontWeight: '600' }}>
+                        Ficará saldo devedor de {formatarMoeda(saldo)}
+                      </Text>
+                    </View>
+                  );
+                  if (saldo < -0.005) return (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, padding: 8, backgroundColor: '#F0FDF4', borderRadius: 6 }}>
+                      <Ionicons name="return-down-back" size={16} color="#16A34A" />
+                      <Text style={{ fontSize: 13, color: '#16A34A', fontWeight: '600' }}>
+                        Troco: {formatarMoeda(Math.abs(saldo))}
+                      </Text>
+                    </View>
+                  );
+                  return (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, padding: 8, backgroundColor: '#F0FDF4', borderRadius: 6 }}>
+                      <Ionicons name="checkmark-circle" size={16} color="#16A34A" />
+                      <Text style={{ fontSize: 13, color: '#16A34A', fontWeight: '600' }}>Pagamento exato</Text>
+                    </View>
+                  );
+                })()}
               </View>
             </View>
           </>)}
@@ -583,9 +610,7 @@ export default function CobrancaClienteScreen() {
           style={[s.btnAvancar, !podeAvancar && s.btnDisabled]}
           onPress={handleAvancar} disabled={!podeAvancar} activeOpacity={0.85}
         >
-          <Text style={s.btnAvancarText}>
-            {podeAvancar ? `AVANÇAR · ${formatarMoeda(totalExibido)}` : 'AVANÇAR'}
-          </Text>
+          <Text style={s.btnAvancarText}>AVANÇAR</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

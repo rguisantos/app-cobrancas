@@ -539,6 +539,28 @@ export default function LocacaoFormScreen() {
             </View>
           )}
 
+          {/* ── MANUTENÇÃO / TROCA DE PANO ──────────────────────────── */}
+          {(modo === 'criar' || modo === 'editar' || modo === 'relocar') && (
+            <View style={s.section}>
+              <Text style={s.sectionTitle}>Manutenção</Text>
+              <View style={s.card}>
+                <TouchableOpacity
+                  style={s.checkboxRow}
+                  onPress={() => setForm((p: any) => ({ ...p, trocaPano: !p.trocaPano }))}
+                  activeOpacity={0.7}
+                >
+                  <View style={[s.checkbox, form.trocaPano && s.checkboxChecked]}>
+                    {form.trocaPano && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.checkboxLabel}>Troca de pano realizada</Text>
+                    <Text style={s.checkboxDesc}>Registra a data atual como última manutenção do produto</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
           {/* ── OBSERVAÇÃO ──────────────────────────────────────────── */}
           <View style={s.section}>
             <Text style={s.sectionTitle}>Observação</Text>

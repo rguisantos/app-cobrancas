@@ -524,9 +524,9 @@ class ProdutoRepository {
       descricaoNome: produto.descricaoNome,
       tamanhoNome: produto.tamanhoNome,
       statusProduto: produto.statusProduto,
-      // clienteNome será preenchido quando tivermos integração com LocacaoRepository
+      numeroRelogio: produto.numeroRelogio,
+      estaLocado: !!(produto as any).estaLocado,
     };
-
   }
 
   /**

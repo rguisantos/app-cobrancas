@@ -1209,6 +1209,76 @@ class DatabaseService {
     return await this.db.getAllAsync(query, params);
   }
 
+  // ── RELATÓRIOS ───────────────────────────────────────────────────────────
+
+  async getResumoFinanceiro(dataInicio?: string, dataFim?: string): Promise<{
+    totalArrecadado: number;
+    totalEmpresaRecebe: number;
+    totalDesconto: number;
+    totalSaldoDevedor: number;
+    totalCobrancas: number;
+    totalPago: number;
+  }> {
+    if (!this.db) throw new Error('Database não inicializado');
+    let where = `deletedAt IS NULL`;
+    const params: any[] = [];
+    if (dataInicio) { where += ` AND dataPagamento >= ?`; params.push(dataInicio); }
+    if (dataFim)    { where += ` AND dataPagamento <= ?`; params.push(dataFim); }
+
+    const row = await this.db.getFirstAsync<any>(
+      `SELECT
+        COALESCE(SUM(totalClientePaga), 0)      AS totalArrecadado,
+        COALESCE(SUM(valorPercentual), 0)        AS totalEmpresaRecebe,
+        COALESCE(SUM(COALESCE(descontoDinheiro,0) + COALESCE(descontoPartidasValor,0)), 0) AS totalDesconto,
+        COALESCE(SUM(CASE WHEN status IN ('Parcial','Pendente','Atrasado') THEN saldoDevedorGerado ELSE 0 END), 0) AS totalSaldoDevedor,
+        COUNT(*) AS totalCobrancas,
+        COALESCE(SUM(valorRecebido), 0) AS totalPago
+       FROM cobrancas WHERE ${where}`,
+      params
+    );
+    return row || { totalArrecadado: 0, totalEmpresaRecebe: 0, totalDesconto: 0, totalSaldoDevedor: 0, totalCobrancas: 0, totalPago: 0 };
+  }
+
+  async getCobrancasPorPeriodo(agrupamento: 'dia' | 'semana' | 'mes', dataInicio?: string, dataFim?: string): Promise<{
+    periodo: string; total: number; empresaRecebe: number; qtd: number;
+  }[]> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const formatExpr = agrupamento === 'dia'
+      ? `strftime('%d/%m/%Y', dataPagamento)`
+      : agrupamento === 'mes'
+      ? `strftime('%m/%Y', dataPagamento)`
+      : `strftime('%W/%Y', dataPagamento)`;
+
+    let where = `deletedAt IS NULL AND dataPagamento IS NOT NULL`;
+    const params: any[] = [];
+    if (dataInicio) { where += ` AND dataPagamento >= ?`; params.push(dataInicio); }
+    if (dataFim)    { where += ` AND dataPagamento <= ?`; params.push(dataFim); }
+
+    return await this.db.getAllAsync<any>(
+      `SELECT ${formatExpr} AS periodo,
+        COALESCE(SUM(totalClientePaga), 0) AS total,
+        COALESCE(SUM(valorPercentual), 0) AS empresaRecebe,
+        COUNT(*) AS qtd
+       FROM cobrancas WHERE ${where}
+       GROUP BY periodo ORDER BY dataPagamento DESC LIMIT 60`,
+      params
+    ) || [];
+  }
+
+  async getCobrancasDoDia(data?: string): Promise<any[]> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const dia = data || new Date().toISOString().split('T')[0];
+    return await this.db.getAllAsync<any>(
+      `SELECT c.*, cl.rotaNome
+       FROM cobrancas c
+       LEFT JOIN clientes cl ON cl.id = c.clienteId
+       WHERE c.deletedAt IS NULL
+         AND date(c.dataPagamento) = ?
+       ORDER BY c.dataPagamento DESC`,
+      [dia]
+    ) || [];
+  }
+
   // ── ESTABELECIMENTOS ──────────────────────────────────────────────────────
 
   async getEstabelecimentos(): Promise<Array<{id: string, nome: string}>> {
