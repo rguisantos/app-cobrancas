@@ -19,6 +19,9 @@ import { SafeAreaView }  from 'react-native-safe-area-context';
 
 import { useLocacao }      from '../contexts/LocacaoContext';
 import { useCobranca }     from '../contexts/CobrancaContext';
+import { useProduto }      from '../contexts/ProdutoContext';
+import { manutencaoRepository } from '../repositories/ManutencaoRepository';
+import { locacaoRepository }   from '../repositories/LocacaoRepository';
 import { cobrancaService } from '../services/CobrancaService';
 import { formatarMoeda, formatarNumero } from '../utils/currency';
 import { masks }           from '../utils/masks';

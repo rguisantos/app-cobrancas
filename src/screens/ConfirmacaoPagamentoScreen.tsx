@@ -13,6 +13,7 @@ import { Ionicons }      from '@expo/vector-icons';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 
 import { useCobranca }   from '../contexts/CobrancaContext';
+import { locacaoRepository } from '../repositories/LocacaoRepository';
 import { useLocacao }    from '../contexts/LocacaoContext';
 import { useProduto }    from '../contexts/ProdutoContext';
 import { manutencaoRepository } from '../repositories/ManutencaoRepository';
@@ -69,6 +70,7 @@ export default function ConfirmacaoPagamentoScreen() {
   const isPeriodo  = dados.formaPagamento === 'Periodo';
   const totalComSaldo  = dados.totalClientePaga + (isPagar ? 0 : saldoAnterior);
   const saldoDevedor   = Math.max(0, totalComSaldo - dados.valorRecebido);
+  const troco          = Math.max(0, dados.valorRecebido - totalComSaldo);
   const hoje = new Date().toLocaleDateString('pt-BR');
 
   const handleImprimir = useCallback(async () => {
@@ -136,7 +138,6 @@ export default function ConfirmacaoPagamentoScreen() {
         // Se marcou troca de pano/manutenção, atualizar produto
         if (trocaPano) {
           try {
-            const { locacaoRepository } = await import('../repositories/LocacaoRepository');
             const locacao = await locacaoRepository.getById(dados.locacaoId);
             if (locacao?.produtoId) {
               const nowManut = new Date().toISOString();
