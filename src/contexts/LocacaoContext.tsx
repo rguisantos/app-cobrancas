@@ -48,7 +48,8 @@ export interface LocacaoContextData extends LocacaoState {
   getLocacaoAtivaPorProduto: (produtoId: string) => Promise<Locacao | null>;
   
   // Refresh
-  atualizarLista: () => Promise<void>;}
+  atualizarLista: () => Promise<void>;
+}
 
 // ============================================================================
 // TIPOS DAS FUNÇÕES DE NEGÓCIO
@@ -97,7 +98,8 @@ export interface EnviarEstoqueData {
   clienteId: string;
   clienteNome: string;
   estabelecimento: string;
-  motivo: string;  observacao?: string;
+  motivo: string;
+  observacao?: string;
 }
 
 // ============================================================================
@@ -159,7 +161,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       const ativas = lista.filter(l => l.status === 'Ativa');
       setLocacoesAtivas(ativas);
 
-      // Atualizar contagens      setTotalLocacoes(lista.length);
+      // Atualizar contagens
+      setTotalLocacoes(lista.length);
       setTotalAtivas(ativas.length);
       setTotalFinalizadas(lista.filter(l => l.status === 'Finalizada').length);
     } catch (error) {
@@ -168,9 +171,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       console.error('[LocacaoContext] Erro ao carregar locações:', error);
     } finally {
       setCarregando(false);
-  
-  }
-  };
+    }
+  }, []);
 
   /**
    * Carrega locações de um cliente específico
@@ -180,7 +182,6 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     setErro(null);
 
     try {
-      // getAll returns LocacaoListItem[] (via toListItem) — includes produtoId
       const locacoesList = await locacaoRepository.getAll({ clienteId: String(clienteId) });
 
       setLocacoes(locacoesList);
@@ -195,7 +196,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     }
   }, []);
 
-  /**   * Carrega histórico de locações de um produto
+  /**
+   * Carrega histórico de locações de um produto
    */
   const carregarLocacoesPorProduto = useCallback(async (produtoId: string) => {
     setCarregando(true);
@@ -226,9 +228,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       console.error('[LocacaoContext] Erro ao carregar histórico do produto:', error);
     } finally {
       setCarregando(false);
-  
-  }
-  };
+    }
+  }, []);
 
   // ==========================================================================
   // SELEÇÃO
@@ -245,9 +246,9 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     } catch (error) {
       console.error('[LocacaoContext] Erro ao selecionar locação:', error);
     } finally {
-      setCarregando(false);  
-  }
-  };
+      setCarregando(false);
+    }
+  }, []);
 
   /**
    * Limpa a locação selecionada
@@ -273,8 +274,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       if (produtoLocado) {
         setErro('Produto já está locado para outro cliente');
         return null;
-    
-  }
+      }
 
       const novaLocacao = await locacaoRepository.criarNovaLocacao(dados);
       
@@ -308,8 +308,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
         await carregarLocacoes();
         console.log('[LocacaoContext] Locação atualizada:', dados.id);
         return true;
-    
-  }
+      }
       
       return false;
     } catch (error) {
@@ -347,8 +346,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
         await carregarLocacoes();
         console.log('[LocacaoContext] Locação finalizada:', id);
         return true;
-    
-  }
+      }
       
       return false;
     } catch (error) {
@@ -359,7 +357,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     } finally {
       setCarregando(false);
     }
-  }, [carregarLocacoes, produtoRepository]);
+  }, [carregarLocacoes]);
 
   /**
    * Realiza relocação de produto (muda de cliente)
@@ -376,8 +374,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
         await carregarLocacoes();
         console.log('[LocacaoContext] Relocação realizada:', dados.produtoId);
         return true;
-    
-  }
+      }
       
       return false;
     } catch (error) {
@@ -409,11 +406,11 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
           dados.motivo
         );
         
-        // Atualizar lista        await carregarLocacoes();
+        // Atualizar lista
+        await carregarLocacoes();
         console.log('[LocacaoContext] Produto enviado para estoque:', dados.produtoId);
         return true;
-    
-  }
+      }
       
       return false;
     } catch (error) {
@@ -423,9 +420,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return false;
     } finally {
       setCarregando(false);
-  
-  }
-  };
+    }
+  }, [carregarLocacoes, finalizarLocacao]);
 
   // ==========================================================================
   // UTILITÁRIOS
@@ -441,9 +437,8 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     } catch (error) {
       console.error('[LocacaoContext] Erro ao verificar produto locado:', error);
       return false;
-  
-  }
-  };
+    }
+  }, []);
 
   /**
    * Busca locação ativa por produto
@@ -454,15 +449,15 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     } catch (error) {
       console.error('[LocacaoContext] Erro ao buscar locação ativa:', error);
       return null;
-  
-  }
-  };
+    }
+  }, []);
 
   /**
    * Atualiza a lista de locações
    */
   const atualizarLista = useCallback(async () => {
-    await carregarLocacoes();  };
+    await carregarLocacoes();
+  }, [carregarLocacoes]);
 
   // ==========================================================================
   // ESTADO DO CONTEXT
@@ -511,14 +506,14 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
 }
 
 // ============================================================================
-// HOOK PERSONALIZADO// ============================================================================
+// HOOK PERSONALIZADO
+// ============================================================================
 
 export function useLocacao(): LocacaoContextData {
   const context = useContext(LocacaoContext);
 
   if (context === undefined) {
     throw new Error('useLocacao deve ser usado dentro de um LocacaoProvider');
-
   }
 
   return context;
