@@ -73,7 +73,7 @@ export default function LocacaoFormScreen() {
   const { clienteId, produtoId, modo, locacaoId } = route.params;
 
   // ── estado do formulário ──────────────────────────────────────────────────
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<any>({
     // identificação
     clienteId:            clienteId || '',
     clienteNome:          clienteSelecionado?.nomeExibicao || '',
@@ -90,6 +90,7 @@ export default function LocacaoFormScreen() {
     dataPrimeiraCobranca: '',
     motivoRelocacao:      '',
     observacao:           '',
+    trocaPano:            false,
   });
 
   const [errors,           setErrors]           = useState<Record<string, string>>({});
@@ -184,9 +185,12 @@ export default function LocacaoFormScreen() {
       produtoId:            String(produto.id),
       produtoIdentificador: produto.identificador,
       produtoTipo:          produto.tipoNome,
+      // Pre-fill relógio from produto (editable by user)
+      numeroRelogio:        produto.numeroRelogio ? String(produto.numeroRelogio) : prev.numeroRelogio,
     }));
     setShowProdutoPicker(false);
     clearError('produtoId');
+    clearError('numeroRelogio');
   }, []);
 
   // ── helpers de input ──────────────────────────────────────────────────────
@@ -254,6 +258,8 @@ export default function LocacaoFormScreen() {
           dataPrimeiraCobranca: form.dataPrimeiraCobranca || undefined,
           observacao:           form.observacao || undefined,
           status:               'Ativa',
+          trocaPano:            form.trocaPano || false,
+          dataUltimaManutencao: form.trocaPano ? new Date().toISOString() : undefined,
         } as any);
 
         if (locacao) {
@@ -303,6 +309,7 @@ export default function LocacaoFormScreen() {
           motivoRelocacao:      form.motivoRelocacao,
           observacao:           form.observacao || undefined,
         });
+        // trocaPano handled separately via produtoRepository in realizarRelocacao
 
         if (ok) {
           Alert.alert(
@@ -723,6 +730,11 @@ const s = StyleSheet.create({
   btnConfirm:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#2563EB', padding: 16, borderRadius: 14 },
   btnDisabled:  { backgroundColor: '#BFDBFE' },
   btnConfirmText:{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  checkboxRow:   { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  checkbox:      { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#CBD5E1', justifyContent: 'center', alignItems: 'center', marginTop: 1 },
+  checkboxChecked:{ backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  checkboxLabel: { fontSize: 15, fontWeight: '600', color: '#1E293B' },
+  checkboxDesc:  { fontSize: 12, color: '#94A3B8', marginTop: 2 },
 
   // modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },

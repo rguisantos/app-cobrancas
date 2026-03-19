@@ -74,7 +74,7 @@ class UsuarioRepository {
         params
       );
 
-      return usuarios.map(this.parseUsuario);
+      return usuarios.map(u => this.parseUsuario(u));
     } catch (error) {
       console.error('[UsuarioRepository] Erro ao buscar usuários:', error);
       return [];

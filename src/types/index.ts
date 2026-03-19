@@ -302,6 +302,10 @@ export interface Locacao extends SyncableEntity {
   // Controle de Cobrança
   ultimaLeituraRelogio?: number;
   dataUltimaCobranca?: string;
+
+  // Manutenção
+  trocaPano?: boolean;           // Registrado na criação da locação
+  dataUltimaManutencao?: string; // Data da última manutenção registrada
 }
 
 // Interface leve para listagem por cliente

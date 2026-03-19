@@ -46,7 +46,11 @@ export default function ClientesRotaScreen() {
   useFocusEffect(useCallback(() => { carregar(); }, [carregar]));
 
   useEffect(() => {
-    const filtrados = clientes.filter(c => String(c.rotaId) === String(rotaId));
+    // carregarClientes already filtered by rotaId at DB level
+    // Secondary filter ensures consistency if other tabs share the clientes state
+    const filtrados = clientes.filter(c =>
+      !c.rotaId || String(c.rotaId) === String(rotaId)
+    );
     if (filtrados.length === 0) { setClientesComStatus([]); return; }
 
     setCarregandoStatus(true);

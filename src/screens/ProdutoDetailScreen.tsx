@@ -159,7 +159,11 @@ export default function ProdutoDetailScreen() {
         <TouchableOpacity
           style={styles.locacaoButton}
           onPress={() => {
-            // Navegar para detalhes da locação ou cliente
+            if (produtoSelecionado?.locacaoAtiva?.locacaoId) {
+              navigateProduto.navigation.navigate('LocacaoDetail', {
+                locacaoId: String(produtoSelecionado.locacaoAtiva.locacaoId),
+              });
+            }
           }}
         >
           <Text style={styles.locacaoButtonText}>Ver detalhes</Text>

@@ -51,6 +51,10 @@ export interface DadosCobrancaParam {
   dataInicio:            string;
   observacao:            string;
   saldoAnterior:         number; // saldo devedor pendente da locação
+  bonificacao:           number; // bonificação extra (PercentualPagar)
+  incluirPeriodo:        boolean;
+  valorPeriodo:          number;
+  trocaPano:             boolean; // marcar manutenção no produto
 }
 
 export type CobrancasStackParamList = {

@@ -36,6 +36,7 @@ const TABLES = {
   TIPOS_PRODUTO: 'tipos_produto',
   DESCRICOES_PRODUTO: 'descricoes_produto',
   TAMANHOS_PRODUTO: 'tamanhos_produto',
+  MANUTENCOES: 'manutencoes',
   ESTABELECIMENTOS: 'estabelecimentos',
   CHANGE_LOG: 'change_log',
   SYNC_METADATA: 'sync_metadata',
@@ -230,6 +231,8 @@ class DatabaseService {
         status TEXT,
         ultimaLeituraRelogio INTEGER,
         dataUltimaCobranca TEXT,
+        trocaPano INTEGER DEFAULT 0,
+        dataUltimaManutencao TEXT,
         
         -- Controle de sincronização
         syncStatus TEXT,
@@ -409,6 +412,27 @@ class DatabaseService {
       `CREATE INDEX IF NOT EXISTS idx_locacoes_cliente ON ${TABLES.LOCACOES}(clienteId)`,
       `CREATE INDEX IF NOT EXISTS idx_locacoes_produto ON ${TABLES.LOCACOES}(produtoId)`,
       `CREATE INDEX IF NOT EXISTS idx_locacoes_status ON ${TABLES.LOCACOES}(status)`,
+
+      // Tabela de Histórico de Manutenções (trocas de pano, etc.)
+      `CREATE TABLE IF NOT EXISTS manutencoes (
+        id TEXT PRIMARY KEY,
+        produtoId TEXT NOT NULL,
+        produtoIdentificador TEXT,
+        produtoTipo TEXT,
+        clienteId TEXT,
+        clienteNome TEXT,
+        locacaoId TEXT,
+        cobrancaId TEXT,
+        tipo TEXT NOT NULL,        -- 'trocaPano' | 'manutencao'
+        descricao TEXT,
+        data TEXT NOT NULL,
+        registradoPor TEXT,
+        createdAt TEXT,
+        updatedAt TEXT,
+        deletedAt TEXT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_manutencoes_produto ON manutencoes(produtoId)`,
+      `CREATE INDEX IF NOT EXISTS idx_manutencoes_data ON manutencoes(data)`,
       `CREATE INDEX IF NOT EXISTS idx_locacoes_sync ON ${TABLES.LOCACOES}(syncStatus, needsSync)`,
       
       `CREATE INDEX IF NOT EXISTS idx_cobrancas_locacao ON ${TABLES.COBRANCAS}(locacaoId)`,
@@ -1135,6 +1159,54 @@ class DatabaseService {
       [now, id]
     );
     console.log('[Database] Tamanho de produto removido:', id);
+  }
+
+  // ── MANUTENÇÕES ──────────────────────────────────────────────────────────
+
+  async saveManutencao(registro: {
+    id: string;
+    produtoId: string;
+    produtoIdentificador: string;
+    produtoTipo: string;
+    clienteId?: string;
+    clienteNome?: string;
+    locacaoId?: string;
+    cobrancaId?: string;
+    tipo: string;
+    descricao?: string;
+    data: string;
+    registradoPor?: string;
+  }): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO manutencoes
+        (id, produtoId, produtoIdentificador, produtoTipo, clienteId, clienteNome,
+         locacaoId, cobrancaId, tipo, descricao, data, registradoPor, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [registro.id, registro.produtoId, registro.produtoIdentificador, registro.produtoTipo,
+       registro.clienteId || null, registro.clienteNome || null,
+       registro.locacaoId || null, registro.cobrancaId || null,
+       registro.tipo, registro.descricao || null, registro.data,
+       registro.registradoPor || null, now, now]
+    );
+  }
+
+  async getManutencoes(filters?: {
+    produtoId?: string;
+    tipo?: string;
+    dataInicio?: string;
+    dataFim?: string;
+  }): Promise<any[]> {
+    if (!this.db) throw new Error('Database não inicializado');
+    let query = `SELECT * FROM manutencoes WHERE deletedAt IS NULL`;
+    const params: any[] = [];
+    if (filters?.produtoId) { query += ` AND produtoId = ?`; params.push(filters.produtoId); }
+    if (filters?.tipo)      { query += ` AND tipo = ?`;      params.push(filters.tipo); }
+    if (filters?.dataInicio){ query += ` AND data >= ?`;     params.push(filters.dataInicio); }
+    if (filters?.dataFim)   { query += ` AND data <= ?`;     params.push(filters.dataFim); }
+    query += ` ORDER BY data DESC`;
+    return await this.db.getAllAsync(query, params);
   }
 
   // ── ESTABELECIMENTOS ──────────────────────────────────────────────────────

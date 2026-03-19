@@ -25,8 +25,8 @@ type RoutePropType = RouteProp<CobrancasStackParamList, 'ConfirmacaoPagamento'>;
 
 const FORMA_LABELS: Record<string, string> = {
   PercentualReceber: 'Empresa recebe percentual de',
-  PercentualPagar:   'Cliente paga percentual de',
-  Periodo:           'Cobrança por período —',
+  PercentualPagar:   'Cliente recebe percentual de',
+  Periodo:           'Período:',
 };
 
 function parseDateBR(str: string): string {
@@ -51,13 +51,20 @@ export default function ConfirmacaoPagamentoScreen() {
 
   const { registrarCobranca, carregando } = useCobranca();
   const { atualizarLocacao }              = useLocacao();
+  const { atualizarProduto }              = useProduto();
 
   const [dataPrevisao,         setDataPrevisao]         = useState('');
   const [marcarVoltar,         setMarcarVoltar]         = useState(true);
   const [fisicamenteNoCliente, setFisicamenteNoCliente] = useState(false);
 
   const saldoAnterior  = dados.saldoAnterior ?? 0;
-  const totalComSaldo  = dados.totalClientePaga + saldoAnterior;
+  const bonificacao    = dados.bonificacao    ?? 0;
+  const incluirPeriodo = dados.incluirPeriodo ?? false;
+  const valorPeriodo   = dados.valorPeriodo   ?? 0;
+  const trocaPano  = dados.trocaPano  ?? false;
+  const isPagar    = dados.formaPagamento === 'PercentualPagar';
+  const isPeriodo  = dados.formaPagamento === 'Periodo';
+  const totalComSaldo  = dados.totalClientePaga + (isPagar ? 0 : saldoAnterior);
   const saldoDevedor   = Math.max(0, totalComSaldo - dados.valorRecebido);
   const hoje = new Date().toLocaleDateString('pt-BR');
 
@@ -99,6 +106,37 @@ export default function ConfirmacaoPagamentoScreen() {
           dataUltimaCobranca:   new Date().toISOString(),
         });
 
+        // Se marcou troca de pano/manutenção, atualizar produto
+        if (trocaPano) {
+          try {
+            const { locacaoRepository } = await import('../repositories/LocacaoRepository');
+            const locacao = await locacaoRepository.getById(dados.locacaoId);
+            if (locacao?.produtoId) {
+              const nowManut = new Date().toISOString();
+              await atualizarProduto({
+                id: String(locacao.produtoId),
+                dataUltimaManutencao: nowManut,
+                relatorioUltimaManutencao: 'Troca de pano registrada durante cobrança',
+              });
+              // Salvar no histórico de manutenções
+              await manutencaoRepository.registrar({
+                produtoId: String(locacao.produtoId),
+                produtoIdentificador: locacao.produtoIdentificador,
+                produtoTipo: locacao.produtoTipo,
+                clienteId: String(locacao.clienteId),
+                clienteNome: locacao.clienteNome,
+                locacaoId: String(locacao.id),
+                cobrancaId: cobranca ? String(cobranca.id) : undefined,
+                tipo: 'trocaPano',
+                descricao: 'Troca de pano durante cobrança',
+                data: nowManut,
+              });
+            }
+          } catch (e) {
+            console.warn('[ConfirmacaoPagamento] Erro ao registrar manutenção:', e);
+          }
+        }
+
         Alert.alert(
           'Pagamento Confirmado!',
           saldoDevedor > 0
@@ -137,7 +175,16 @@ export default function ConfirmacaoPagamentoScreen() {
         <View style={s.section}>
           <Text style={s.secLabel}>Pagamento</Text>
           <Text style={s.secDesc}>
-            {FORMA_LABELS[dados.formaPagamento] ?? dados.formaPagamento} {dados.percentualEmpresa.toFixed(1)}%
+            {trocaPano && (
+              <Text style={s.trocaPanoTag}>
+                <Ionicons name="construct-outline" size={12} color="#16A34A" /> Manutenção registrada
+              </Text>
+            )}
+            {dados.formaPagamento === 'Periodo'
+              ? (isPeriodo && !incluirPeriodo
+                  ? 'Valor referente apenas ao saldo devedor. Para cobrar o valor do período junto, volte e atualize a cobrança'
+                  : `Período ${dados.percentualEmpresa.toFixed(0)}% incluído`)
+              : `${FORMA_LABELS[dados.formaPagamento] ?? dados.formaPagamento} ${dados.percentualEmpresa.toFixed(1)}%`}
           </Text>
         </View>
 
@@ -149,8 +196,14 @@ export default function ConfirmacaoPagamentoScreen() {
           <TRow label="Total bruto"      value={formatarMoeda(dados.totalBruto)} />
           <TRow label={`Subtotal (${dados.percentualEmpresa.toFixed(1)}%)`}
                 value={formatarMoeda(dados.valorPercentual)} />
-          {saldoAnterior > 0 && (
-            <TRow label="+ Saldo anterior" value={formatarMoeda(saldoAnterior)} />
+          {saldoAnterior > 0 && !isPagar && (
+            <TRow label="Saldo devedor anterior" value={formatarMoeda(saldoAnterior)} />
+          )}
+          {bonificacao > 0 && (
+            <TRow label="Bonificação" value={formatarMoeda(bonificacao)} />
+          )}
+          {isPeriodo && incluirPeriodo && valorPeriodo > 0 && (
+            <TRow label={`+ Período (${dados.observacao || 'fixo'})`} value={formatarMoeda(valorPeriodo)} />
           )}
         </View>
 

@@ -29,6 +29,7 @@ export interface CalculoCobrancaInput {
   // Descontos
   descontoPartidasQtd?: number; // Quantidade de fichas de desconto
   descontoDinheiro?: number;    // Valor em R$ de desconto
+  bonificacao?: number;         // Bonificação extra (PercentualPagar: soma ao cliente)
   
   // Para cobrança por período (valor fixo)
   valorFixo?: number;
@@ -90,21 +91,43 @@ class CobrancaService {
     const descontoPartidasValor = this.arredondar(descontoPartidasQtd * input.valorFicha);
     const subtotalAposDescontoPartidas = this.arredondar(totalBruto - descontoPartidasValor);
 
-    // 4. Aplicar desconto em dinheiro
     const descontoDinheiroValor = input.descontoDinheiro || 0;
-    const subtotalAposDescontoDinheiro = this.arredondar(
-      Math.max(0, subtotalAposDescontoPartidas - descontoDinheiroValor)
-    );
+    const bonificacaoValor      = input.bonificacao      || 0;
+    const forma = input.formaPagamento;
 
-    // 5. Calcular percentual da empresa
-    const valorPercentual = this.arredondar(
-      (subtotalAposDescontoDinheiro * input.percentualEmpresa) / 100
-    );
+    let subtotalAposDescontoDinheiro: number;
+    let valorPercentual: number;
+    let totalClientePaga: number;
+    let valorEmpresaRecebe: number;
+    let valorClienteFica: number;
 
-    // 6. Calcular totais finais
-    const totalClientePaga = subtotalAposDescontoDinheiro;
-    const valorEmpresaRecebe = valorPercentual;
-    const valorClienteFica = this.arredondar(totalClientePaga - valorEmpresaRecebe);
+    if (forma === 'PercentualPagar') {
+      // EMPRESA PAGA X% ao cliente
+      // descDinheiro reduz a base antes do cálculo do %
+      subtotalAposDescontoDinheiro = this.arredondar(
+        Math.max(0, subtotalAposDescontoPartidas - descontoDinheiroValor)
+      );
+      // % que empresa paga ao cliente
+      valorPercentual = this.arredondar(
+        (subtotalAposDescontoDinheiro * input.percentualEmpresa) / 100
+      );
+      // Bonificação extra que empresa paga ao cliente
+      totalClientePaga  = this.arredondar(valorPercentual + bonificacaoValor);
+      valorEmpresaRecebe = this.arredondar(subtotalAposDescontoDinheiro - totalClientePaga);
+      valorClienteFica  = totalClientePaga;
+    } else {
+      // EMPRESA RECEBE X% do cliente (PercentualReceber)
+      // descDinheiro reduz a parcela da empresa (não a base do cliente)
+      subtotalAposDescontoDinheiro = subtotalAposDescontoPartidas; // base não muda para cliente
+      const valorEmpresaBase = this.arredondar(
+        (subtotalAposDescontoPartidas * input.percentualEmpresa) / 100
+      );
+      // descDinheiro sai da parte da empresa
+      valorPercentual    = this.arredondar(Math.max(0, valorEmpresaBase - descontoDinheiroValor));
+      totalClientePaga   = valorPercentual; // cliente paga o que empresa recebe
+      valorEmpresaRecebe = valorPercentual;
+      valorClienteFica   = this.arredondar(subtotalAposDescontoPartidas - valorEmpresaBase);
+    }
 
     // 7. Gerar resumo para exibição
     const resumo = this.gerarResumoCobranca({
@@ -124,6 +147,7 @@ class CobrancaService {
       subtotalAposDescontoDinheiro,
       descontoPartidasValor,
       descontoDinheiroValor,
+      bonificacaoValor,
       valorPercentual,
       totalClientePaga,
       valorEmpresaRecebe,

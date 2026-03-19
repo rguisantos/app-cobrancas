@@ -130,6 +130,9 @@ export default function MaisScreen() {
             <Sep />
             <MenuItem icon="cube"    iconBg="#DCFCE7" iconColor="#16A34A" title="Atributos de Produto"
               subtitle="Tipos, descrições e tamanhos" onPress={() => navModal('AtributosProdutoGerenciar')} />
+            <MenuItem icon="construct" iconBg="#F0FDF4" iconColor="#16A34A"
+              title="Relatório de Manutenções"
+              subtitle="Histórico de trocas de pano" onPress={() => navModal('RelatorioManutencao')} />
           </MenuGroup>
         </>)}
 

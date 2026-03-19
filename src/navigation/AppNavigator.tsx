@@ -53,6 +53,7 @@ import SyncStatusScreen from '../screens/SyncStatusScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import RotasGerenciarScreen from '../screens/RotasGerenciarScreen';
 import AtributosProdutoGerenciarScreen from '../screens/AtributosProdutoGerenciarScreen';
+import RelatorioManutencaoScreen       from '../screens/RelatorioManutencaoScreen';
 import UsuariosGerenciarScreen from '../screens/UsuariosGerenciarScreen';
 
 // ============================================================================
@@ -122,6 +123,7 @@ export type ModalStackParamList = {
   RotasGerenciar: undefined;
   AtributosProdutoGerenciar: undefined;
   UsuariosGerenciar: undefined;
+  RelatorioManutencao: undefined;
 };
 
 // Root Stack (gerencia auth state)
@@ -378,6 +380,12 @@ function ModalNavigator() {
         name="UsuariosGerenciar" 
         component={UsuariosGerenciarScreen}
         options={{ title: 'Gerenciar Usuários' }}
+      />
+
+      <ModalStack.Screen
+        name="RelatorioManutencao"
+        component={RelatorioManutencaoScreen}
+        options={{ title: 'Relatório de Manutenções' }}
       />
     </ModalStack.Navigator>
   );
