@@ -115,7 +115,7 @@ export type ModalStackParamList = {
   LocacaoForm: { clienteId: string; produtoId?: string; locacaoId?: string; modo: 'criar' | 'editar' | 'relocar' };
   LocacaoDetail: { locacaoId: string };
   EnviarEstoque: { locacaoId: string; produtoId: string };
-  CobrancaConfirm: { locacaoId: string };
+  CobrancaConfirm: { locacaoId: string; cobrancaId?: string; modo?: 'nova' | 'editar' | 'parcial' };
   CobrancaDetail: { cobrancaId: string };
   SyncStatus: undefined;
   Settings: undefined;

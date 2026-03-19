@@ -207,14 +207,13 @@ export default function LocacaoFormScreen() {
 
   const percentualCliente = Math.max(0, 100 - (parseFloat(form.percentualEmpresa) || 0));
 
-  // ── validação ─────────────────────────────────────────────────────────────
-  const validate = (): boolean => {
+  // ── submit ────────────────────────────────────────────────────────────────
+  const handleSubmit = useCallback(async () => {
+    // Validate with current form state (inline to avoid stale closure)
     const e: Record<string, string> = {};
-
-    if (!form.produtoId)    e.produtoId   = 'Produto é obrigatório';
-    if (!form.clienteId)    e.clienteId   = 'Cliente é obrigatório';
+    if (!form.produtoId)     e.produtoId    = 'Produto é obrigatório';
+    if (!form.clienteId)     e.clienteId    = 'Cliente é obrigatório';
     if (!form.numeroRelogio) e.numeroRelogio = 'Relógio é obrigatório';
-
     if (form.formaPagamento !== 'Periodo') {
       if (!form.precoFicha || parseFloat(form.precoFicha) <= 0)
         e.precoFicha = 'Preço da ficha deve ser maior que zero';
@@ -227,17 +226,13 @@ export default function LocacaoFormScreen() {
       if (!form.periodicidade)
         e.periodicidade = 'Periodicidade é obrigatória';
     }
-
     if (modo === 'relocar' && !form.motivoRelocacao.trim())
       e.motivoRelocacao = 'Informe o motivo da relocação';
-
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  // ── submit ────────────────────────────────────────────────────────────────
-  const handleSubmit = useCallback(async () => {
-    if (!validate()) { Alert.alert('Atenção', 'Corrija os campos obrigatórios'); return; }
+    if (Object.keys(e).length > 0) {
+      setErrors(e);
+      Alert.alert('Atenção', 'Corrija os campos obrigatórios');
+      return;
+    }
 
     setSalvando(true);
     try {
@@ -324,7 +319,7 @@ export default function LocacaoFormScreen() {
     } finally {
       setSalvando(false);
     }
-  }, [form, modo, locacaoId, percentualCliente, criarLocacao, atualizarLocacao, realizarRelocacao, navigation]);
+  }, [form, modo, locacaoId, percentualCliente, criarLocacao, atualizarLocacao, realizarRelocacao, navigation, setErrors]);
 
   // ── loading inicial ───────────────────────────────────────────────────────
   if (carregandoInit) {

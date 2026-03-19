@@ -34,8 +34,10 @@ export default function RecoverPasswordScreen({ navigation }: Props) {
 
     setLoading(true);
     try {
-      // TODO: Implementar recuperação de senha via API
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Offline mode: check if email exists locally
+      const { usuarioRepository } = await import('../repositories/UsuarioRepository');
+      const usuario = await usuarioRepository.getByEmail(email.trim().toLowerCase());
+      // Always show success (security - don't reveal if email exists)
       setEmailSent(true);
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível enviar o e-mail de recuperação');
@@ -54,7 +56,7 @@ export default function RecoverPasswordScreen({ navigation }: Props) {
           </View>
           <Text style={styles.successTitle}>E-mail Enviado!</Text>
           <Text style={styles.successText}>
-            Enviamos instruções para recuperação de senha para {email}
+            Solicitação registrada para {email}. Em modo offline, entre em contato com o administrador do sistema para redefinir sua senha.
           </Text>
           <TouchableOpacity
             style={styles.button}

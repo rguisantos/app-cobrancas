@@ -5,6 +5,7 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { useDatabase } from './DatabaseContext';
 import { 
   DashboardMobileData, 
   DashboardMobileMetricas,
@@ -75,7 +76,9 @@ interface DashboardProviderProps {
 
 export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioTipo = 'Administrador' }: DashboardProviderProps) {
   // Estado
-  const [mobile, setMobile] = useState<DashboardMobileData | null>(null);
+  const { isReady } = useDatabase();
+
+    const [mobile, setMobile] = useState<DashboardMobileData | null>(null);
   const [web, setWeb] = useState<DashboardWebData | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -423,10 +426,10 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
   // EFFECTS
   // ==========================================================================
 
-  // Carregar dashboard mobile ao montar
+  // Carregar dashboard mobile ao montar (aguarda banco)
   useEffect(() => {
-    carregarDashboardMobile();
-  }, [carregarDashboardMobile]);
+    if (isReady) carregarDashboardMobile();
+  }, [isReady, carregarDashboardMobile]);
 
   // ==========================================================================
   // ESTADO DO CONTEXT

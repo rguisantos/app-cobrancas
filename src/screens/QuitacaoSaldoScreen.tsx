@@ -3,7 +3,7 @@
  * Tela de quitação de saldo devedor de produtos já retirados (locação finalizada)
  *
  * Aparece como tab em CobrancaClienteScreen quando o cliente tem
- * cobranças em aberto de produtos que não estão mais locados.
+ * cobrancasList em aberto de produtos que não estão mais locados.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -30,13 +30,13 @@ export default function QuitacaoSaldoScreen() {
 
   const { atualizarCobranca } = useCobranca();
 
-  const [cobranças,    setCobranças]    = useState<HistoricoCobranca[]>([]);
+  const [cobrancasList,    setCobrancasList]    = useState<HistoricoCobranca[]>([]);
   const [carregando,   setCarregando]   = useState(true);
   const [valorPago,    setValorPago]    = useState('');
   const [observacao,   setObservacao]   = useState('');
   const [salvando,     setSalvando]     = useState(false);
 
-  const saldoTotal = cobranças.reduce((s, c) => s + c.saldoDevedorGerado, 0);
+  const saldoTotal = cobrancasList.reduce((s, c) => s + c.saldoDevedorGerado, 0);
 
   useEffect(() => {
     cobrancaRepository.getByLocacao(locacaoId)
@@ -45,9 +45,9 @@ export default function QuitacaoSaldoScreen() {
           c => (c.status === 'Parcial' || c.status === 'Pendente' || c.status === 'Atrasado')
             && c.saldoDevedorGerado > 0
         );
-        setCobranças(pendentes);
+        setCobrancasList(pendentes);
       })
-      .catch(() => setCobranças([]))
+      .catch(() => setCobrancasList([]))
       .finally(() => setCarregando(false));
   }, [locacaoId]);
 
@@ -61,9 +61,9 @@ export default function QuitacaoSaldoScreen() {
 
     setSalvando(true);
     try {
-      // Distribuir o pagamento pelas cobranças mais antigas primeiro (FIFO)
+      // Distribuir o pagamento pelas cobrancasList mais antigas primeiro (FIFO)
       let restante = valor;
-      const ordenadas = [...cobranças].sort(
+      const ordenadas = [...cobrancasList].sort(
         (a, b) => new Date(a.dataInicio).getTime() - new Date(b.dataInicio).getTime()
       );
 
@@ -101,18 +101,18 @@ export default function QuitacaoSaldoScreen() {
     } finally {
       setSalvando(false);
     }
-  }, [valorPago, saldoTotal, cobranças, observacao, atualizarCobranca, navigation]);
+  }, [valorPago, saldoTotal, cobrancasList, observacao, atualizarCobranca, navigation]);
 
   if (carregando) {
     return <View style={s.center}><ActivityIndicator size="large" color="#E53935" /></View>;
   }
 
-  if (cobranças.length === 0) {
+  if (cobrancasList.length === 0) {
     return (
       <View style={s.center}>
         <Ionicons name="checkmark-circle" size={64} color="#16A34A" />
         <Text style={s.emptyTitle}>Sem saldo devedor</Text>
-        <Text style={s.emptyText}>Todas as cobranças deste produto estão quitadas.</Text>
+        <Text style={s.emptyText}>Todas as cobrancasList deste produto estão quitadas.</Text>
       </View>
     );
   }
@@ -140,9 +140,9 @@ export default function QuitacaoSaldoScreen() {
           <Text style={s.saldoValor}>{formatarMoeda(saldoTotal)}</Text>
         </View>
 
-        {/* cobranças pendentes */}
+        {/* cobrancasList pendentes */}
         <Text style={s.secTitle}>Cobranças em aberto</Text>
-        {cobranças.map(c => (
+        {cobrancasList.map(c => (
           <View key={String(c.id)} style={s.cobrancaCard}>
             <View style={s.cobrancaRow}>
               <Text style={s.cobrancaLabel}>Período</Text>

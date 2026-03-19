@@ -44,13 +44,13 @@ export default function LocacoesListScreen({ route, navigation }: Props) {
   );
 
   const handleRelocar = useCallback((item: LocacaoListItem) => {
-    navigateCliente.toRelocar(String(item.id), String((item as any).produtoId || ''), clienteId);
+    navigateCliente.toRelocar(String(item.id), String(item.produtoId || ''), clienteId);
   }, [navigateCliente, clienteId]);
 
   const handleEnviarEstoque = useCallback((item: LocacaoListItem) => {
     navigation.navigate('EnviarEstoque', {
       locacaoId: String(item.id),
-      produtoId: String((item as any).produtoId || ''),
+      produtoId: String(item.produtoId || ''),
     });
   }, [navigation]);
 

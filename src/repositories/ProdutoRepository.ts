@@ -111,16 +111,14 @@ class ProdutoRepository {
     
   }
 
-      // Filtro para produtos locados vs disponíveis
-      // Nota: Esta é uma simplificação. O ideal é fazer JOIN com locações
+      // Filtro para produtos locados vs disponíveis usando subquery em locacoes
       if (filters?.comLocacaoAtiva === true) {
-        // Produtos locados têm estabelecimento vazio ou null
-        whereClauses.push('(estabelecimento IS NULL OR estabelecimento = "")');
+        // Produtos com locação ativa
+        whereClauses.push(`id IN (SELECT produtoId FROM locacoes WHERE status = 'Ativa' AND deletedAt IS NULL)`);
       } else if (filters?.comLocacaoAtiva === false) {
-        // Produtos em estoque têm estabelecimento preenchido
-        whereClauses.push('(estabelecimento IS NOT NULL AND estabelecimento != "")');
-    
-  }
+        // Produtos SEM locação ativa (disponíveis para locar)
+        whereClauses.push(`id NOT IN (SELECT produtoId FROM locacoes WHERE status = 'Ativa' AND deletedAt IS NULL)`);
+      }
 
       const where = whereClauses.join(' AND ');
       const produtos = await databaseService.getAll<Produto>(
@@ -450,7 +448,21 @@ class ProdutoRepository {
         numeroRelogio: novoNumeroRelogio,
       });
 
-      // Registrar no histórico (será implementado quando tivermos tabela de histórico)
+      // Atualizar ultimaLeituraRelogio na locação ativa, se existir
+      try {
+        const { locacaoRepository } = await import('./LocacaoRepository');
+        const locacaoAtiva = await locacaoRepository.getAtivaByProduto(produtoId);
+        if (locacaoAtiva) {
+          await locacaoRepository.update({
+            id: String(locacaoAtiva.id),
+            ultimaLeituraRelogio: parseInt(novoNumeroRelogio, 10) || 0,
+          });
+          console.log('[ProdutoRepository] ultimaLeituraRelogio atualizado na locação:', locacaoAtiva.id);
+        }
+      } catch (e) {
+        console.warn('[ProdutoRepository] Não foi possível atualizar locação:', e);
+      }
+      
       const historico: ProdutoHistoricoRelogio = {
         id: this.generateId(),
         produtoId,
@@ -460,8 +472,6 @@ class ProdutoRepository {
         dataAlteracao: new Date().toISOString(),
         usuarioResponsavel,
       };
-
-      // TODO: Salvar histórico em tabela específica
       console.log('[ProdutoRepository] Histórico de relógio:', historico);
 
       console.log('[ProdutoRepository] Número do relógio atualizado:', produtoId);

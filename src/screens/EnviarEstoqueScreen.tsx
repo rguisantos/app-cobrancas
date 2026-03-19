@@ -18,9 +18,9 @@ import { useLocacao }  from '../contexts/LocacaoContext';
 import { useProduto }  from '../contexts/ProdutoContext';
 import atributosRepository, { AtributoItem } from '../repositories/AtributosRepository';
 import { locacaoRepository } from '../repositories/LocacaoRepository';
-import { ClientesStackParamList } from '../navigation/ClientesStack';
 
-type RouteType = RouteProp<ClientesStackParamList, 'EnviarEstoque'>;
+
+type RouteType = RouteProp<{ EnviarEstoque: { locacaoId: string; produtoId: string } }, 'EnviarEstoque'>;
 
 export default function EnviarEstoqueScreen() {
   const route      = useRoute<RouteType>();

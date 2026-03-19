@@ -656,18 +656,21 @@ class LocacaoRepository {
   private toListItem(locacao: Locacao): LocacaoListItem {
     return {
       id: locacao.id,
+      produtoId: locacao.produtoId,
       produtoIdentificador: locacao.produtoIdentificador,
       produtoTipo: locacao.produtoTipo,
-      produtoDescricao: '', // Preencher quando tiver dados do produto
-      produtoTamanho: '', // Preencher quando tiver dados do produto
+      produtoDescricao: '',
+      produtoTamanho: '',
+      clienteNome: locacao.clienteNome,
       formaPagamento: locacao.formaPagamento,
       numeroRelogio: locacao.numeroRelogio,
       percentualEmpresa: locacao.percentualEmpresa,
       precoFicha: locacao.precoFicha,
       dataLocacao: locacao.dataLocacao,
+      ultimaLeituraRelogio: locacao.ultimaLeituraRelogio,
+      dataUltimaCobranca: locacao.dataUltimaCobranca,
       status: locacao.status,
     };
-
   }
 
   /**

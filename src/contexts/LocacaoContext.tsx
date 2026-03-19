@@ -147,7 +147,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   /**
    * Carrega todas as locações (com filtros opcionais)
    */
-  const carregarLocacoes = async (filtros?: any) => {
+  const carregarLocacoes = useCallback(async (filtros?: any) => {
     setCarregando(true);
     setErro(null);
 
@@ -175,27 +175,13 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   /**
    * Carrega locações de um cliente específico
    */
-  const carregarLocacoesPorCliente = async (clienteId: string) => {
+  const carregarLocacoesPorCliente = useCallback(async (clienteId: string) => {
     setCarregando(true);
     setErro(null);
 
     try {
-      const lista = await locacaoRepository.getByCliente(clienteId);
-      
-      // Converter para LocacaoListItem
-      const locacoesList: LocacaoListItem[] = lista.map(l => ({
-        id: l.id,
-        produtoIdentificador: l.produtoIdentificador,
-        produtoTipo: l.produtoTipo || '',
-        produtoDescricao: '',
-        produtoTamanho: '',
-        formaPagamento: l.formaPagamento,
-        numeroRelogio: '',
-        percentualEmpresa: l.percentualEmpresa,
-        precoFicha: l.precoFicha,
-        dataLocacao: l.dataLocacao,
-        status: l.status,
-      }));
+      // getAll returns LocacaoListItem[] (via toListItem) — includes produtoId
+      const locacoesList = await locacaoRepository.getAll({ clienteId: String(clienteId) });
 
       setLocacoes(locacoesList);
       setLocacoesAtivas(locacoesList.filter(l => l.status === 'Ativa'));
@@ -206,13 +192,12 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       console.error('[LocacaoContext] Erro ao carregar locações do cliente:', error);
     } finally {
       setCarregando(false);
-  
-  }
-  };
+    }
+  }, []);
 
   /**   * Carrega histórico de locações de um produto
    */
-  const carregarLocacoesPorProduto = async (produtoId: string) => {
+  const carregarLocacoesPorProduto = useCallback(async (produtoId: string) => {
     setCarregando(true);
     setErro(null);
 
@@ -252,7 +237,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   /**
    * Seleciona uma locação para visualização/edição
    */
-  const selecionarLocacao = async (id: string) => {
+  const selecionarLocacao = useCallback(async (id: string) => {
     setCarregando(true);
     try {
       const locacao = await locacaoRepository.getById(id);
@@ -278,7 +263,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   /**
    * Cria nova locação
    */
-  const criarLocacao = async (dados: NovaLocacaoData): Promise<Locacao | null> => {
+  const criarLocacao = useCallback(async (dados: NovaLocacaoData): Promise<Locacao | null> => {
     setCarregando(true);
     setErro(null);
 
@@ -305,14 +290,14 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return null;
     } finally {
       setCarregando(false);
-  
-  }
-  };
+    }
+  }, [carregarLocacoes]);
 
   /**
    * Atualiza locação existente
    */
-  const atualizarLocacao = async (dados: Partial<Locacao> & { id: string }): Promise<boolean> => {    setCarregando(true);
+  const atualizarLocacao = useCallback(async (dados: Partial<Locacao> & { id: string }): Promise<boolean> => {
+    setCarregando(true);
     setErro(null);
 
     try {
@@ -334,14 +319,13 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return false;
     } finally {
       setCarregando(false);
-  
-  }
-  };
+    }
+  }, [carregarLocacoes]);
 
   /**
    * Finaliza locação
    */
-  const finalizarLocacao = async (id: string, motivo?: string): Promise<boolean> => {
+  const finalizarLocacao = useCallback(async (id: string, motivo?: string): Promise<boolean> => {
     setCarregando(true);
     setErro(null);
 
@@ -374,12 +358,13 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return false;
     } finally {
       setCarregando(false);
-    }  };
+    }
+  }, [carregarLocacoes, produtoRepository]);
 
   /**
    * Realiza relocação de produto (muda de cliente)
    */
-  const realizarRelocacao = async (dados: RelocacaoData): Promise<boolean> => {
+  const realizarRelocacao = useCallback(async (dados: RelocacaoData): Promise<boolean> => {
     setCarregando(true);
     setErro(null);
 
@@ -402,14 +387,13 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return false;
     } finally {
       setCarregando(false);
-  
-  }
-  };
+    }
+  }, [carregarLocacoes]);
 
   /**
    * Envia produto para estoque (desvincula do cliente)
    */
-  const enviarParaEstoque = async (dados: EnviarEstoqueData): Promise<boolean> => {
+  const enviarParaEstoque = useCallback(async (dados: EnviarEstoqueData): Promise<boolean> => {
     setCarregando(true);
     setErro(null);
 
@@ -450,7 +434,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   /**
    * Verifica se produto está locado
    */
-  const verificarProdutoLocado = async (produtoId: string): Promise<boolean> => {
+  const verificarProdutoLocado = useCallback(async (produtoId: string): Promise<boolean> => {
     try {
       const locacao = await locacaoRepository.getAtivaByProduto(produtoId);
       return !!locacao;
@@ -464,7 +448,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   /**
    * Busca locação ativa por produto
    */
-  const getLocacaoAtivaPorProduto = async (produtoId: string): Promise<Locacao | null> => {
+  const getLocacaoAtivaPorProduto = useCallback(async (produtoId: string): Promise<Locacao | null> => {
     try {
       return await locacaoRepository.getAtivaByProduto(produtoId);
     } catch (error) {
@@ -477,7 +461,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   /**
    * Atualiza a lista de locações
    */
-  const atualizarLista = async () => {
+  const atualizarLista = useCallback(async () => {
     await carregarLocacoes();  };
 
   // ==========================================================================

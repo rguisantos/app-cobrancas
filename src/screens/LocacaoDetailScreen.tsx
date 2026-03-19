@@ -76,7 +76,14 @@ export default function LocacaoDetailScreen({ route, navigation }: Props) {
 
   const handleCobrar = useCallback(() => {
     if (!locacao) return;
-    navigation.navigate('CobrancaConfirm', { locacaoId: String(locacao.id) });
+    // CobrancaConfirm is in ModalStack (AppNavigator) and CobrancasStack
+    // Try parent navigator first (works when inside ClientesStack/ProdutosStack)
+    const parent = (navigation as any).getParent?.();
+    if (parent) {
+      parent.navigate('CobrancaConfirm', { locacaoId: String(locacao.id) });
+    } else {
+      (navigation as any).navigate('CobrancaConfirm', { locacaoId: String(locacao.id) });
+    }
   }, [locacao, navigation]);
 
   const handleFinalizar = useCallback(() => {

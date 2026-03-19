@@ -307,6 +307,7 @@ export interface Locacao extends SyncableEntity {
 // Interface leve para listagem por cliente
 export interface LocacaoListItem {
   id: string | number;
+  produtoId?: string | number; // Added for relocar/enviarEstoque actions
   produtoIdentificador: string;
   produtoTipo: string;
   produtoDescricao: string;
@@ -318,6 +319,8 @@ export interface LocacaoListItem {
   percentualEmpresa: number;
   precoFicha: number;
   dataLocacao: string;
+  ultimaLeituraRelogio?: number;
+  dataUltimaCobranca?: string;
   
   status: StatusLocacao;
 }

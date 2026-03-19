@@ -22,7 +22,8 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
+import { CobrancasStackParamList } from '../navigation/CobrancasStack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Contexts
@@ -47,7 +48,8 @@ import { formatarMoeda } from '../utils/currency';
 
 export default function CobrancasListScreen() {
   const navigation = useNavigation<CobrancasStackNavigationProp>();
-  const navigateCobranca = useCobrancaNavigate();  const { user, hasPermission, canAccessRota } = useAuth();
+  const navigateCobranca = useCobrancaNavigate();
+  const route = useRoute<RouteProp<CobrancasStackParamList, 'CobrancasList'>>();  const { user, hasPermission, canAccessRota } = useAuth();
   const { cobrancas, carregando, erro, carregarCobrancas, refresh, totalPendentes } = useCobranca();
 
   // Estado local
@@ -60,8 +62,14 @@ export default function CobrancasListScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      carregarCobrancas();
-    }, [carregarCobrancas])
+      const params = route?.params;
+      const filtros: any = {};
+      if (params?.filtroCliente)  filtros.clienteId = params.filtroCliente;
+      if (params?.filtroRota)     filtros.rotaId    = params.filtroRota;
+      carregarCobrancas(Object.keys(filtros).length > 0 ? filtros : undefined);
+      // Apply status filter from params
+      if (params?.filtroStatus)   setFiltroStatus(params.filtroStatus);
+    }, [carregarCobrancas, route?.params])
   );
 
   const onRefresh = useCallback(async () => {

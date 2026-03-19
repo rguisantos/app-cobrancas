@@ -3,13 +3,13 @@
  * ✅ Corrigido: usa CobrancaContext real, sem mock
  */
 
-import React, { useEffect } from 'react';
+import React, { useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons }     from '@expo/vector-icons';
-import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navigation/native';
 
 import { useCobranca }   from '../contexts/CobrancaContext';
 import { CobrancasStackParamList } from '../navigation/CobrancasStack';
@@ -40,9 +40,11 @@ export default function CobrancaDetailScreen() {
   const { cobrancaSelecionada: cobranca, selecionarCobranca, carregando } = useCobranca();
   const { cobrancaId } = route.params;
 
-  useEffect(() => {
-    if (cobrancaId) selecionarCobranca(cobrancaId);
-  }, [cobrancaId, selecionarCobranca]);
+  useFocusEffect(
+    useCallback(() => {
+      if (cobrancaId) selecionarCobranca(cobrancaId);
+    }, [cobrancaId, selecionarCobranca])
+  );
 
   if (carregando) {
     return (

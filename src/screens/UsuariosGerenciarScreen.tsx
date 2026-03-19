@@ -177,14 +177,13 @@ export default function UsuariosGerenciarScreen() {
 
       if (editandoUsuario) {
         await usuarioRepository.update(dadosUsuario);
-        Alert.alert('Sucesso', 'Usuário atualizado com sucesso');
       } else {
         await usuarioRepository.save(dadosUsuario);
-        Alert.alert('Sucesso', 'Usuário criado com sucesso');
       }
 
       setModalVisible(false);
-      carregarUsuarios();
+      await carregarUsuarios();
+      Alert.alert('Sucesso', editandoUsuario ? 'Usuário atualizado com sucesso' : 'Usuário criado com sucesso');
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível salvar o usuário');
     } finally {

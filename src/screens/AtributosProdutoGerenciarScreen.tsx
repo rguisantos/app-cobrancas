@@ -214,6 +214,14 @@ export default function AtributosProdutoGerenciarScreen() {
             Tamanhos
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, tipoAtivo === 'estabelecimento' && styles.tabActive]}
+          onPress={() => setTipoAtivo('estabelecimento')}
+        >
+          <Text style={[styles.tabText, tipoAtivo === 'estabelecimento' && styles.tabTextActive]}>
+            Estoque
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Lista */}

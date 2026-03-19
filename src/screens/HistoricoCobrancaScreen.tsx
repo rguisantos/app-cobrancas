@@ -3,14 +3,14 @@
  * ✅ Corrigido: usa CobrancaContext real, sem mock
  */
 
-import React, { useEffect, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import {
   View, Text, FlatList, StyleSheet, ActivityIndicator,
   TouchableOpacity, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons }     from '@expo/vector-icons';
-import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navigation/native';
 
 import { useCobranca }   from '../contexts/CobrancaContext';
 import { CobrancasStackParamList } from '../navigation/CobrancasStack';
@@ -33,17 +33,20 @@ export default function HistoricoCobrancaScreen() {
 
   const { cobrancas, carregando, carregarCobrancas } = useCobranca();
 
-  const carregarHistorico = useCallback(() => {
-    const filtros: any = { clienteId };
-    if (produtoId) filtros.produtoIdentificador = produtoId;
-    carregarCobrancas(filtros);
-  }, [clienteId, produtoId, carregarCobrancas]);
+  const carregarHistorico = useCallback(async () => {
+    await carregarCobrancas({ clienteId });
+  }, [clienteId, carregarCobrancas]);
 
-  useEffect(() => { carregarHistorico(); }, [carregarHistorico]);
+  useFocusEffect(useCallback(() => { carregarHistorico(); }, [carregarHistorico]));
 
-  const totalRecebido = cobrancas.reduce((a, c) => a + c.valorRecebido,         0);
-  const totalDevedor  = cobrancas.reduce((a, c) => a + c.saldoDevedorGerado,    0);
-  const pagas         = cobrancas.filter(c => c.status === 'Pago').length;
+  // Filter by produtoIdentificador locally if provided
+  const cobrancasFiltradas = produtoId
+    ? cobrancas.filter(c => c.produtoIdentificador === produtoId)
+    : cobrancas;
+
+  const totalRecebido = cobrancasFiltradas.reduce((a, c) => a + c.valorRecebido, 0);
+  const totalDevedor  = cobrancasFiltradas.reduce((a, c) => a + c.saldoDevedorGerado, 0);
+  const pagas         = cobrancasFiltradas.filter(c => c.status === 'Pago').length;
 
   if (carregando && cobrancas.length === 0) {
     return (
@@ -57,7 +60,7 @@ export default function HistoricoCobrancaScreen() {
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
       <FlatList
-        data={cobrancas}
+        data={cobrancasFiltradas}
         keyExtractor={item => String(item.id)}
         contentContainerStyle={[s.list, cobrancas.length === 0 && s.listEmpty]}
         showsVerticalScrollIndicator={false}
