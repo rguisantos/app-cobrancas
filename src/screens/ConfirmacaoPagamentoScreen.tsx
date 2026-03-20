@@ -129,37 +129,51 @@ export default function ConfirmacaoPagamentoScreen() {
       });
 
       if (cobranca) {
+        // Buscar a locação para ter o produtoId
+        const locacao = await locacaoRepository.getById(dados.locacaoId);
+        
         await atualizarLocacao({
           id:                   dados.locacaoId,
-          ultimaLeituraRelogio: dados.relogioAtual,
+          ultimaLeituraRelogio: dados.relogioAtual || undefined,
           dataUltimaCobranca:   new Date().toISOString(),
         });
 
-        // Se marcou troca de pano/manutenção, atualizar produto
-        if (trocaPano) {
+        // Se preencheu relógio atual, atualizar o Produto também
+        // O relógio do produto deve ser sincronizado com a última leitura
+        if (dados.relogioAtual && dados.relogioAtual > 0 && locacao?.produtoId) {
           try {
-            const locacao = await locacaoRepository.getById(dados.locacaoId);
-            if (locacao?.produtoId) {
-              const nowManut = new Date().toISOString();
-              await atualizarProduto({
-                id: String(locacao.produtoId),
-                dataUltimaManutencao: nowManut,
-                relatorioUltimaManutencao: 'Troca de pano registrada durante cobrança',
-              });
-              // Salvar no histórico de manutenções
-              await manutencaoRepository.registrar({
-                produtoId: String(locacao.produtoId),
-                produtoIdentificador: locacao.produtoIdentificador,
-                produtoTipo: locacao.produtoTipo,
-                clienteId: String(locacao.clienteId),
-                clienteNome: locacao.clienteNome,
-                locacaoId: String(locacao.id),
-                cobrancaId: cobranca ? String(cobranca.id) : undefined,
-                tipo: 'trocaPano',
-                descricao: 'Troca de pano durante cobrança',
-                data: nowManut,
-              });
-            }
+            await atualizarProduto({
+              id: String(locacao.produtoId),
+              numeroRelogio: String(dados.relogioAtual),
+            });
+            console.log('[ConfirmacaoPagamento] Relógio do produto atualizado:', dados.relogioAtual);
+          } catch (e) {
+            console.warn('[ConfirmacaoPagamento] Erro ao atualizar relógio do produto:', e);
+          }
+        }
+
+        // Se marcou troca de pano/manutenção, atualizar produto
+        if (trocaPano && locacao?.produtoId) {
+          try {
+            const nowManut = new Date().toISOString();
+            await atualizarProduto({
+              id: String(locacao.produtoId),
+              dataUltimaManutencao: nowManut,
+              relatorioUltimaManutencao: 'Troca de pano registrada durante cobrança',
+            });
+            // Salvar no histórico de manutenções
+            await manutencaoRepository.registrar({
+              produtoId: String(locacao.produtoId),
+              produtoIdentificador: locacao.produtoIdentificador,
+              produtoTipo: locacao.produtoTipo,
+              clienteId: String(locacao.clienteId),
+              clienteNome: locacao.clienteNome,
+              locacaoId: String(locacao.id),
+              cobrancaId: cobranca ? String(cobranca.id) : undefined,
+              tipo: 'trocaPano',
+              descricao: 'Troca de pano durante cobrança',
+              data: nowManut,
+            });
           } catch (e) {
             console.warn('[ConfirmacaoPagamento] Erro ao registrar manutenção:', e);
           }
@@ -179,7 +193,7 @@ export default function ConfirmacaoPagamentoScreen() {
       Alert.alert('Erro', e instanceof Error ? e.message : 'Erro ao confirmar pagamento');
     }
   }, [dados, dataPrevisao, marcarVoltar, fisicamenteNoCliente, saldoDevedor,
-      registrarCobranca, atualizarLocacao, navigation]);
+      registrarCobranca, atualizarLocacao, atualizarProduto, navigation]);
 
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>

@@ -97,6 +97,9 @@ export default function CobrancaClienteScreen() {
   const isReceber  = forma === 'PercentualReceber';
   const isPeriodo  = forma === 'Periodo';
 
+  // Relógio anterior vem do Produto (via locação):
+  // 1. Se houver ultimaLeituraRelogio na locação, usa esse valor (foi atualizado na última cobrança)
+  // 2. Senão, usa o numeroRelogio da locação (que é o relógio do produto no momento da locação)
   const relogioAnterior = locacao
     ? (locacao.ultimaLeituraRelogio ?? parseInt(locacao.numeroRelogio || '0', 10))
     : 0;
@@ -298,30 +301,13 @@ export default function CobrancaClienteScreen() {
                     <Text style={s.fieldValue}>{locacao.produtoTipo} - {locacao.produtoIdentificador}</Text>
                   </View>
                 </View>
-                {!isPeriodo && (
-                  <View style={s.fieldRow}>
-                    <View style={s.fieldBlock}>
-                      <Text style={s.fieldLabel}>N° Relógio</Text>
-                      <Text style={s.fieldValue}>{locacao.numeroRelogio || '-'}</Text>
-                    </View>
-                    <View style={s.fieldBlock}>
-                      <Text style={s.fieldLabel}>Relógio Anterior</Text>
-                      <Text style={s.fieldValue}>{relogioAnterior.toLocaleString('pt-BR')}</Text>
-                    </View>
+                {/* Mostrar Relógio Anterior (do Produto) - sempre visível */}
+                <View style={s.fieldRow}>
+                  <View style={s.fieldBlock}>
+                    <Text style={s.fieldLabel}>Relógio Anterior</Text>
+                    <Text style={[s.fieldValue, s.fieldValueHighlight]}>{relogioAnterior > 0 ? relogioAnterior.toLocaleString('pt-BR') : '-'}</Text>
                   </View>
-                )}
-                {isPeriodo && (
-                  <View style={s.fieldRow}>
-                    <View style={s.fieldBlock}>
-                      <Text style={s.fieldLabel}>N° Relógio</Text>
-                      <Text style={s.fieldValue}>{locacao.numeroRelogio || '-'}</Text>
-                    </View>
-                    <View style={s.fieldBlock}>
-                      <Text style={s.fieldLabel}>Última Leitura</Text>
-                      <Text style={s.fieldValue}>{relogioAnterior > 0 ? relogioAnterior.toLocaleString('pt-BR') : '-'}</Text>
-                    </View>
-                  </View>
-                )}
+                </View>
                 {locacao.observacao ? (
                   <Text style={s.fieldLabel}>{locacao.observacao}</Text>
                 ) : null}
@@ -356,10 +342,6 @@ export default function CobrancaClienteScreen() {
                     <View style={s.fieldBlock}>
                       <Text style={s.fieldLabel}>Percentual Empresa</Text>
                       <Text style={s.fieldValue}>{locacao.percentualEmpresa.toFixed(1)}%</Text>
-                    </View>
-                    <View style={s.fieldBlock}>
-                      <Text style={s.fieldLabel}>Relógio anterior</Text>
-                      <Text style={s.fieldValue}>{relogioAnterior.toLocaleString('pt-BR')}</Text>
                     </View>
                   </View>
                 )}
@@ -679,6 +661,7 @@ const s = StyleSheet.create({
   fieldBlock:   { flex: 1 },
   fieldLabel:   { fontSize: 11, color: '#9E9E9E', marginBottom: 2 },
   fieldValue:   { fontSize: 14, color: '#212121' },
+  fieldValueHighlight: { fontSize: 16, fontWeight: '700', color: '#1976D2' },
   div:          { height: 1, backgroundColor: '#F0F0F0', marginVertical: 4 },
   inputGroup:   { marginTop: 4 },
   inputGroupRow:{ flexDirection: 'row', alignItems: 'flex-end', marginTop: 4, gap: 8 },

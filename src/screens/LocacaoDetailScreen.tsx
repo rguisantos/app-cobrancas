@@ -45,7 +45,7 @@ function InfoRow({ label, value, destaque, cor }: { label: string; value: string
 
 export default function LocacaoDetailScreen({ route, navigation }: Props) {
   const { locacaoId } = route.params;
-  const { locacaoSelecionada: locacao, selecionarLocacao, carregando, finalizarLocacao } = useLocacao();
+  const { locacaoSelecionada: locacao, selecionarLocacao, carregando } = useLocacao();
   const { user, hasPermission, isAdmin } = useAuth();
 
   const podeGerenciar = isAdmin() || hasPermission('locacaoRelocacaoEstoque', 'mobile');
@@ -96,29 +96,6 @@ export default function LocacaoDetailScreen({ route, navigation }: Props) {
       (navigation as any).navigate('CobrancaConfirm', { locacaoId: String(locacao.id) });
     }
   }, [locacao, navigation]);
-
-  const handleFinalizar = useCallback(() => {
-    if (!locacao) return;
-    Alert.alert(
-      'Finalizar Locação',
-      'Deseja finalizar esta locação? O produto ficará disponível para nova locação.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Enviar para Estoque', style: 'destructive',
-          onPress: handleEnviarEstoque,
-        },
-        {
-          text: 'Apenas Finalizar',
-          onPress: async () => {
-            const ok = await finalizarLocacao(locacaoId, 'Finalizado pelo usuário');
-            if (ok) navigation.goBack();
-            else Alert.alert('Erro', 'Não foi possível finalizar');
-          },
-        },
-      ]
-    );
-  }, [locacao, locacaoId, finalizarLocacao, handleEnviarEstoque, navigation]);
 
   if (carregando) {
     return <View style={s.centered}><ActivityIndicator size="large" color="#2563EB" /></View>;
@@ -181,12 +158,7 @@ export default function LocacaoDetailScreen({ route, navigation }: Props) {
           <View style={s.acoesRapidas}>
             <TouchableOpacity style={[s.acaoBtn, s.acaoBtnOrange]} onPress={handleEnviarEstoque}>
               <Ionicons name="archive" size={20} color="#EA580C" />
-              <Text style={[s.acaoBtnText, { color: '#EA580C' }]}>Enviar Estoque</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[s.acaoBtn, s.acaoBtnRed]} onPress={handleFinalizar}>
-              <Ionicons name="close-circle-outline" size={20} color="#DC2626" />
-              <Text style={[s.acaoBtnText, { color: '#DC2626' }]}>Finalizar</Text>
+              <Text style={[s.acaoBtnText, { color: '#EA580C' }]}>Enviar para Estoque</Text>
             </TouchableOpacity>
           </View>
         )}

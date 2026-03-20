@@ -568,14 +568,28 @@ class CobrancaRepository {
 
   /**
    * Retorna o saldo devedor pendente (não pago) de uma locação específica.
-   * Soma todos os saldoDevedorGerado das cobranças com status Parcial ou Pendente.
+   * IMPORTANTE: Para locações ativas, considera APENAS a última cobrança.
+   * Isso evita duplicação de saldo, pois cada nova cobrança carrega o saldo anterior.
    */
   async getSaldoPendenteByLocacao(locacaoId: string): Promise<number> {
     try {
       const cobranças = await this.getAll({ locacaoId });
-      return cobranças
-        .filter(c => c.status === 'Parcial' || c.status === 'Pendente' || c.status === 'Atrasado')
-        .reduce((total, c) => total + (c.saldoDevedorGerado || 0), 0);
+      
+      // Ordenar por data de criação (mais recente primeiro)
+      const sorted = cobranças.sort((a, b) => 
+        new Date(b.createdAt || b.dataInicio).getTime() - new Date(a.createdAt || a.dataInicio).getTime()
+      );
+      
+      const latest = sorted[0];
+      
+      // Se não há cobranças, retorna 0
+      if (!latest) return 0;
+      
+      // Se a última cobrança está paga, não há saldo pendente
+      if (latest.status === 'Pago') return 0;
+      
+      // Retorna o saldo devedor gerado pela última cobrança
+      return latest.saldoDevedorGerado || 0;
     } catch {
       return 0;
     }

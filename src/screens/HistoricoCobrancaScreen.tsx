@@ -44,9 +44,30 @@ export default function HistoricoCobrancaScreen() {
     ? cobrancas.filter(c => c.produtoIdentificador === produtoId)
     : cobrancas;
 
+  // Calcular totais
   const totalRecebido = cobrancasFiltradas.reduce((a, c) => a + c.valorRecebido, 0);
-  const totalDevedor  = cobrancasFiltradas.reduce((a, c) => a + c.saldoDevedorGerado, 0);
   const pagas         = cobrancasFiltradas.filter(c => c.status === 'Pago').length;
+  
+  // Total devedor: agrupar por locação e pegar apenas a última cobrança de cada
+  const cobrancasPorLocacao: Record<string, HistoricoCobranca[]> = {};
+  cobrancasFiltradas.forEach(c => {
+    const locId = String(c.locacaoId);
+    if (!cobrancasPorLocacao[locId]) cobrancasPorLocacao[locId] = [];
+    cobrancasPorLocacao[locId].push(c);
+  });
+  
+  // Para cada locação, pegar a cobrança mais recente e somar o saldoDevedorGerado
+  const totalDevedor = Object.values(cobrancasPorLocacao).reduce((total, lista) => {
+    if (lista.length === 0) return total;
+    // Ordenar por data de criação (mais recente primeiro)
+    const sorted = lista.sort((a, b) => 
+      new Date(b.createdAt || b.dataInicio).getTime() - new Date(a.createdAt || a.dataInicio).getTime()
+    );
+    const latest = sorted[0];
+    // Se a última está paga, não há saldo
+    if (latest.status === 'Pago') return total;
+    return total + (latest.saldoDevedorGerado || 0);
+  }, 0);
 
   if (carregando && cobrancas.length === 0) {
     return (
