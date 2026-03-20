@@ -324,6 +324,8 @@ export interface LocacaoListItem {
   numeroRelogio: string;
   percentualEmpresa: number;
   precoFicha: number;
+  valorFixo?: number;        // Para locações por período
+  periodicidade?: string;    // Para locações por período
   dataLocacao: string;
   ultimaLeituraRelogio?: number;
   dataUltimaCobranca?: string;

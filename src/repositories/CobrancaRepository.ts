@@ -582,9 +582,10 @@ class CobrancaRepository {
   }
 
   /**
-   * Verifica se existe saldo devedor pendente em cobranças finalizadas
+   * Verifica se existe saldo devedor pendente em cobranças de locações finalizadas
    * (produto removido do cliente mas ainda com débito).
    * Retorna lista de cobranças com saldo pendente por produto.
+   * IMPORTANTE: Só inclui locações com status 'Finalizada' ou 'Cancelada'
    */
   async getSaldosPendentesFinalizados(clienteId: string): Promise<{
     locacaoId: string;
@@ -594,9 +595,24 @@ class CobrancaRepository {
   }[]> {
     try {
       const todas = await this.getAll({ clienteId });
+      
+      // Buscar locações finalizadas/canceladas para verificar
+      const locacaoIds = [...new Set(todas.map(c => String(c.locacaoId)))];
+      const locacoesFinalizadas = new Set<string>();
+      
+      // Verificar status de cada locação
+      for (const locacaoId of locacaoIds) {
+        const locacao = await databaseService.getById<any>('locacao', locacaoId);
+        if (locacao && (locacao.status === 'Finalizada' || locacao.status === 'Cancelada')) {
+          locacoesFinalizadas.add(locacaoId);
+        }
+      }
+      
+      // Filtrar apenas cobranças de locações finalizadas/canceladas
       const comSaldo = todas.filter(
         c => (c.status === 'Parcial' || c.status === 'Pendente' || c.status === 'Atrasado')
           && c.saldoDevedorGerado > 0
+          && locacoesFinalizadas.has(String(c.locacaoId))
       );
 
       // Agrupar por locacaoId

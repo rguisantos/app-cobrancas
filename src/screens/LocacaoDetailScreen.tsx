@@ -66,6 +66,17 @@ export default function LocacaoDetailScreen({ route, navigation }: Props) {
     });
   }, [locacao, navigation]);
 
+  const handleEditar = useCallback(() => {
+    if (!locacao) return;
+    // Navega para o formulário em modo editar
+    (navigation as any).navigate('LocacaoForm', {
+      clienteId: String(locacao.clienteId),
+      produtoId: String(locacao.produtoId),
+      locacaoId: String(locacao.id),
+      modo: 'editar',
+    });
+  }, [locacao, navigation]);
+
   const handleEnviarEstoque = useCallback(() => {
     if (!locacao) return;
     navigation.navigate('EnviarEstoque', {
@@ -153,14 +164,29 @@ export default function LocacaoDetailScreen({ route, navigation }: Props) {
               <Text style={[s.acaoBtnText, { color: '#2563EB' }]}>Cobrar</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[s.acaoBtn, s.acaoBtnPurple]} onPress={handleRelocar}>
-              <Ionicons name="swap-horizontal" size={20} color="#7C3AED" />
-              <Text style={[s.acaoBtnText, { color: '#7C3AED' }]}>Relocar</Text>
+            <TouchableOpacity style={[s.acaoBtn, s.acaoBtnPurple]} onPress={handleEditar}>
+              <Ionicons name="create" size={20} color="#7C3AED" />
+              <Text style={[s.acaoBtnText, { color: '#7C3AED' }]}>Editar</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity style={[s.acaoBtn, s.acaoBtnCyan]} onPress={handleRelocar}>
+              <Ionicons name="swap-horizontal" size={20} color="#0891B2" />
+              <Text style={[s.acaoBtnText, { color: '#0891B2' }]}>Relocar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Segunda linha de ações */}
+        {ativa && podeGerenciar && (
+          <View style={s.acoesRapidas}>
             <TouchableOpacity style={[s.acaoBtn, s.acaoBtnOrange]} onPress={handleEnviarEstoque}>
               <Ionicons name="archive" size={20} color="#EA580C" />
-              <Text style={[s.acaoBtnText, { color: '#EA580C' }]}>Estoque</Text>
+              <Text style={[s.acaoBtnText, { color: '#EA580C' }]}>Enviar Estoque</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[s.acaoBtn, s.acaoBtnRed]} onPress={handleFinalizar}>
+              <Ionicons name="close-circle-outline" size={20} color="#DC2626" />
+              <Text style={[s.acaoBtnText, { color: '#DC2626' }]}>Finalizar</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -218,14 +244,6 @@ export default function LocacaoDetailScreen({ route, navigation }: Props) {
           ) : null}
         </View>
 
-        {/* ── FINALIZAR (botão isolado, ação destrutiva) ──────────── */}
-        {ativa && podeGerenciar && (
-          <TouchableOpacity style={s.btnFinalizar} onPress={handleFinalizar}>
-            <Ionicons name="close-circle-outline" size={20} color="#DC2626" />
-            <Text style={s.btnFinalizarText}>Finalizar Locação</Text>
-          </TouchableOpacity>
-        )}
-
         <View style={{ height: 32 }} />
       </ScrollView>
     </SafeAreaView>
@@ -252,7 +270,9 @@ const s = StyleSheet.create({
   acaoBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 14, borderWidth: 1.5 },
   acaoBtnBlue:   { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
   acaoBtnPurple: { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' },
+  acaoBtnCyan:   { backgroundColor: '#ECFEFF', borderColor: '#A5F3FC' },
   acaoBtnOrange: { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' },
+  acaoBtnRed:    { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
   acaoBtnText:   { fontSize: 13, fontWeight: '700' },
 
   // section
@@ -273,8 +293,4 @@ const s = StyleSheet.create({
 
   obsBox:  { backgroundColor: '#F8FAFC', borderRadius: 10, padding: 12, marginTop: 8, borderLeftWidth: 3, borderLeftColor: '#2563EB' },
   obsText: { fontSize: 14, color: '#475569', lineHeight: 20 },
-
-  // finalizar
-  btnFinalizar:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: '#FECACA', backgroundColor: '#FFF5F5', marginBottom: 12 },
-  btnFinalizarText: { fontSize: 15, fontWeight: '700', color: '#DC2626' },
 });

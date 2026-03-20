@@ -60,9 +60,9 @@ export default function HomeScreen() {
     navigation.navigate(tab as any);
   }, [navigation]);
 
-  const navModal = useCallback((screen: string) => {
+  const navModal = useCallback((screen: string, params?: any) => {
     const parent = navigation.getParent();
-    if (parent) (parent as any).navigate(screen);
+    if (parent) (parent as any).navigate(screen, params);
   }, [navigation]);
 
   // ─── ações rápidas baseadas em permissões ───────────────────────────────
@@ -165,7 +165,7 @@ export default function HomeScreen() {
               title="Novo Cliente"
               icon="person-add"
               color="#2563EB"
-              onPress={() => navModal('ClienteForm')}
+              onPress={() => navModal('ClienteForm', { modo: 'criar' })}
             />
           )}
           {podeLocar && (
@@ -189,7 +189,7 @@ export default function HomeScreen() {
               title="Novo Produto"
               icon="cube"
               color="#EA580C"
-              onPress={() => navModal('ProdutoForm')}
+              onPress={() => navModal('ProdutoForm', { modo: 'criar' })}
             />
           )}
           {podeRelogio && (

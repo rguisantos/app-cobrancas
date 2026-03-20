@@ -145,6 +145,19 @@ export default function CobrancaClienteScreen() {
   const totalPeriodo = isPeriodo
     ? saldoAnterior + (incluirPeriodo ? valorPeriodo : 0)
     : 0;
+    
+  // Debug log
+  useEffect(() => {
+    if (isPeriodo && locacao) {
+      console.log('[CobrancaClienteScreen] Modo Período:', {
+        valorFixo: locacao.valorFixo,
+        valorPeriodo,
+        saldoAnterior,
+        totalPeriodo,
+        incluirPeriodo
+      });
+    }
+  }, [isPeriodo, locacao, valorPeriodo, saldoAnterior, totalPeriodo, incluirPeriodo]);
 
   // ── antes do vencimento? ───────────────────────────────────────────────
   const antesVencimento = isPeriodo && locacao?.dataPrimeiraCobranca
@@ -159,7 +172,7 @@ export default function CobrancaClienteScreen() {
       : (isReceber ? saldoAnterior : 0);
 
   const podeAvancar = isPeriodo
-    ? totalPeriodo > 0 && !erroRelogio
+    ? (totalPeriodo > 0 || valorPeriodo > 0) && !erroRelogio
     : !!calculo && !erroRelogio;
 
   // ── avançar ────────────────────────────────────────────────────────────
@@ -284,11 +297,31 @@ export default function CobrancaClienteScreen() {
                     <Text style={s.fieldLabel}>Produto</Text>
                     <Text style={s.fieldValue}>{locacao.produtoTipo} - {locacao.produtoIdentificador}</Text>
                   </View>
-                  <View style={s.fieldBlock}>
-                    <Text style={s.fieldLabel}>CH</Text>
-                    <Text style={s.fieldValue}>{locacao.numeroRelogio || '-'}</Text>
-                  </View>
                 </View>
+                {!isPeriodo && (
+                  <View style={s.fieldRow}>
+                    <View style={s.fieldBlock}>
+                      <Text style={s.fieldLabel}>N° Relógio</Text>
+                      <Text style={s.fieldValue}>{locacao.numeroRelogio || '-'}</Text>
+                    </View>
+                    <View style={s.fieldBlock}>
+                      <Text style={s.fieldLabel}>Relógio Anterior</Text>
+                      <Text style={s.fieldValue}>{relogioAnterior.toLocaleString('pt-BR')}</Text>
+                    </View>
+                  </View>
+                )}
+                {isPeriodo && (
+                  <View style={s.fieldRow}>
+                    <View style={s.fieldBlock}>
+                      <Text style={s.fieldLabel}>N° Relógio</Text>
+                      <Text style={s.fieldValue}>{locacao.numeroRelogio || '-'}</Text>
+                    </View>
+                    <View style={s.fieldBlock}>
+                      <Text style={s.fieldLabel}>Última Leitura</Text>
+                      <Text style={s.fieldValue}>{relogioAnterior > 0 ? relogioAnterior.toLocaleString('pt-BR') : '-'}</Text>
+                    </View>
+                  </View>
+                )}
                 {locacao.observacao ? (
                   <Text style={s.fieldLabel}>{locacao.observacao}</Text>
                 ) : null}

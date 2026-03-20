@@ -666,6 +666,8 @@ class LocacaoRepository {
       numeroRelogio: locacao.numeroRelogio,
       percentualEmpresa: locacao.percentualEmpresa,
       precoFicha: locacao.precoFicha,
+      valorFixo: locacao.valorFixo,
+      periodicidade: locacao.periodicidade,
       dataLocacao: locacao.dataLocacao,
       ultimaLeituraRelogio: locacao.ultimaLeituraRelogio,
       dataUltimaCobranca: locacao.dataUltimaCobranca,

@@ -16,7 +16,7 @@ import { ModalStackParamList } from '../navigation/AppNavigator';
 
 import { useLocacao }              from '../contexts/LocacaoContext';
 import { useClienteNavigate }      from '../navigation/ClientesStack';
-import { LocacaoListItem, StatusLocacao } from '../types';
+import { LocacaoListItem, StatusLocacao, formatarMoeda } from '../types';
 
 type Props = NativeStackScreenProps<ModalStackParamList, 'LocacoesList'>;
 
@@ -93,7 +93,7 @@ export default function LocacoesListScreen({ route, navigation }: Props) {
               {FORMA_LABELS[item.formaPagamento] ?? item.formaPagamento}
               {item.formaPagamento !== 'Periodo'
                 ? ` · ${item.percentualEmpresa}% empresa`
-                : ` · R$ ${item.precoFicha?.toFixed(2)}`}
+                : ` · ${formatarMoeda(item.valorFixo || 0)}`}
             </Text>
           </View>
         </View>
