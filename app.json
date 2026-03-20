@@ -51,7 +51,14 @@
         }
       ]
     ],
-    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/ef139a63-e4f9-4f43-be0a-cc763c0d3855",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 30000
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "extra": {
       "API_URL": "https://api.suaempresa.com.br",
       "USE_MOCK": "true",
