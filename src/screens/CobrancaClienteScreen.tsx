@@ -72,24 +72,36 @@ export default function CobrancaClienteScreen() {
     }
   }, [tabAtiva]);
 
-  // carregar locações ativas + saldos
-  useEffect(() => {
+  // carregar locações ativas + saldos (recarrega quando a tela recebe foco)
+  const carregarDados = useCallback(async () => {
     setCarregando(true);
-    locacaoRepository.getAtivasByCliente(clienteId)
-      .then(async lista => {
-        setLocacoes(lista);
-        const saldos: Record<string, number> = {};
-        await Promise.all(lista.map(async loc => {
-          const saldo = await cobrancaRepository.getSaldoPendenteByLocacao(String(loc.id));
-          if (saldo > 0) saldos[String(loc.id)] = saldo;
-        }));
-        setSaldosPendentes(saldos);
-        const finalizados = await cobrancaRepository.getSaldosPendentesFinalizados(clienteId);
-        setSaldosFinalizados(finalizados);
-      })
-      .catch(() => setLocacoes([]))
-      .finally(() => setCarregando(false));
+    try {
+      const lista = await locacaoRepository.getAtivasByCliente(clienteId);
+      setLocacoes(lista);
+      const saldos: Record<string, number> = {};
+      await Promise.all(lista.map(async loc => {
+        const saldo = await cobrancaRepository.getSaldoPendenteByLocacao(String(loc.id));
+        console.log(`[CobrancaClienteScreen] Locação ${loc.id}: saldo = ${saldo}`);
+        if (saldo > 0) saldos[String(loc.id)] = saldo;
+      }));
+      console.log('[CobrancaClienteScreen] Saldos carregados:', saldos);
+      setSaldosPendentes(saldos);
+      const finalizados = await cobrancaRepository.getSaldosPendentesFinalizados(clienteId);
+      setSaldosFinalizados(finalizados);
+    } catch (error) {
+      console.error('[CobrancaClienteScreen] Erro ao carregar:', error);
+      setLocacoes([]);
+    } finally {
+      setCarregando(false);
+    }
   }, [clienteId]);
+
+  // Recarregar quando a tela recebe foco (volta de outra tela)
+  useFocusEffect(
+    useCallback(() => {
+      carregarDados();
+    }, [carregarDados])
+  );
 
   const locacao = locacoes[tabAtiva] ?? null;
   const forma   = locacao?.formaPagamento ?? 'PercentualReceber';
