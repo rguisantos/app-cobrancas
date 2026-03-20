@@ -104,6 +104,15 @@ export default function ConfirmacaoPagamentoScreen() {
       if (marcarVoltar)         obsArr.push('Marcar para voltar depois');
       if (fisicamenteNoCliente) obsArr.push('Estou fisicamente no cliente');
 
+      // LOG para depuração
+      console.log('[ConfirmacaoPagamento] Dados para registro:', {
+        locacaoId: dados.locacaoId,
+        totalClientePaga: dados.totalClientePaga,
+        saldoAnterior: saldoAnterior,
+        totalComSaldo: dados.totalClientePaga + (dados.formaPagamento === 'PercentualPagar' ? 0 : saldoAnterior),
+        valorRecebido: dados.valorRecebido,
+      });
+
       const cobranca = await registrarCobranca({
         locacaoId:             dados.locacaoId,
         clienteId:             dados.clienteId,
@@ -125,6 +134,7 @@ export default function ConfirmacaoPagamentoScreen() {
         valorPercentual:       dados.valorPercentual,
         totalClientePaga:      dados.totalClientePaga,
         valorRecebido:         dados.valorRecebido,
+        saldoAnterior:         saldoAnterior,  // Importante: passar o saldo anterior para cálculo correto
         observacao:            obsArr.join(' | ') || undefined,
       });
 
@@ -192,7 +202,7 @@ export default function ConfirmacaoPagamentoScreen() {
     } catch (e) {
       Alert.alert('Erro', e instanceof Error ? e.message : 'Erro ao confirmar pagamento');
     }
-  }, [dados, dataPrevisao, marcarVoltar, fisicamenteNoCliente, saldoDevedor,
+  }, [dados, dataPrevisao, marcarVoltar, fisicamenteNoCliente, saldoDevedor, saldoAnterior,
       registrarCobranca, atualizarLocacao, atualizarProduto, navigation]);
 
   return (

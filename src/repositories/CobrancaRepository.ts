@@ -72,6 +72,7 @@ export interface NovaCobrancaData {
   
   totalClientePaga: number;
   valorRecebido: number;
+  saldoAnterior?: number;  // Saldo devedor de cobranças anteriores
   
   observacao?: string;
 }
@@ -255,16 +256,29 @@ class CobrancaRepository {
    */
   async registrarCobranca(data: NovaCobrancaData): Promise<HistoricoCobranca> {
     try {
-      // Calcular saldo devedor
-      const saldoDevedor = data.totalClientePaga - data.valorRecebido;
+      // Calcular total com saldo anterior (se houver)
+      const saldoAnterior = data.saldoAnterior ?? 0;
+      const totalComSaldo = data.totalClientePaga + saldoAnterior;
+      
+      // Calcular saldo devedor: total a pagar - valor recebido
+      const saldoDevedor = Math.max(0, totalComSaldo - data.valorRecebido);
+
+      // LOG para depuração
+      console.log('[CobrancaRepository] Calculando saldo devedor:', {
+        totalClientePaga: data.totalClientePaga,
+        saldoAnterior,
+        totalComSaldo,
+        valorRecebido: data.valorRecebido,
+        saldoDevedorCalculado: saldoDevedor,
+      });
 
       // Determinar status baseado no pagamento
       let status: StatusPagamento = 'Pendente';
-      if (data.valorRecebido >= data.totalClientePaga) {        status = 'Pago';
+      if (data.valorRecebido >= totalComSaldo) {
+        status = 'Pago';
       } else if (data.valorRecebido > 0) {
         status = 'Parcial';
-    
-  }
+      }
 
       const novaCobranca: Omit<HistoricoCobranca, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'> = {
         locacaoId: data.locacaoId,
@@ -575,22 +589,34 @@ class CobrancaRepository {
     try {
       const cobranças = await this.getAll({ locacaoId });
       
-      // Ordenar por data de criação (mais recente primeiro)
-      const sorted = cobranças.sort((a, b) => 
-        new Date(b.createdAt || b.dataInicio).getTime() - new Date(a.createdAt || a.dataInicio).getTime()
-      );
+      // Se não há cobranças, retorna 0
+      if (cobranças.length === 0) return 0;
+      
+      // Ordenar por data de atualização (mais recente primeiro)
+      // Usar updatedAt pois é mais confiável que createdAt
+      const sorted = cobranças.sort((a, b) => {
+        const dateA = new Date(a.updatedAt || a.createdAt || a.dataInicio).getTime();
+        const dateB = new Date(b.updatedAt || b.createdAt || b.dataInicio).getTime();
+        return dateB - dateA;
+      });
       
       const latest = sorted[0];
       
-      // Se não há cobranças, retorna 0
-      if (!latest) return 0;
+      console.log('[CobrancaRepository] Última cobrança:', {
+        id: latest.id,
+        status: latest.status,
+        saldoDevedorGerado: latest.saldoDevedorGerado,
+        updatedAt: latest.updatedAt,
+        totalCobrancas: cobranças.length
+      });
       
       // Se a última cobrança está paga, não há saldo pendente
       if (latest.status === 'Pago') return 0;
       
       // Retorna o saldo devedor gerado pela última cobrança
       return latest.saldoDevedorGerado || 0;
-    } catch {
+    } catch (error) {
+      console.error('[CobrancaRepository] Erro em getSaldoPendenteByLocacao:', error);
       return 0;
     }
   }

@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView }  from 'react-native-safe-area-context';
 import { Ionicons }      from '@expo/vector-icons';
-import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navigation/native';
 
 import { locacaoRepository }   from '../repositories/LocacaoRepository';
 import { cobrancaRepository }  from '../repositories/CobrancaRepository';
