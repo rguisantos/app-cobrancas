@@ -32,9 +32,6 @@
       "permissions": [
         "CAMERA",
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "CAMERA",
-        "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
       ]
     },
@@ -54,9 +51,6 @@
         }
       ]
     ],
-    "updates": {
-      "url": "https://u.expo.dev/591a2817-9aed-4a61-81a0-588489597cb6"
-    },
     "runtimeVersion": "1.0.0",
     "extra": {
       "API_URL": "https://api.suaempresa.com.br",
@@ -68,9 +62,9 @@
       "MAX_RECORDS_PER_SYNC": "100",
       "TIMEOUT": "30000",
       "eas": {
-        "projectId": "591a2817-9aed-4a61-81a0-588489597cb6"
+        "projectId": "ef139a63-e4f9-4f43-be0a-cc763c0d3855"
       }
     },
-    "owner": "rguisantoss"
+    "owner": "bilharesbrasil"
   }
 }
