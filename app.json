@@ -32,6 +32,9 @@
       "permissions": [
         "CAMERA",
         "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
       ]
     },
@@ -51,7 +54,9 @@
         }
       ]
     ],
-    "updates": {},
+    "updates": {
+      "url": "https://u.expo.dev/591a2817-9aed-4a61-81a0-588489597cb6"
+    },
     "runtimeVersion": "1.0.0",
     "extra": {
       "API_URL": "https://api.suaempresa.com.br",
