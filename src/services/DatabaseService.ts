@@ -1225,18 +1225,39 @@ class DatabaseService {
     if (dataInicio) { where += ` AND dataPagamento >= ?`; params.push(dataInicio); }
     if (dataFim)    { where += ` AND dataPagamento <= ?`; params.push(dataFim); }
 
+    // Total arrecadado = valor recebido (dinheiro que entrou)
+    // totalClientePaga inclui saldo anterior, então usamos valorRecebido para saber o que realmente entrou
     const row = await this.db.getFirstAsync<any>(
       `SELECT
-        COALESCE(SUM(totalClientePaga), 0)      AS totalArrecadado,
-        COALESCE(SUM(valorPercentual), 0)        AS totalEmpresaRecebe,
+        COALESCE(SUM(valorRecebido), 0)         AS totalArrecadado,
+        COALESCE(SUM(valorPercentual), 0)       AS totalEmpresaRecebe,
         COALESCE(SUM(COALESCE(descontoDinheiro,0) + COALESCE(descontoPartidasValor,0)), 0) AS totalDesconto,
-        COALESCE(SUM(CASE WHEN status IN ('Parcial','Pendente','Atrasado') THEN saldoDevedorGerado ELSE 0 END), 0) AS totalSaldoDevedor,
         COUNT(*) AS totalCobrancas,
         COALESCE(SUM(valorRecebido), 0) AS totalPago
        FROM cobrancas WHERE ${where}`,
       params
     );
-    return row || { totalArrecadado: 0, totalEmpresaRecebe: 0, totalDesconto: 0, totalSaldoDevedor: 0, totalCobrancas: 0, totalPago: 0 };
+    
+    // Calcular saldo devedor total considerando apenas a última cobrança de cada locação
+    // Isso evita duplicação pois cada cobrança carrega o saldo anterior
+    const saldoDevedorRow = await this.db.getFirstAsync<any>(
+      `SELECT COALESCE(SUM(saldoDevedorGerado), 0) AS totalSaldoDevedor
+       FROM (
+         SELECT locacaoId, saldoDevedorGerado,
+                ROW_NUMBER() OVER (PARTITION BY locacaoId ORDER BY updatedAt DESC, createdAt DESC) as rn
+         FROM cobrancas 
+         WHERE deletedAt IS NULL AND status != 'Pago'
+       ) WHERE rn = 1`
+    );
+    
+    return { 
+      totalArrecadado: row?.totalArrecadado || 0, 
+      totalEmpresaRecebe: row?.totalEmpresaRecebe || 0, 
+      totalDesconto: row?.totalDesconto || 0, 
+      totalSaldoDevedor: saldoDevedorRow?.totalSaldoDevedor || 0, 
+      totalCobrancas: row?.totalCobrancas || 0, 
+      totalPago: row?.totalPago || 0 
+    };
   }
 
   async getCobrancasPorPeriodo(agrupamento: 'dia' | 'semana' | 'mes', dataInicio?: string, dataFim?: string): Promise<{
@@ -1254,9 +1275,10 @@ class DatabaseService {
     if (dataInicio) { where += ` AND dataPagamento >= ?`; params.push(dataInicio); }
     if (dataFim)    { where += ` AND dataPagamento <= ?`; params.push(dataFim); }
 
+    // Usar valorRecebido para total (dinheiro que realmente entrou)
     return await this.db.getAllAsync<any>(
       `SELECT ${formatExpr} AS periodo,
-        COALESCE(SUM(totalClientePaga), 0) AS total,
+        COALESCE(SUM(valorRecebido), 0) AS total,
         COALESCE(SUM(valorPercentual), 0) AS empresaRecebe,
         COUNT(*) AS qtd
        FROM cobrancas WHERE ${where}

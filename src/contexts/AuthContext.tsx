@@ -18,9 +18,9 @@ import logger from '../utils/logger';
 // ============================================================================
 
 const STORAGE_KEYS = {
-  TOKEN: '@diamond:token',
-  USER: '@diamond:user',
-  DEVICE: '@diamond:device',
+  TOKEN: '@cobrancas:token',
+  USER: '@cobrancas:user',
+  DEVICE: '@cobrancas:device',
 };
 
 // ============================================================================

@@ -63,7 +63,7 @@ const getNumberValue = (key: string, defaultValue: number = 0): number => {
 // IMPORTANTE: USE_MOCK deve ser true por padrão para o app funcionar offline
 export const ENV: EnvConfig = {
   // API
-  API_URL: getEnvValue('API_URL', 'https://api.diamondsistemas.com.br'),
+  API_URL: getEnvValue('API_URL', 'https://api.seuservidor.com.br'),
   
   // Mock (desenvolvimento) - TRUE por padrão para funcionar offline
   USE_MOCK: true, // Sempre usar mock para demonstração

@@ -1,13 +1,11 @@
 /**
  * SettingsScreen.tsx
- * Tela de configurações do aplicativo
+ * Tela de configurações técnicas do aplicativo
  * 
  * Funcionalidades:
- * - Gerenciamento de Rotas
- * - Gerenciamento de Atributos de Produto (Tipos, Descrições, Tamanhos)
- * - Preferências de sincronização
+ * - Toggle de sincronização automática
  * - Limpar dados locais
- * - Sobre o aplicativo
+ * - Informações do app
  */
 
 import React, { useState, useCallback } from 'react';
@@ -28,7 +26,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 // Contexts
 import { useSync } from '../contexts/SyncContext';
 import { useBranding } from '../components/BrandingProvider';
-import { useAuth } from '../contexts/AuthContext';
 
 // Utils
 import { databaseService } from '../services/DatabaseService';
@@ -44,7 +41,6 @@ import { ENV } from '../config/env';
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
   const { primaryColor, appName } = useBranding();
-  const { user, isAdmin } = useAuth();
   const {
     syncConfig,
     ativarAutoSync,
@@ -57,9 +53,6 @@ export default function SettingsScreen() {
   const [settings, setSettings] = useState({
     autoSync: syncConfig?.autoSyncEnabled ?? true,
   });
-
-  // Permissões
-  const podeGerenciar = isAdmin() || user?.tipoPermissao === 'Administrador';
 
   // ==========================================================================
   // HANDLERS
@@ -75,7 +68,7 @@ export default function SettingsScreen() {
   const handleSyncNow = useCallback(async () => {
     try {
       await sincronizar(true);
-      Alert.alert('Sincronização', 'Sincronização iniciada com sucesso');
+      Alert.alert('Sincronização', 'Sincronização realizada com sucesso');
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível sincronizar');
     }
@@ -115,7 +108,7 @@ export default function SettingsScreen() {
     subtitle: string | undefined,
     icon: keyof typeof Ionicons.glyphMap,
     options: {
-      type?: 'toggle' | 'button' | 'info' | 'navigation';
+      type?: 'toggle' | 'button' | 'info';
       value?: boolean;
       onPress?: () => void;
       onToggle?: (value: boolean) => void;
@@ -174,7 +167,7 @@ export default function SettingsScreen() {
           />
         )}
 
-        {(type === 'navigation' || type === 'button') && !disabled && (
+        {type === 'button' && !disabled && (
           <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
         )}
 
@@ -202,45 +195,6 @@ export default function SettingsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Gerenciamento - Apenas Admin */}
-        {podeGerenciar && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Gerenciamento</Text>
-            <View style={styles.sectionCard}>
-              {renderSettingItem('usuarios', 'Usuários', 'Gerenciar usuários do sistema', 'people', {
-                type: 'navigation',
-                iconColor: '#8B5CF6',
-                onPress: () => navigation.navigate('UsuariosGerenciar'),
-              })}
-              {renderSettingItem('rotas', 'Rotas', 'Gerenciar rotas de cobrança', 'map', {
-                type: 'navigation',
-                iconColor: '#2563EB',
-                onPress: () => navigation.navigate('RotasGerenciar'),
-              })}
-              {renderSettingItem('atributos', 'Atributos de Produto', 'Tipos, descrições e tamanhos', 'cube', {
-                type: 'navigation',
-                iconColor: '#16A34A',
-                onPress: () => navigation.navigate('AtributosProdutoGerenciar'),
-              })}
-            </View>
-          </View>
-        )}
-
-        {/* Usuário */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Usuário</Text>
-          <View style={styles.sectionCard}>
-            {renderSettingItem('userInfo', user?.nome || 'Usuário', user?.email || user?.cpf, 'person', {
-              type: 'info',
-              iconColor: '#64748B',
-            })}
-            {renderSettingItem('userRole', 'Tipo de Acesso', user?.tipoPermissao || 'Administrador', 'shield-checkmark', {
-              type: 'info',
-              iconColor: '#64748B',
-            })}
-          </View>
-        </View>
-
         {/* Sincronização */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Sincronização</Text>
@@ -276,11 +230,11 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Sobre</Text>
           <View style={styles.sectionCard}>
-            {renderSettingItem('appVersion', 'Versão do App', `v${ENV.APP_VERSION}`, 'information-circle', {
-              type: 'info',
-              iconColor: '#64748B',
-            })}
             {renderSettingItem('appName', 'Aplicativo', appName, 'apps', {
+              type: 'info',
+              iconColor: '#2563EB',
+            })}
+            {renderSettingItem('appVersion', 'Versão do App', `v${ENV.APP_VERSION}`, 'information-circle', {
               type: 'info',
               iconColor: '#64748B',
             })}

@@ -18,7 +18,7 @@ import {
 // ============================================================================
 
 const API_CONFIG = {
-  baseURL: process.env.EXPO_PUBLIC_API_URL || 'https://api.diamondsistemas.com.br',
+  baseURL: process.env.EXPO_PUBLIC_API_URL || 'https://api.seuservidor.com.br',
   timeout: 30000, // 30 segundos
   retries: 3,
   retryDelay: 1000, // 1 segundo

@@ -46,13 +46,14 @@ export default function RelatorioRotaDiariaScreen() {
       });
       const sects = Object.entries(porRota).map(([rota, items]) => ({
         title: rota,
-        total: items.reduce((s: number, c: any) => s + (c.totalClientePaga || 0), 0),
+        total: items.reduce((s: number, c: any) => s + (c.valorRecebido || 0), 0),
+        totalCobranca: items.reduce((s: number, c: any) => s + (c.totalClientePaga || 0), 0),
         qtd:   items.length,
         data:  items,
       })).sort((a, b) => b.total - a.total);
 
       setSections(sects);
-      setTotalDia(cobrancas.reduce((s: number, c: any) => s + (c.totalClientePaga || 0), 0));
+      setTotalDia(cobrancas.reduce((s: number, c: any) => s + (c.valorRecebido || 0), 0));
       setQtdDia(cobrancas.length);
     } catch (e) {
       console.error(e);
@@ -92,7 +93,7 @@ export default function RelatorioRotaDiariaScreen() {
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={[st.itemTotal, { color: STATUS_COLOR[item.status] || '#1E293B' }]}>
-          {formatarMoeda(item.totalClientePaga || 0)}
+          {formatarMoeda(item.valorRecebido || 0)}
         </Text>
         {(item.saldoDevedorGerado || 0) > 0 && (
           <Text style={st.itemSaldo}>saldo: {formatarMoeda(item.saldoDevedorGerado)}</Text>

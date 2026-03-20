@@ -31,6 +31,8 @@ export interface DadosCobrancaParam {
   locacaoId:             string;
   clienteId:             string;
   clienteNome:           string;
+  rotaId:                string | number;
+  rotaNome?:             string; // nome da rota para navegação
   produtoIdentificador:  string;
   produtoTipo:           string;
   formaPagamento:        string;
@@ -61,7 +63,7 @@ export type CobrancasStackParamList = {
   CobrancasList:          { filtroRota?: string | number; filtroStatus?: StatusPagamento; filtroCliente?: string };
   RotasCobranca:          undefined;
   ClientesRota:           { rotaId: string | number; rotaNome: string };
-  CobrancaCliente:        { clienteId: string; clienteNome: string; rotaId: string | number };
+  CobrancaCliente:        { clienteId: string; clienteNome: string; rotaId: string | number; rotaNome?: string; locacaoCobradaId?: string };
   ConfirmacaoPagamento:   { dados: DadosCobrancaParam };
   CobrancaDetail:         { cobrancaId: string; locacaoId?: string };
   CobrancaConfirm:        { locacaoId: string; cobrancaId?: string; modo: 'nova' | 'editar' | 'parcial' };

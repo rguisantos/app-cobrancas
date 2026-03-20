@@ -150,9 +150,10 @@ export default function LoginScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Logo e Branding */}
-          <View style={styles.header}>            <View style={styles.logoContainer}>
-              <Ionicons name="diamond" size={64} color="#2563EB" />
-              <Text style={styles.appName}>Diamond Sistemas</Text>
+          <View style={styles.header}>
+            <View style={styles.logoContainer}>
+              <Ionicons name="wallet" size={64} color="#2563EB" />
+              <Text style={styles.appName}>App Cobranças</Text>
               <Text style={styles.appSubtitle}>Gestão de Locações</Text>
             </View>
           </View>
@@ -243,12 +244,10 @@ export default function LoginScreen() {
 
           {/* Footer */}
           <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              © 2026 Diamond Sistemas
-            </Text>
             <Text style={styles.footerVersion}>
               Versão 1.0.0
-            </Text>          </View>
+            </Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

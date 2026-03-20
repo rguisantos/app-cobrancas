@@ -3,7 +3,7 @@
  * Lista de locações de um cliente com ações: relocar e enviar para estoque
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, Alert,
@@ -17,6 +17,7 @@ import { ModalStackParamList } from '../navigation/AppNavigator';
 import { useLocacao }              from '../contexts/LocacaoContext';
 import { useClienteNavigate }      from '../navigation/ClientesStack';
 import { LocacaoListItem, StatusLocacao, formatarMoeda } from '../types';
+import { produtoRepository }       from '../repositories/ProdutoRepository';
 
 type Props = NativeStackScreenProps<ModalStackParamList, 'LocacoesList'>;
 
@@ -32,10 +33,16 @@ const FORMA_LABELS: Record<string, string> = {
   PercentualReceber: '% a Receber',
 };
 
+interface LocacaoComRelogio extends LocacaoListItem {
+  relogioProduto?: string;
+}
+
 export default function LocacoesListScreen({ route, navigation }: Props) {
   const { clienteId } = route.params;
   const { locacoes, carregando, carregarLocacoesPorCliente } = useLocacao();
   const navigateCliente = useClienteNavigate();
+  const [locacoesComRelogio, setLocacoesComRelogio] = useState<LocacaoComRelogio[]>([]);
+  const [mostrarFinalizadas, setMostrarFinalizadas] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -43,22 +50,46 @@ export default function LocacoesListScreen({ route, navigation }: Props) {
     }, [clienteId, carregarLocacoesPorCliente])
   );
 
-  const handleRelocar = useCallback((item: LocacaoListItem) => {
+  // Buscar relógio do produto para cada locação
+  useEffect(() => {
+    const carregarRelogios = async () => {
+      const locacoesAtualizadas: LocacaoComRelogio[] = await Promise.all(
+        locacoes.map(async (loc) => {
+          if (loc.produtoId) {
+            const produto = await produtoRepository.getById(String(loc.produtoId));
+            return { ...loc, relogioProduto: produto?.numeroRelogio || loc.numeroRelogio };
+          }
+          return { ...loc, relogioProduto: loc.numeroRelogio };
+        })
+      );
+      setLocacoesComRelogio(locacoesAtualizadas);
+    };
+    if (locacoes.length > 0) {
+      carregarRelogios();
+    }
+  }, [locacoes]);
+
+  // Separar locações ativas e finalizadas
+  const locacoesAtivas = locacoesComRelogio.filter(l => l.status === 'Ativa');
+  const locacoesFinalizadas = locacoesComRelogio.filter(l => l.status === 'Finalizada' || l.status === 'Cancelada');
+  const listaExibida = mostrarFinalizadas ? locacoesComRelogio : locacoesAtivas;
+
+  const handleRelocar = useCallback((item: LocacaoComRelogio) => {
     navigateCliente.toRelocar(String(item.id), String(item.produtoId || ''), clienteId);
   }, [navigateCliente, clienteId]);
 
-  const handleEnviarEstoque = useCallback((item: LocacaoListItem) => {
+  const handleEnviarEstoque = useCallback((item: LocacaoComRelogio) => {
     navigation.navigate('EnviarEstoque', {
       locacaoId: String(item.id),
       produtoId: String(item.produtoId || ''),
     });
   }, [navigation]);
 
-  const handleDetalhe = useCallback((item: LocacaoListItem) => {
+  const handleDetalhe = useCallback((item: LocacaoComRelogio) => {
     navigation.navigate('LocacaoDetail', { locacaoId: String(item.id) });
   }, [navigation]);
 
-  const renderItem = ({ item }: { item: LocacaoListItem }) => {
+  const renderItem = ({ item }: { item: LocacaoComRelogio }) => {
     const cfg = STATUS_CFG[item.status] || STATUS_CFG.Finalizada;
     const ativa = item.status === 'Ativa';
 
@@ -85,7 +116,7 @@ export default function LocacoesListScreen({ route, navigation }: Props) {
           </View>
           <View style={s.infoRow}>
             <Ionicons name="speedometer-outline" size={14} color="#94A3B8" />
-            <Text style={s.infoText}>Relógio: {item.numeroRelogio}</Text>
+            <Text style={s.infoText}>Relógio: {item.relogioProduto || item.numeroRelogio}</Text>
           </View>
           <View style={s.infoRow}>
             <Ionicons name="cash-outline" size={14} color="#94A3B8" />
@@ -132,14 +163,31 @@ export default function LocacoesListScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
-      {carregando && locacoes.length === 0 ? (
+      {/* Toggle para mostrar/ocultar finalizadas */}
+      {locacoesFinalizadas.length > 0 && (
+        <TouchableOpacity 
+          style={s.toggleRow}
+          onPress={() => setMostrarFinalizadas(v => !v)}
+        >
+          <Ionicons 
+            name={mostrarFinalizadas ? 'eye-off' : 'eye'} 
+            size={16} 
+            color="#64748B" 
+          />
+          <Text style={s.toggleText}>
+            {mostrarFinalizadas ? 'Ocultar finalizadas' : `Mostrar ${locacoesFinalizadas.length} finalizadas`}
+          </Text>
+        </TouchableOpacity>
+      )}
+      
+      {carregando && locacoesComRelogio.length === 0 ? (
         <View style={s.center}><ActivityIndicator size="large" color="#2563EB" /></View>
       ) : (
         <FlatList
-          data={locacoes}
+          data={listaExibida}
           keyExtractor={item => String(item.id)}
           renderItem={renderItem}
-          contentContainerStyle={[s.list, locacoes.length === 0 && s.listEmpty]}
+          contentContainerStyle={[s.list, listaExibida.length === 0 && s.listEmpty]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -174,6 +222,9 @@ const s = StyleSheet.create({
   center:       { flex: 1, justifyContent: 'center', alignItems: 'center' },
   list:         { padding: 16, paddingBottom: 88 },
   listEmpty:    { flexGrow: 1 },
+  
+  toggleRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  toggleText:   { fontSize: 13, color: '#64748B', fontWeight: '500' },
 
   card: {
     backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16,

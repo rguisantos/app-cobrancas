@@ -31,6 +31,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocacao }  from '../contexts/LocacaoContext';
 import { useProduto }  from '../contexts/ProdutoContext';
 import { useCliente }  from '../contexts/ClienteContext';
+import { produtoRepository } from '../repositories/ProdutoRepository';
 
 import { Locacao, FormaPagamentoLocacao } from '../types';
 import { locacaoRepository }    from '../repositories/LocacaoRepository';
@@ -108,15 +109,29 @@ export default function LocacaoFormScreen() {
 
   // ── carregamento inicial ──────────────────────────────────────────────────
   // Para modo criar: carrega produtos disponíveis
-  // Para modo relocar/editar: carrega locação existente
+  // Para modo relocar/editar: carrega locação existente e relógio do produto
   useEffect(() => {
     if (modo === 'criar') {
       carregarProdutos({ comLocacaoAtiva: false });
     } else if ((modo === 'relocar' || modo === 'editar') && locacaoId) {
       setCarregandoInit(true);
-      locacaoRepository.getById(locacaoId).then(locacao => {
+      locacaoRepository.getById(locacaoId).then(async locacao => {
         if (!locacao) return;
-        setForm(prev => ({
+        
+        // Buscar o relógio do PRODUTO (não da locação) - é o valor atual do relógio
+        let relogioProduto = locacao.numeroRelogio || '';
+        if (locacao.produtoId) {
+          try {
+            const produto = await produtoRepository.getById(String(locacao.produtoId));
+            if (produto?.numeroRelogio) {
+              relogioProduto = produto.numeroRelogio;
+            }
+          } catch (e) {
+            console.warn('[LocacaoForm] Erro ao buscar produto:', e);
+          }
+        }
+        
+        setForm((prev: any) => ({
           ...prev,
           // produto vem da locação (somente leitura em ambos os modos)
           produtoId:            String(locacao.produtoId),
@@ -127,7 +142,7 @@ export default function LocacaoFormScreen() {
           clienteNome:          modo === 'editar' ? (locacao.clienteNome || '') : '',
           // regras de negócio da locação atual como pré-preenchimento
           formaPagamento:       locacao.formaPagamento || 'PercentualReceber',
-          numeroRelogio:        locacao.numeroRelogio || '',
+          numeroRelogio:        relogioProduto, // Relógio do PRODUTO (editável)
           precoFicha:           locacao.precoFicha ? String(locacao.precoFicha) : '',
           percentualEmpresa:    locacao.percentualEmpresa ? String(locacao.percentualEmpresa) : '50',
           periodicidade:        locacao.periodicidade || '',
@@ -142,7 +157,7 @@ export default function LocacaoFormScreen() {
   // atualiza clienteNome quando clienteSelecionado muda (modo criar)
   useEffect(() => {
     if (clienteSelecionado && modo === 'criar') {
-      setForm(prev => ({
+      setForm((prev: any) => ({
         ...prev,
         clienteId:   String(clienteSelecionado.id),
         clienteNome: clienteSelecionado.nomeExibicao,
@@ -167,7 +182,7 @@ export default function LocacaoFormScreen() {
   }, [buscarCliente]);
 
   const handleSelecionarCliente = useCallback((cliente: any) => {
-    setForm(prev => ({
+    setForm((prev: any) => ({
       ...prev,
       clienteId:   String(cliente.id),
       clienteNome: cliente.nomeExibicao,
@@ -180,7 +195,7 @@ export default function LocacaoFormScreen() {
 
   // ── seleção de produto ────────────────────────────────────────────────────
   const handleSelecionarProduto = useCallback((produto: any) => {
-    setForm(prev => ({
+    setForm((prev: any) => ({
       ...prev,
       produtoId:            String(produto.id),
       produtoIdentificador: produto.identificador,
@@ -195,7 +210,7 @@ export default function LocacaoFormScreen() {
 
   // ── helpers de input ──────────────────────────────────────────────────────
   const setField = (field: string, value: string) => {
-    setForm(prev => {
+    setForm((prev: any) => {
       const next: any = { ...prev, [field]: value };
       // percentual cliente = 100 - empresa
       if (field === 'percentualEmpresa') {

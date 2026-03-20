@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView }  from 'react-native-safe-area-context';
 import { Ionicons }      from '@expo/vector-icons';
-import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation, CommonActions } from '@react-navigation/native';
 
 import { useCobranca }   from '../contexts/CobrancaContext';
 import { locacaoRepository } from '../repositories/LocacaoRepository';
@@ -194,7 +194,17 @@ export default function ConfirmacaoPagamentoScreen() {
           saldoDevedor > 0
             ? `Saldo devedor: ${formatarMoeda(saldoDevedor)}`
             : 'Cobrança registrada com sucesso.',
-          [{ text: 'OK', onPress: () => navigation.pop(2) }],
+          [{ text: 'OK', onPress: () => {
+            // Volta para a tela de cobrança do produto bloqueado
+            // Usa replace para remover a tela de confirmação da pilha
+            navigation.replace('CobrancaCliente', {
+              clienteId: dados.clienteId,
+              clienteNome: dados.clienteNome,
+              rotaId: dados.rotaId,
+              rotaNome: dados.rotaNome,
+              locacaoCobradaId: dados.locacaoId, // Indica que esta locação foi cobrada
+            });
+          } }],
         );
       } else {
         Alert.alert('Erro', 'Não foi possível registrar o pagamento');

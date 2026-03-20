@@ -29,7 +29,7 @@ interface ClienteComStatus extends ClienteListItem { totalProdutos: number }
 export default function ClientesRotaScreen() {
   const route      = useRoute<RoutePropType>();
   const navigation = useNavigation<CobrancasStackNavigationProp>();
-  const { rotaId } = route.params;
+  const { rotaId, rotaNome } = route.params;
 
   const { clientes, carregarClientes, carregando } = useCliente();
   const { user } = useAuth();
@@ -112,7 +112,7 @@ export default function ClientesRotaScreen() {
               <TouchableOpacity
                 style={s.row}
                 onPress={() => tem && navigation.navigate('CobrancaCliente', {
-                  clienteId: String(item.id), clienteNome: item.nomeExibicao, rotaId,
+                  clienteId: String(item.id), clienteNome: item.nomeExibicao, rotaId, rotaNome,
                 })}
                 activeOpacity={tem ? 0.6 : 1}
               >

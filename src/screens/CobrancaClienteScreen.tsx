@@ -34,11 +34,12 @@ type RoutePropType = RouteProp<CobrancasStackParamList, 'CobrancaCliente'>;
 export default function CobrancaClienteScreen() {
   const route      = useRoute<RoutePropType>();
   const navigation = useNavigation<CobrancasStackNavigationProp>();
-  const { clienteId, clienteNome } = route.params;
+  const { clienteId, clienteNome, rotaId, rotaNome, locacaoCobradaId } = route.params;
 
   const [locacoes,       setLocacoes]       = useState<Locacao[]>([]);
   const [tabAtiva,       setTabAtiva]       = useState(0);
   const [carregando,     setCarregando]     = useState(true);
+  const [cobrancaRegistrada, setCobrancaRegistrada] = useState(false);
 
   // campos do formulário
   const [relogioAtual,     setRelogioAtual]     = useState('');
@@ -61,16 +62,16 @@ export default function CobrancaClienteScreen() {
 
   const tabRef = useRef(tabAtiva);
 
-  // limpar form ao trocar tab
+  // ── limpar form ao trocar tab (só se não estiver em modo cobrança registrada) ─────
   useEffect(() => {
-    if (tabRef.current !== tabAtiva) {
+    if (tabRef.current !== tabAtiva && !cobrancaRegistrada) {
       tabRef.current = tabAtiva;
       setRelogioAtual(''); setDescontoPartidas(''); setDescontoDinheiro('');
       setBonificacao('');  setValorRecebido('');   setObservacao('');
       setCalculo(null);    setErroRelogio('');      setIncluirPeriodo(false);
       setTrocaPano(false); setShowDescontos(false);
     }
-  }, [tabAtiva]);
+  }, [tabAtiva, cobrancaRegistrada]);
 
   // carregar locações ativas + saldos (recarrega quando a tela recebe foco)
   const carregarDados = useCallback(async () => {
@@ -88,13 +89,22 @@ export default function CobrancaClienteScreen() {
       setSaldosPendentes(saldos);
       const finalizados = await cobrancaRepository.getSaldosPendentesFinalizados(clienteId);
       setSaldosFinalizados(finalizados);
+      
+      // Se veio locacaoCobradaId, encontrar a tab correta e marcar como cobrança registrada
+      if (locacaoCobradaId) {
+        const idx = lista.findIndex(l => String(l.id) === String(locacaoCobradaId));
+        if (idx >= 0) {
+          setTabAtiva(idx);
+          setCobrancaRegistrada(true);
+        }
+      }
     } catch (error) {
       console.error('[CobrancaClienteScreen] Erro ao carregar:', error);
       setLocacoes([]);
     } finally {
       setCarregando(false);
     }
-  }, [clienteId]);
+  }, [clienteId, locacaoCobradaId]);
 
   // Recarregar quando a tela recebe foco (volta de outra tela)
   useFocusEffect(
@@ -102,6 +112,35 @@ export default function CobrancaClienteScreen() {
       carregarDados();
     }, [carregarDados])
   );
+
+  // ── Quando trocar de tab em modo cobrança registrada, limpa o estado ───────────────────
+  useEffect(() => {
+    if (cobrancaRegistrada && locacaoCobradaId) {
+      // Se trocar de tab, sai do modo cobrança registrada
+      const idx = locacoes.findIndex(l => String(l.id) === String(locacaoCobradaId));
+      if (idx >= 0 && tabAtiva !== idx) {
+        setCobrancaRegistrada(false);
+      }
+    }
+  }, [tabAtiva, cobrancaRegistrada, locacaoCobradaId, locacoes]);
+
+  // ── Navegação de voltar: se cobrança registrada, vai para ClientesRota ───────────────
+  useEffect(() => {
+    if (cobrancaRegistrada) {
+      const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+        e.preventDefault();
+        // Vai para ClientesRota
+        navigation.reset({
+          index: 1,
+          routes: [
+            { name: 'RotasCobranca' },
+            { name: 'ClientesRota', params: { rotaId, rotaNome: rotaNome || 'Rota' } },
+          ],
+        });
+      });
+      return unsubscribe;
+    }
+  }, [cobrancaRegistrada, navigation, rotaId, rotaNome]);
 
   const locacao = locacoes[tabAtiva] ?? null;
   const forma   = locacao?.formaPagamento ?? 'PercentualReceber';
@@ -117,6 +156,9 @@ export default function CobrancaClienteScreen() {
     : 0;
 
   const saldoAnterior = locacao ? (saldosPendentes[String(locacao.id)] ?? 0) : 0;
+  
+  // Data da última manutenção (troca de pano)
+  const dataUltimaManutencao = locacao?.dataUltimaManutencao;
 
   // ── cálculo em tempo real (apenas % modes) ─────────────────────────────
   useEffect(() => {
@@ -206,6 +248,8 @@ export default function CobrancaClienteScreen() {
       locacaoId:             String(locacao.id),
       clienteId,
       clienteNome,
+      rotaId,
+      rotaNome,
       produtoIdentificador:  locacao.produtoIdentificador,
       produtoTipo:           locacao.produtoTipo,
       formaPagamento:        forma,
@@ -288,7 +332,14 @@ export default function CobrancaClienteScreen() {
           {locacao && (<>
             {/* status + histórico */}
             <View style={s.statusRow}>
-              <Text style={s.statusPendente}>PENDENTE !</Text>
+              {cobrancaRegistrada ? (
+                <View style={s.statusRegistrada}>
+                  <Ionicons name="checkmark-circle" size={16} color="#16A34A" />
+                  <Text style={s.statusRegistradaText}>COBRANÇA REGISTRADA</Text>
+                </View>
+              ) : (
+                <Text style={s.statusPendente}>PENDENTE !</Text>
+              )}
               <View style={s.statusRight}>
                 <TouchableOpacity style={s.historicoBtn}
                   onPress={() => navigation.navigate('HistoricoCobranca', {
@@ -320,6 +371,17 @@ export default function CobrancaClienteScreen() {
                     <Text style={[s.fieldValue, s.fieldValueHighlight]}>{relogioAnterior > 0 ? relogioAnterior.toLocaleString('pt-BR') : '-'}</Text>
                   </View>
                 </View>
+                {/* Data da última manutenção */}
+                {dataUltimaManutencao && (
+                  <View style={s.fieldRow}>
+                    <View style={s.fieldBlock}>
+                      <Text style={s.fieldLabel}>Última Manutenção</Text>
+                      <Text style={[s.fieldValue, { color: '#0891B2' }]}>
+                        {new Date(dataUltimaManutencao).toLocaleDateString('pt-BR')}
+                      </Text>
+                    </View>
+                  </View>
+                )}
                 {locacao.observacao ? (
                   <Text style={s.fieldLabel}>{locacao.observacao}</Text>
                 ) : null}
@@ -631,15 +693,17 @@ export default function CobrancaClienteScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ── BOTÃO AVANÇAR ──────────────────────────────────────── */}
-      <View style={s.footer}>
-        <TouchableOpacity
-          style={[s.btnAvancar, !podeAvancar && s.btnDisabled]}
-          onPress={handleAvancar} disabled={!podeAvancar} activeOpacity={0.85}
-        >
-          <Text style={s.btnAvancarText}>AVANÇAR</Text>
-        </TouchableOpacity>
-      </View>
+      {/* ── BOTÃO AVANÇAR (só aparece se não houver cobrança registrada) ─────────────── */}
+      {!cobrancaRegistrada && (
+        <View style={s.footer}>
+          <TouchableOpacity
+            style={[s.btnAvancar, !podeAvancar && s.btnDisabled]}
+            onPress={handleAvancar} disabled={!podeAvancar} activeOpacity={0.85}
+          >
+            <Text style={s.btnAvancarText}>AVANÇAR</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -663,6 +727,8 @@ const s = StyleSheet.create({
   statusRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4, marginBottom: 8 },
   statusRight:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
   statusPendente:{ fontSize: 14, fontWeight: '700', color: '#FF6D00' },
+  statusRegistrada: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#DCFCE7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 16 },
+  statusRegistradaText: { fontSize: 13, fontWeight: '700', color: '#16A34A' },
   historicoBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: '#EFF6FF', borderRadius: 20, borderWidth: 1, borderColor: '#BFDBFE' },
   historicoBtnText: { fontSize: 12, fontWeight: '700', color: '#1976D2' },
   card:         { backgroundColor: '#FFFFFF', borderRadius: 4, marginBottom: 12, elevation: 1 },
@@ -680,6 +746,7 @@ const s = StyleSheet.create({
   inputLabelBold:{ fontSize: 12, fontWeight: '700', color: '#424242', letterSpacing: 0.3 },
   inputLine:    { borderBottomWidth: 1, borderBottomColor: '#9E9E9E', fontSize: 16, color: '#212121', paddingVertical: 6, marginTop: 2, flex: 1 },
   inputLineError:{ borderBottomColor: '#E53935' },
+  inputDisabled: { borderBottomColor: '#E0E0E0', color: '#9E9E9E' },
   inputError:   { fontSize: 11, color: '#E53935', marginTop: 4 },
   btnClear:     { paddingBottom: 6 },
   btnOpcoes:    { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, marginTop: 2 },
