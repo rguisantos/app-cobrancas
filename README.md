@@ -222,7 +222,3 @@ npm test           # Executa testes
 ## 📄 Licença
 
 Este projeto está sob a licença MIT.
-
----
-
-Desenvolvido por **Diamond Sistemas**

@@ -199,8 +199,10 @@ export default function CobrancaClienteScreen() {
 
   // ── total para modo período ────────────────────────────────────────────
   const valorPeriodo = locacao?.valorFixo ?? 0;
+  // Para período: se não está antes do vencimento, SEMPRE incluir o valor do período
+  // Se está antes do vencimento, só incluir se o usuário marcar "incluirPeriodo"
   const totalPeriodo = isPeriodo
-    ? saldoAnterior + (incluirPeriodo ? valorPeriodo : 0)
+    ? saldoAnterior + (!antesVencimento || incluirPeriodo ? valorPeriodo : 0)
     : 0;
     
   // Debug log
@@ -220,6 +222,13 @@ export default function CobrancaClienteScreen() {
   const antesVencimento = isPeriodo && locacao?.dataPrimeiraCobranca
     ? new Date(locacao.dataPrimeiraCobranca) > new Date()
     : false;
+    
+  // ── para período: se não está antes do vencimento, automaticamente incluir período ─────
+  useEffect(() => {
+    if (isPeriodo && !antesVencimento && !incluirPeriodo && valorPeriodo > 0) {
+      setIncluirPeriodo(true);
+    }
+  }, [isPeriodo, antesVencimento, incluirPeriodo, valorPeriodo]);
 
   // ── total exibido ──────────────────────────────────────────────────────
   const totalExibido = isPeriodo

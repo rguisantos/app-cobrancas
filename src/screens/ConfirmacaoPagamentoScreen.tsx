@@ -239,33 +239,50 @@ export default function ConfirmacaoPagamentoScreen() {
           <Text style={s.secDesc}>
             {trocaPano && (
               <Text style={s.trocaPanoTag}>
-                <Ionicons name="construct-outline" size={12} color="#16A34A" /> Manutenção registrada
+                <Ionicons name="construct-outline" size={12} color="#16A34A" /> Manutenção registrada{'\n'}
               </Text>
             )}
             {dados.formaPagamento === 'Periodo'
-              ? (isPeriodo && !incluirPeriodo
-                  ? 'Valor referente apenas ao saldo devedor. Para cobrar o valor do período junto, volte e atualize a cobrança'
-                  : `Período ${dados.percentualEmpresa.toFixed(0)}% incluído`)
+              ? `Valor Fixo ${dados.valorPeriodo ? formatarMoeda(dados.valorPeriodo) : formatarMoeda(dados.totalClientePaga)} (${dados.observacao || 'mensal'})`
               : `${FORMA_LABELS[dados.formaPagamento] ?? dados.formaPagamento} ${dados.percentualEmpresa.toFixed(1)}%`}
           </Text>
         </View>
 
-        {/* tabela */}
+        {/* tabela - mostrar apenas campos relevantes para o tipo de cobrança */}
         <View style={s.table}>
-          <TRow label="Relógio atual"    value={String(dados.relogioAtual)} />
-          <TRow label="Relógio anterior" value={String(dados.relogioAnterior)} />
-          <TRow label="Fichas rodadas"   value={String(dados.fichasRodadas)} />
-          <TRow label="Total bruto"      value={formatarMoeda(dados.totalBruto)} />
-          <TRow label={`Subtotal (${dados.percentualEmpresa.toFixed(1)}%)`}
-                value={formatarMoeda(dados.valorPercentual)} />
-          {saldoAnterior > 0 && !isPagar && (
-            <TRow label="Saldo devedor anterior" value={formatarMoeda(saldoAnterior)} />
+          {isPeriodo ? (
+            // Mostrar campos de período
+            <>
+              {dados.relogioAtual > 0 && (
+                <>
+                  <TRow label="Relógio atual"    value={String(dados.relogioAtual)} />
+                  <TRow label="Relógio anterior" value={String(dados.relogioAnterior)} />
+                  <TRow label="Fichas rodadas"   value={String(dados.fichasRodadas)} />
+                </>
+              )}
+              {valorPeriodo > 0 && (
+                <TRow label="Valor do Período" value={formatarMoeda(valorPeriodo)} />
+              )}
+              {saldoAnterior > 0 && (
+                <TRow label="Saldo devedor anterior" value={formatarMoeda(saldoAnterior)} />
+              )}
+            </>
+          ) : (
+            // Mostrar campos de percentual
+            <>
+              <TRow label="Relógio atual"    value={String(dados.relogioAtual)} />
+              <TRow label="Relógio anterior" value={String(dados.relogioAnterior)} />
+              <TRow label="Fichas rodadas"   value={String(dados.fichasRodadas)} />
+              <TRow label="Total bruto"      value={formatarMoeda(dados.totalBruto)} />
+              <TRow label={`Subtotal (${dados.percentualEmpresa.toFixed(1)}%)`}
+                    value={formatarMoeda(dados.valorPercentual)} />
+              {saldoAnterior > 0 && !isPagar && (
+                <TRow label="Saldo devedor anterior" value={formatarMoeda(saldoAnterior)} />
+              )}
+            </>
           )}
           {bonificacao > 0 && (
             <TRow label="Bonificação" value={formatarMoeda(bonificacao)} />
-          )}
-          {isPeriodo && incluirPeriodo && valorPeriodo > 0 && (
-            <TRow label={`+ Período (${dados.observacao || 'fixo'})`} value={formatarMoeda(valorPeriodo)} />
           )}
         </View>
 
@@ -366,6 +383,7 @@ const s = StyleSheet.create({
   section:        { backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 14, marginBottom: 8 },
   secLabel:       { fontSize: 11, color: '#9E9E9E', marginBottom: 4 },
   secDesc:        { fontSize: 15, color: '#212121' },
+  trocaPanoTag:   { color: '#16A34A', fontWeight: '600' },
   table:          { backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 8 },
   tRow:           { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
   tLabel:         { fontSize: 13, color: '#757575' },
