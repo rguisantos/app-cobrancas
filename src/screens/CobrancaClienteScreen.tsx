@@ -129,11 +129,17 @@ export default function CobrancaClienteScreen() {
     if (cobrancaRegistrada) {
       const unsubscribe = navigation.addListener('beforeRemove', (e) => {
         e.preventDefault();
-        // Navega diretamente para ClientesRota
-        // Não usa goBack() pois pode causar loop
-        navigation.navigate('ClientesRota', { 
-          rotaId: route.params.rotaId, 
-          rotaNome: route.params.rotaNome || 'Rota' 
+        // Usa reset para limpar a pilha e ir direto para ClientesRota
+        // Isso evita que a tela bloqueada permaneça na pilha
+        navigation.reset({
+          index: 1,
+          routes: [
+            { name: 'RotasCobranca' },
+            { name: 'ClientesRota', params: { 
+              rotaId: route.params.rotaId, 
+              rotaNome: route.params.rotaNome || 'Rota' 
+            }},
+          ],
         });
       });
       return unsubscribe;
