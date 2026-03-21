@@ -73,6 +73,7 @@ export interface NovaCobrancaData {
   totalClientePaga: number;
   valorRecebido: number;
   saldoAnterior?: number;  // Saldo devedor de cobranças anteriores
+  formaPagamento?: string; // Forma de pagamento (Periodo, PercentualReceber, PercentualPagar)
   
   observacao?: string;
 }
@@ -257,14 +258,20 @@ class CobrancaRepository {
   async registrarCobranca(data: NovaCobrancaData): Promise<HistoricoCobranca> {
     try {
       // Calcular total com saldo anterior (se houver)
+      // IMPORTANTE: Para modo Período, o saldoAnterior JÁ ESTÁ incluído no totalClientePaga
+      // Para modo PercentualPagar, não somamos saldo (empresa paga ao cliente)
+      // Para modo PercentualReceber, somamos o saldo anterior
       const saldoAnterior = data.saldoAnterior ?? 0;
-      const totalComSaldo = data.totalClientePaga + saldoAnterior;
+      const isPeriodo = data.formaPagamento === 'Periodo';
+      const isPagar = data.formaPagamento === 'PercentualPagar';
+      const totalComSaldo = data.totalClientePaga + (isPagar || isPeriodo ? 0 : saldoAnterior);
       
       // Calcular saldo devedor: total a pagar - valor recebido
       const saldoDevedor = Math.max(0, totalComSaldo - data.valorRecebido);
 
       // LOG para depuração
       console.log('[CobrancaRepository] Calculando saldo devedor:', {
+        formaPagamento: data.formaPagamento,
         totalClientePaga: data.totalClientePaga,
         saldoAnterior,
         totalComSaldo,

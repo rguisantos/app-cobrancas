@@ -68,7 +68,10 @@ export default function ConfirmacaoPagamentoScreen() {
   const trocaPano  = dados.trocaPano  ?? false;
   const isPagar    = dados.formaPagamento === 'PercentualPagar';
   const isPeriodo  = dados.formaPagamento === 'Periodo';
-  const totalComSaldo  = dados.totalClientePaga + (isPagar ? 0 : saldoAnterior);
+  // Para modo Período, o saldoAnterior JÁ ESTÁ incluído no totalClientePaga (calculado em CobrancaClienteScreen)
+  // Para modo PercentualPagar, não somamos saldo (empresa paga ao cliente)
+  // Para modo PercentualReceber, somamos o saldo anterior
+  const totalComSaldo  = dados.totalClientePaga + (isPagar || isPeriodo ? 0 : saldoAnterior);
   const saldoDevedor   = Math.max(0, totalComSaldo - dados.valorRecebido);
   const troco          = Math.max(0, dados.valorRecebido - totalComSaldo);
   const hoje = new Date().toLocaleDateString('pt-BR');
@@ -134,7 +137,8 @@ export default function ConfirmacaoPagamentoScreen() {
         valorPercentual:       dados.valorPercentual,
         totalClientePaga:      dados.totalClientePaga,
         valorRecebido:         dados.valorRecebido,
-        saldoAnterior:         saldoAnterior,  // Importante: passar o saldo anterior para cálculo correto
+        saldoAnterior:         saldoAnterior,
+        formaPagamento:        dados.formaPagamento, // Necessário para cálculo correto do saldo
         observacao:            obsArr.join(' | ') || undefined,
       });
 
@@ -195,15 +199,9 @@ export default function ConfirmacaoPagamentoScreen() {
             ? `Saldo devedor: ${formatarMoeda(saldoDevedor)}`
             : 'Cobrança registrada com sucesso.',
           [{ text: 'OK', onPress: () => {
-            // Volta para a tela de cobrança do produto bloqueado
-            // Usa replace para remover a tela de confirmação da pilha
-            navigation.replace('CobrancaCliente', {
-              clienteId: dados.clienteId,
-              clienteNome: dados.clienteNome,
-              rotaId: dados.rotaId,
-              rotaNome: dados.rotaNome,
-              locacaoCobradaId: dados.locacaoId, // Indica que esta locação foi cobrada
-            });
+            // Volta diretamente para a lista de clientes da rota
+            // Usa pop para remover ConfirmacaoPagamento e CobrancaCliente da pilha
+            navigation.pop(2);
           } }],
         );
       } else {
