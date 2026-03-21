@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView }  from 'react-native-safe-area-context';
 import { Ionicons }      from '@expo/vector-icons';
-import { useRoute, RouteProp, useNavigation, useFocusEffect, CommonActions } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navigation/native';
 
 import { locacaoRepository }   from '../repositories/LocacaoRepository';
 import { cobrancaRepository }  from '../repositories/CobrancaRepository';
@@ -124,28 +124,10 @@ export default function CobrancaClienteScreen() {
     }
   }, [tabAtiva, cobrancaRegistrada, locacaoCobradaId, locacoes]);
 
-  // ── Navegação de voltar: se cobrança registrada, vai para ClientesRota ───────────────
-  useEffect(() => {
-    if (cobrancaRegistrada) {
-      const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-        e.preventDefault();
-        // Usa dispatch com CommonActions.reset para garantir que funcione
-        navigation.dispatch(
-          CommonActions.reset({
-            index: 1,
-            routes: [
-              { name: 'RotasCobranca' },
-              { name: 'ClientesRota', params: { 
-                rotaId: route.params.rotaId, 
-                rotaNome: route.params.rotaNome || 'Rota' 
-              }},
-            ],
-          })
-        );
-      });
-      return unsubscribe;
-    }
-  }, [cobrancaRegistrada, navigation, route.params]);
+  // ── Navegação de voltar: se cobrança registrada, apenas volta normalmente ───────────────
+  // A pilha já está correta: CobrancasList -> RotasCobranca -> ClientesRota -> CobrancaCliente
+  // Então goBack() funciona naturalmente
+  // (não precisa de listener especial - comportamento padrão funciona)
 
   const locacao = locacoes[tabAtiva] ?? null;
   const forma   = locacao?.formaPagamento ?? 'PercentualReceber';

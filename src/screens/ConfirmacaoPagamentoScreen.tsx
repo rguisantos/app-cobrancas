@@ -199,11 +199,12 @@ export default function ConfirmacaoPagamentoScreen() {
             ? `Saldo devedor: ${formatarMoeda(saldoDevedor)}`
             : 'Cobrança registrada com sucesso.',
           [{ text: 'OK', onPress: () => {
-            // Usa reset para criar a pilha correta:
-            // RotasCobranca -> ClientesRota -> CobrancaCliente (bloqueada)
+            // Cria a pilha completa para navegação de volta correta:
+            // CobrancasList -> RotasCobranca -> ClientesRota -> CobrancaCliente (bloqueada)
             navigation.reset({
-              index: 2,
+              index: 3,
               routes: [
+                { name: 'CobrancasList' },
                 { name: 'RotasCobranca' },
                 { name: 'ClientesRota', params: { rotaId: dados.rotaId, rotaNome: dados.rotaNome || 'Rota' } },
                 { name: 'CobrancaCliente', params: {
