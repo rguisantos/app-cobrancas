@@ -681,6 +681,19 @@ class CobrancaRepository {
     }
   }
 
+  /**
+   * Verifica se um cliente tem saldo devedor pendente de locações finalizadas
+   * Usado para mostrar clientes na lista de cobrança mesmo sem produtos ativos
+   */
+  async hasSaldoPendenteFinalizado(clienteId: string): Promise<boolean> {
+    try {
+      const saldos = await this.getSaldosPendentesFinalizados(clienteId);
+      return saldos.length > 0 && saldos.some(s => s.saldoPendente > 0);
+    } catch {
+      return false;
+    }
+  }
+
 
   // ==========================================================================
   // MÉTODOS AUXILIARES PRIVADOS

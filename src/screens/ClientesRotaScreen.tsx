@@ -1,6 +1,10 @@
 /**
  * ClientesRotaScreen.tsx
  * Passo 2 do fluxo — clientes da rota com status de locações
+ * 
+ * Mostra clientes com:
+ * - Produtos ativos (locados)
+ * - Saldo devedor de locações finalizadas
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -16,6 +20,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCliente }        from '../contexts/ClienteContext';
 import { useAuth }           from '../contexts/AuthContext';
 import { locacaoRepository } from '../repositories/LocacaoRepository';
+import { cobrancaRepository } from '../repositories/CobrancaRepository';
 import { ClienteListItem }   from '../types';
 import {
   CobrancasStackParamList,
@@ -24,7 +29,10 @@ import {
 
 type RoutePropType = RouteProp<CobrancasStackParamList, 'ClientesRota'>;
 
-interface ClienteComStatus extends ClienteListItem { totalProdutos: number }
+interface ClienteComStatus extends ClienteListItem { 
+  totalProdutos: number;
+  temSaldoDevedor?: boolean;
+}
 
 export default function ClientesRotaScreen() {
   const route      = useRoute<RoutePropType>();
@@ -54,9 +62,22 @@ export default function ClientesRotaScreen() {
     if (filtrados.length === 0) { setClientesComStatus([]); return; }
 
     setCarregandoStatus(true);
-    Promise.all(filtrados.map(c => locacaoRepository.countAtivasByCliente(String(c.id))))
-      .then(counts => setClientesComStatus(filtrados.map((c, i) => ({ ...c, totalProdutos: counts[i] }))))
-      .catch(()    => setClientesComStatus(filtrados.map(c => ({ ...c, totalProdutos: 0 }))))
+    
+    // Carregar produtos ativos E saldos devedores de locações finalizadas
+    Promise.all([
+      // Contagem de produtos ativos
+      Promise.all(filtrados.map(c => locacaoRepository.countAtivasByCliente(String(c.id)))),
+      // Verificar saldos devedores de locações finalizadas
+      Promise.all(filtrados.map(c => cobrancaRepository.hasSaldoPendenteFinalizado(String(c.id))))
+    ])
+      .then(([counts, saldos]) => 
+        setClientesComStatus(filtrados.map((c, i) => ({ 
+          ...c, 
+          totalProdutos: counts[i],
+          temSaldoDevedor: saldos[i]
+        })))
+      )
+      .catch(()    => setClientesComStatus(filtrados.map(c => ({ ...c, totalProdutos: 0, temSaldoDevedor: false }))))
       .finally(()  => setCarregandoStatus(false));
   }, [clientes, rotaId]);
 
@@ -107,28 +128,42 @@ export default function ClientesRotaScreen() {
             </View>
           }
           renderItem={({ item }: { item: ClienteComStatus }) => {
-            const tem = item.totalProdutos > 0;
+            const temProdutos = item.totalProdutos > 0;
+            const temSaldo = item.temSaldoDevedor;
+            const podeCobrar = temProdutos || temSaldo;
             return (
               <TouchableOpacity
                 style={s.row}
-                onPress={() => tem && navigation.navigate('CobrancaCliente', {
+                onPress={() => podeCobrar && navigation.navigate('CobrancaCliente', {
                   clienteId: String(item.id), clienteNome: item.nomeExibicao, rotaId, rotaNome,
                 })}
-                activeOpacity={tem ? 0.6 : 1}
+                activeOpacity={podeCobrar ? 0.6 : 1}
               >
                 <View style={s.iconStatus}>
-                  {tem
-                    ? <Ionicons name="checkmark" size={22} color="#1976D2" />
-                    : <Ionicons name="flash"     size={20} color="#E53935" />}
+                  {temProdutos ? (
+                    <Ionicons name="checkmark" size={22} color="#1976D2" />
+                  ) : temSaldo ? (
+                    <Ionicons name="alert-circle" size={22} color="#E53935" />
+                  ) : (
+                    <Ionicons name="flash" size={20} color="#9E9E9E" />
+                  )}
                 </View>
                 <View style={s.info}>
                   <Text style={s.nome}>{item.nomeExibicao}</Text>
                   <Text style={s.cidade}>{item.cidade} - {item.estado}</Text>
+                  {temSaldo && !temProdutos && (
+                    <Text style={s.saldoAlerta}>Saldo devedor pendente</Text>
+                  )}
                 </View>
                 <View style={s.actions}>
-                  {tem && (
+                  {temProdutos && (
                     <View style={s.badge}>
                       <Text style={s.badgeText}>{item.totalProdutos}P</Text>
+                    </View>
+                  )}
+                  {temSaldo && !temProdutos && (
+                    <View style={[s.badge, { backgroundColor: '#FFCDD2' }]}>
+                      <Text style={[s.badgeText, { color: '#E53935' }]}>$</Text>
                     </View>
                   )}
                   <TouchableOpacity
@@ -165,6 +200,7 @@ const s = StyleSheet.create({
   info:       { flex: 1, marginLeft: 8 },
   nome:       { fontSize: 15, color: '#212121' },
   cidade:     { fontSize: 13, color: '#757575', marginTop: 2 },
+  saldoAlerta:{ fontSize: 11, color: '#E53935', marginTop: 2, fontWeight: '600' },
   actions:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
   badge: {
     width: 36, height: 36, borderRadius: 18,
