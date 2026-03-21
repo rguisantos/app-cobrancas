@@ -199,9 +199,22 @@ export default function ConfirmacaoPagamentoScreen() {
             ? `Saldo devedor: ${formatarMoeda(saldoDevedor)}`
             : 'Cobrança registrada com sucesso.',
           [{ text: 'OK', onPress: () => {
-            // Volta diretamente para a lista de clientes da rota
-            // Usa pop para remover ConfirmacaoPagamento e CobrancaCliente da pilha
-            navigation.pop(2);
+            // Usa reset para criar a pilha correta:
+            // RotasCobranca -> ClientesRota -> CobrancaCliente (bloqueada)
+            navigation.reset({
+              index: 2,
+              routes: [
+                { name: 'RotasCobranca' },
+                { name: 'ClientesRota', params: { rotaId: dados.rotaId, rotaNome: dados.rotaNome || 'Rota' } },
+                { name: 'CobrancaCliente', params: {
+                  clienteId: dados.clienteId,
+                  clienteNome: dados.clienteNome,
+                  rotaId: dados.rotaId,
+                  rotaNome: dados.rotaNome,
+                  locacaoCobradaId: dados.locacaoId,
+                }},
+              ],
+            });
           } }],
         );
       } else {

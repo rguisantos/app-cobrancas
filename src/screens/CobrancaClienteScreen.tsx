@@ -129,18 +129,12 @@ export default function CobrancaClienteScreen() {
     if (cobrancaRegistrada) {
       const unsubscribe = navigation.addListener('beforeRemove', (e) => {
         e.preventDefault();
-        // Vai para ClientesRota
-        navigation.reset({
-          index: 1,
-          routes: [
-            { name: 'RotasCobranca' },
-            { name: 'ClientesRota', params: { rotaId, rotaNome: rotaNome || 'Rota' } },
-          ],
-        });
+        // Volta para ClientesRota (está na pilha abaixo desta tela)
+        navigation.goBack();
       });
       return unsubscribe;
     }
-  }, [cobrancaRegistrada, navigation, rotaId, rotaNome]);
+  }, [cobrancaRegistrada, navigation]);
 
   const locacao = locacoes[tabAtiva] ?? null;
   const forma   = locacao?.formaPagamento ?? 'PercentualReceber';
