@@ -19,6 +19,7 @@ import { produtoRepository } from '../repositories/ProdutoRepository';
 import { locacaoRepository } from '../repositories/LocacaoRepository';
 import { cobrancaRepository } from '../repositories/CobrancaRepository';
 import { apiService } from '../services/ApiService';
+import { databaseService } from '../services/DatabaseService';
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -94,15 +95,24 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
    */
   const calcularMetricasMobile = useCallback(async (): Promise<DashboardMobileMetricas> => {
     try {
+      const hoje = new Date();
+      const hojeStr = hoje.toISOString().split('T')[0];
+      const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0];
+
       const [
         totalClientes,
         totalProdutos,
         resumoLocacoes,
-        cobrancasPendentes
-      ] = await Promise.all([        clienteRepository.count({ status: 'Ativo' }),
+        cobrancasPendentes,
+        resumoHoje,
+        resumoMes,
+      ] = await Promise.all([
+        clienteRepository.count({ status: 'Ativo' }),
         produtoRepository.count(),
         locacaoRepository.getResumo(),
         cobrancaRepository.getPendentes(),
+        databaseService.getResumoFinanceiro(hojeStr, hojeStr),
+        databaseService.getResumoFinanceiro(primeiroDiaMes, hojeStr),
       ]);
 
       const metricas: DashboardMobileMetricas = {
@@ -111,6 +121,12 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
         cobrancasPendentes: cobrancasPendentes.length,
         produtosLocados: resumoLocacoes.totalAtivas,
         produtosEstoque: resumoLocacoes.totalLocacoes - resumoLocacoes.totalAtivas,
+        // Financeiro
+        totalRecebidoHoje: resumoHoje.totalArrecadado,
+        totalRecebidoMes: resumoMes.totalArrecadado,
+        totalAReceber: resumoMes.totalClientePaga,
+        saldoDevedor: resumoMes.totalSaldoDevedor,
+        cobrancasHoje: resumoHoje.totalCobrancas,
       };
 
       return metricas;
@@ -120,6 +136,11 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
         totalClientes: 0,
         cobrancasPendentes: 0,
         totalProdutos: 0,
+        totalRecebidoHoje: 0,
+        totalRecebidoMes: 0,
+        totalAReceber: 0,
+        saldoDevedor: 0,
+        cobrancasHoje: 0,
       };
   
   }

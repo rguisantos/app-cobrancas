@@ -492,11 +492,18 @@ export interface DashboardWebData {
   mesReferencia: string;
 }
 
-export interface DashboardMobileMetricas {  totalClientes: number;
+export interface DashboardMobileMetricas {
+  totalClientes: number;
   cobrancasPendentes: number;
   totalProdutos: number;
   produtosLocados?: number;
   produtosEstoque?: number;
+  // Financeiro
+  totalRecebidoHoje?: number;
+  totalRecebidoMes?: number;
+  totalAReceber?: number;
+  saldoDevedor?: number;
+  cobrancasHoje?: number;
 }
 
 export interface DashboardMobileData {

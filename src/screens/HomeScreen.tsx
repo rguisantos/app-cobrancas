@@ -19,6 +19,7 @@ import { useDashboard } from '../contexts/DashboardContext';
 import { useSync }      from '../contexts/SyncContext';
 import { AppTabsParamList } from '../navigation/AppNavigator';
 import SyncIndicator from '../components/SyncIndicator';
+import { formatarMoeda } from '../utils/currency';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 40;
@@ -50,9 +51,14 @@ interface DashboardCard {
   color: string;
   bg: string;
   onPress?: () => void;
+  isMoney?: boolean;
 }
 
 function CarouselCard({ card }: { card: DashboardCard }) {
+  const displayValue = card.isMoney && typeof card.value === 'number'
+    ? formatarMoeda(card.value)
+    : typeof card.value === 'number' ? card.value.toLocaleString('pt-BR') : card.value;
+
   return (
     <TouchableOpacity 
       style={[s.carouselCard, { backgroundColor: card.bg }]}
@@ -67,7 +73,7 @@ function CarouselCard({ card }: { card: DashboardCard }) {
       </View>
       <View style={s.carouselCardBottom}>
         <Text style={[s.cardValue, { color: card.color }]}>
-          {typeof card.value === 'number' ? card.value.toLocaleString('pt-BR') : card.value}
+          {displayValue}
         </Text>
         {card.subtitle && <Text style={s.cardSubtitle}>{card.subtitle}</Text>}
       </View>
@@ -136,41 +142,44 @@ export default function HomeScreen() {
   // ─── cards principais do carrossel ─────────────────────────────────────────
   const dashboardCards: DashboardCard[] = [
     {
-      id: 'clientes',
-      title: 'Clientes Ativos',
-      value: metricas?.totalClientes || 0,
-      subtitle: 'Total cadastrado no sistema',
-      icon: 'people',
-      color: '#2563EB',
-      bg: '#EFF6FF',
-      onPress: () => nav('Clientes'),
+      id: 'recebidoHoje',
+      title: 'Recebido Hoje',
+      value: metricas?.totalRecebidoHoje || 0,
+      subtitle: `${metricas?.cobrancasHoje || 0} cobranças`,
+      icon: 'cash',
+      color: '#16A34A',
+      bg: '#F0FDF4',
+      onPress: () => navModal('RelatorioCobrancas'),
+      isMoney: true,
     },
     {
-      id: 'cobrancas',
-      title: 'Cobranças Pendentes',
-      value: metricas?.cobrancasPendentes || 0,
-      subtitle: 'Aguardando pagamento',
+      id: 'recebidoMes',
+      title: 'Recebido no Mês',
+      value: metricas?.totalRecebidoMes || 0,
+      subtitle: 'Total do mês atual',
+      icon: 'trending-up',
+      color: '#2563EB',
+      bg: '#EFF6FF',
+      onPress: () => navModal('RelatorioCobrancas'),
+      isMoney: true,
+    },
+    {
+      id: 'saldoDevedor',
+      title: 'Saldo Devedor',
+      value: metricas?.saldoDevedor || 0,
+      subtitle: 'Valores pendentes',
       icon: 'alert-circle',
       color: '#DC2626',
       bg: '#FEF2F2',
-      onPress: () => nav('Cobrancas'),
+      onPress: () => navModal('RelatorioSaldoDevedor'),
+      isMoney: true,
     },
     {
-      id: 'produtos',
-      title: 'Total de Produtos',
-      value: metricas?.totalProdutos || 0,
-      subtitle: 'Em estoque e locados',
-      icon: 'cube',
-      color: '#16A34A',
-      bg: '#F0FDF4',
-      onPress: () => nav('Produtos'),
-    },
-    {
-      id: 'locados',
+      id: 'produtosLocados',
       title: 'Produtos Locados',
       value: metricas?.produtosLocados || 0,
-      subtitle: 'Atualmente com clientes',
-      icon: 'swap-horizontal',
+      subtitle: `${metricas?.produtosEstoque || 0} em estoque`,
+      icon: 'cube',
       color: '#9333EA',
       bg: '#FAF5FF',
       onPress: () => nav('Produtos'),
@@ -179,9 +188,9 @@ export default function HomeScreen() {
 
   // ─── métricas secundárias ─────────────────────────────────────────────────
   const miniMetrics: MiniMetric[] = [
-    { label: 'Em Estoque', value: (metricas?.totalProdutos || 0) - (metricas?.produtosLocados || 0), icon: 'archive', color: '#16A34A' },
-    { label: 'Locados', value: metricas?.produtosLocados || 0, icon: 'cart', color: '#9333EA' },
+    { label: 'Clientes', value: metricas?.totalClientes || 0, icon: 'people', color: '#2563EB' },
     { label: 'Pendentes', value: metricas?.cobrancasPendentes || 0, icon: 'time', color: '#DC2626' },
+    { label: 'Produtos', value: metricas?.totalProdutos || 0, icon: 'cube', color: '#9333EA' },
   ];
 
   // Auto-scroll dos cards
