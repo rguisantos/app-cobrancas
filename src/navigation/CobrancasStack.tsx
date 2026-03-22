@@ -17,6 +17,7 @@ import RotasCobrancaScreen        from '../screens/RotasCobrancaScreen';
 import ClientesRotaScreen         from '../screens/ClientesRotaScreen';
 import CobrancaClienteScreen      from '../screens/CobrancaClienteScreen';
 import ConfirmacaoPagamentoScreen from '../screens/ConfirmacaoPagamentoScreen';
+import CobrancaConfirmScreen      from '../screens/CobrancaConfirmScreen';
 import CobrancaDetailScreen       from '../screens/CobrancaDetailScreen';
 import HistoricoCobrancaScreen    from '../screens/HistoricoCobrancaScreen';
 import QuitacaoSaldoScreen        from '../screens/QuitacaoSaldoScreen';
@@ -107,6 +108,7 @@ export default function CobrancasStack() {
       <Stack.Screen name="ClientesRota"          component={ClientesRotaScreen}         options={({ route }) => ({ title: route.params.rotaNome })} />
       <Stack.Screen name="CobrancaCliente"       component={CobrancaClienteScreen}      options={({ route }) => ({ title: route.params.clienteNome })} />
       <Stack.Screen name="ConfirmacaoPagamento"  component={ConfirmacaoPagamentoScreen} options={{ title: 'Confirmação Pagamento' }} />
+      <Stack.Screen name="CobrancaConfirm"       component={CobrancaConfirmScreen}      options={{ title: 'Editar Cobrança' }} />
 
       <Stack.Screen
         name="CobrancaDetail"
