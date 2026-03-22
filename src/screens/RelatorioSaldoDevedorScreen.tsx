@@ -18,6 +18,7 @@ import { formatarMoeda }      from '../utils/currency';
 interface ClienteSaldo {
   id: string;
   nomeExibicao: string;
+  rotaId?: string;
   rotaNome?: string;
   telefone?: string;
   saldoTotal: number;
@@ -45,6 +46,7 @@ export default function RelatorioSaldoDevedorScreen() {
           return {
             id:                 String(c.id),
             nomeExibicao:       (c as any).nomeExibicao || (c as any).nome || '',
+            rotaId:             (c as any).rotaId,
             rotaNome:           (c as any).rotaNome,
             telefone:           (c as any).telefone,
             saldoTotal:         (c as any).saldoDevedorTotal ?? 0,
@@ -78,10 +80,32 @@ export default function RelatorioSaldoDevedorScreen() {
     ));
   };
 
+  const handleNavegarCobranca = useCallback((cliente: ClienteSaldo) => {
+    // Navegar para a tela de cobrança do cliente
+    // Usamos navigate com aninhamento correto de telas
+    // Isso garante que o botão de voltar funcione corretamente
+    
+    // A estrutura de navegação é:
+    // RootStack > App (ModalStack) > AppTabs (TabNavigator) > Cobrancas (StackNavigator)
+    
+    // Navegar de forma aninhada: AppTabs > Cobrancas > CobrancaCliente
+    navigation.navigate('AppTabs', {
+      screen: 'Cobrancas',
+      params: {
+        screen: 'CobrancaCliente',
+        params: {
+          clienteId: cliente.id,
+          clienteNome: cliente.nomeExibicao,
+          rotaId: cliente.rotaId || '',
+        },
+      },
+    });
+  }, [navigation]);
+
   const renderItem = ({ item, index }: { item: ClienteSaldo; index: number }) => (
     <TouchableOpacity
       style={st.card}
-      onPress={() => navigation.navigate('ClienteDetail', { clienteId: item.id })}
+      onPress={() => handleNavegarCobranca(item)}
       activeOpacity={0.75}
     >
       <View style={[st.rank, index < 3 && st.rankTop]}>

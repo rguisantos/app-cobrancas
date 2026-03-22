@@ -53,7 +53,8 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
 
   const [cobrancas, setCobrancas] = useState<HistoricoCobranca[]>([]);
   const [cobrancaSelecionada, setCobrancaSelecionada] = useState<HistoricoCobranca | null>(null);
-  const [carregando, setCarregando] = useState(false);  const [erro, setErro] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
   const [totalCobrancas, setTotalCobrancas] = useState(0);
   const [totalPendentes, setTotalPendentes] = useState(0);
 
@@ -69,8 +70,7 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar cobranças');
     } finally {
       setCarregando(false);
-  
-  }
+    }
   }, []);
 
   const carregarCobranca = useCallback(async (id: string) => {
@@ -82,8 +82,7 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar cobrança');
     } finally {
       setCarregando(false);
-  
-  }
+    }
   }, []);
 
   const selecionarCobranca = useCallback(async (id: string) => {
@@ -95,8 +94,7 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
       console.error('[CobrancaContext] Erro ao selecionar cobrança:', error);
     } finally {
       setCarregando(false);
-  
-  }
+    }
   }, []);
 
   const limparSelecao = useCallback(() => {
@@ -105,7 +103,8 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
 
   const registrarCobranca = useCallback(async (dados: any): Promise<HistoricoCobranca | null> => {
     setCarregando(true);
-    try {      const cobranca = await cobrancaRepository.registrarCobranca(dados);
+    try {
+      const cobranca = await cobrancaRepository.registrarCobranca(dados);
       await carregarCobrancas();
       return cobranca;
     } catch (error) {
@@ -124,8 +123,7 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
       if (cobranca) {
         await carregarCobrancas();
         return true;
-    
-  }
+      }
       return false;
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Erro ao atualizar cobrança');

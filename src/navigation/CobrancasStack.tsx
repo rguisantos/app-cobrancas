@@ -9,6 +9,7 @@ import { Alert, useColorScheme } from 'react-native';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import { StatusPagamento } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 import CobrancasListScreen        from '../screens/CobrancasListScreen';
 import RotasCobrancaScreen        from '../screens/RotasCobrancaScreen';

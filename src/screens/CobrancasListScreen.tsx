@@ -49,7 +49,8 @@ import { formatarMoeda } from '../utils/currency';
 export default function CobrancasListScreen() {
   const navigation = useNavigation<CobrancasStackNavigationProp>();
   const navigateCobranca = useCobrancaNavigate();
-  const route = useRoute<RouteProp<CobrancasStackParamList, 'CobrancasList'>>();  const { user, hasPermission, canAccessRota } = useAuth();
+  const route = useRoute<RouteProp<CobrancasStackParamList, 'CobrancasList'>>();
+  const { user, hasPermission, canAccessRota } = useAuth();
   const { cobrancas, carregando, erro, carregarCobrancas, refresh, totalPendentes } = useCobranca();
 
   // Estado local
@@ -88,14 +89,12 @@ export default function CobrancasListScreen() {
     // Filtro por status
     if (filtroStatus !== 'todas') {
       filtradas = filtradas.filter(c => c.status === filtroStatus);
-  
-  }
+    }
 
     // Filtro por permissão de rota (se não for admin)
     if (user?.tipoPermissao !== 'Administrador') {
       // Implementar filtro por rota permitida
-  
-  }
+    }
 
     return filtradas;
   }, [cobrancas, filtroStatus, user]);
@@ -106,7 +105,8 @@ export default function CobrancasListScreen() {
 
   const renderCobranca = useCallback(({ item }: { item: HistoricoCobranca }) => {
     const statusConfig = {
-      Pago: { color: '#16A34A', bg: '#F0FDF4', label: 'Pago' },      Pendente: { color: '#EA580C', bg: '#FFFBEB', label: 'Pendente' },
+      Pago: { color: '#16A34A', bg: '#F0FDF4', label: 'Pago' },
+      Pendente: { color: '#EA580C', bg: '#FFFBEB', label: 'Pendente' },
       Parcial: { color: '#2563EB', bg: '#DBEAFE', label: 'Parcial' },
       Atrasado: { color: '#DC2626', bg: '#FEF2F2', label: 'Atrasado' },
     };
@@ -155,7 +155,8 @@ export default function CobrancasListScreen() {
           <View>
             <Text style={styles.footerLabel}>Total</Text>
             <Text style={styles.footerValue}>{formatarMoeda(item.totalClientePaga)}</Text>
-          </View>          <View style={styles.footerRight}>
+          </View>
+          <View style={styles.footerRight}>
             <Text style={styles.footerLabel}>Recebido</Text>
             <Text style={[styles.footerValue, { color: '#16A34A' }]}>
               {formatarMoeda(item.valorRecebido)}
@@ -204,7 +205,8 @@ export default function CobrancasListScreen() {
 
       {/* Filtros */}
       <ScrollView
-        horizontal        showsHorizontalScrollIndicator={false}
+        horizontal
+        showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.filtersScroll}
       >
         {COBRANCA_FILTROS.STATUS.map((filtro) => (
@@ -254,7 +256,8 @@ export default function CobrancasListScreen() {
         </Text>
       </View>
 
-      {/* Lista */}      <FlatList
+      {/* Lista */}
+      <FlatList
         data={cobrancasFiltradas()}
         renderItem={renderCobranca}
         keyExtractor={(item) => String(item.id)}
@@ -271,8 +274,7 @@ export default function CobrancasListScreen() {
             colors={['#2563EB']}
             tintColor="#2563EB"
           />
-      
-  }
+        }
         showsVerticalScrollIndicator={false}
       />
 

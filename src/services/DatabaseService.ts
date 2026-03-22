@@ -906,6 +906,64 @@ class DatabaseService {
   }
 
   // ==========================================================================
+  // MÉTODOS DE QUERY DIRETA (RAW SQL)
+  // ==========================================================================
+
+  /**
+   * Executa uma query SQL direta e retorna todos os resultados
+   * Use com cuidado - prefira os métodos CRUD genéricos quando possível
+   */
+  async getAllAsync<T>(query: string, params: any[] = []): Promise<T[]> {
+    if (!this.isReady()) {
+      await this.waitForReady();
+    }
+    if (!this.db) throw new Error('Database não inicializado');
+
+    try {
+      const results = await this.db.getAllAsync<T>(query, params);
+      return results || [];
+    } catch (error) {
+      console.error('[Database] Erro na query:', query, error);
+      return [];
+    }
+  }
+
+  /**
+   * Executa uma query SQL direta e retorna o primeiro resultado
+   */
+  async getFirstAsync<T>(query: string, params: any[] = []): Promise<T | null> {
+    if (!this.isReady()) {
+      await this.waitForReady();
+    }
+    if (!this.db) throw new Error('Database não inicializado');
+
+    try {
+      const result = await this.db.getFirstAsync<T>(query, params);
+      return result || null;
+    } catch (error) {
+      console.error('[Database] Erro na query:', query, error);
+      return null;
+    }
+  }
+
+  /**
+   * Executa uma query SQL de escrita (INSERT, UPDATE, DELETE)
+   */
+  async runAsync(query: string, params: any[] = []): Promise<SQLite.SQLiteRunResult> {
+    if (!this.isReady()) {
+      await this.waitForReady();
+    }
+    if (!this.db) throw new Error('Database não inicializado');
+
+    try {
+      return await this.db.runAsync(query, params);
+    } catch (error) {
+      console.error('[Database] Erro na execução:', query, error);
+      throw error;
+    }
+  }
+
+  // ==========================================================================
   // TRANSACÇÕES E BATCH
   // ==========================================================================
 
@@ -1219,10 +1277,16 @@ class DatabaseService {
     totalCobrancas: number;
   }> {
     if (!this.db) throw new Error('Database não inicializado');
-    let where = `deletedAt IS NULL`;
+    
+    // Para valores recebidos, usamos a data de criação/atualização da cobrança
+    // pois dataPagamento só é preenchido quando status = 'Pago'
+    // Mas o valorRecebido é registrado no momento da cobrança
+    let where = `deletedAt IS NULL AND valorRecebido > 0`;
     const params: any[] = [];
-    if (dataInicio) { where += ` AND dataPagamento >= ?`; params.push(dataInicio); }
-    if (dataFim)    { where += ` AND dataPagamento <= ?`; params.push(dataFim); }
+    
+    // Usar createdAt para filtrar por período (quando a cobrança foi feita)
+    if (dataInicio) { where += ` AND DATE(createdAt) >= DATE(?)`; params.push(dataInicio); }
+    if (dataFim)    { where += ` AND DATE(createdAt) <= DATE(?)`; params.push(dataFim); }
 
     // Total arrecadado = valor recebido (dinheiro que entrou)
     // totalClientePaga = valor que o cliente deveria pagar (incluindo saldo anterior)
