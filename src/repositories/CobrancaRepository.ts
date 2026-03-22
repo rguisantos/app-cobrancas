@@ -208,10 +208,10 @@ class CobrancaRepository {
   async update(cobranca: Partial<HistoricoCobranca> & { id: string }): Promise<HistoricoCobranca | null> {
     try {
       const existing = await this.getById(cobranca.id);
-      if (!existing) {        console.warn('[CobrancaRepository] Cobrança não encontrada para atualização:', cobranca.id);
+      if (!existing) {
+        console.warn('[CobrancaRepository] Cobrança não encontrada para atualização:', cobranca.id);
         return null;
-    
-  }
+      }
 
       const cobrancaAtualizada: HistoricoCobranca = {
         ...existing,
@@ -220,16 +220,22 @@ class CobrancaRepository {
         version: (existing.version || 0) + 1,
       };
 
+      console.log('[CobrancaRepository] Atualizando cobrança:', {
+        id: cobranca.id,
+        statusAnterior: existing.status,
+        saldoAnterior: existing.saldoDevedorGerado,
+        novoStatus: cobrancaAtualizada.status,
+        novoSaldo: cobrancaAtualizada.saldoDevedorGerado,
+      });
+
       await databaseService.update(this.entityType, cobrancaAtualizada);
-      
-      console.log('[CobrancaRepository] Cobrança atualizada:', cobranca.id);
+
+      console.log('[CobrancaRepository] Cobrança atualizada com sucesso:', cobranca.id);
       return cobrancaAtualizada;
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao atualizar cobrança:', error);
       throw error;
-  
-  }
-
+    }
   }
 
   /**
@@ -642,25 +648,34 @@ class CobrancaRepository {
   }[]> {
     try {
       const todas = await this.getAll({ clienteId });
-      
+      console.log('[CobrancaRepository] getSaldosPendentesFinalizados - Total cobranças:', todas.length);
+
       // Buscar locações finalizadas/canceladas para verificar
       const locacaoIds = [...new Set(todas.map(c => String(c.locacaoId)))];
       const locacoesFinalizadas = new Set<string>();
-      
+
       // Verificar status de cada locação
       for (const locacaoId of locacaoIds) {
         const locacao = await databaseService.getById<any>('locacao', locacaoId);
         if (locacao && (locacao.status === 'Finalizada' || locacao.status === 'Cancelada')) {
           locacoesFinalizadas.add(locacaoId);
+          console.log('[CobrancaRepository] Locação finalizada:', locacaoId, 'status:', locacao.status);
         }
       }
-      
+
       // Filtrar apenas cobranças de locações finalizadas/canceladas
       const comSaldo = todas.filter(
         c => (c.status === 'Parcial' || c.status === 'Pendente' || c.status === 'Atrasado')
           && c.saldoDevedorGerado > 0
           && locacoesFinalizadas.has(String(c.locacaoId))
       );
+      console.log('[CobrancaRepository] Cobranças com saldo pendente:', comSaldo.map(c => ({
+        id: c.id,
+        locacaoId: c.locacaoId,
+        status: c.status,
+        saldoDevedorGerado: c.saldoDevedorGerado,
+        produtoIdentificador: c.produtoIdentificador
+      })));
 
       // Agrupar por locacaoId
       const mapa: Record<string, HistoricoCobranca[]> = {};
@@ -670,13 +685,28 @@ class CobrancaRepository {
         mapa[lid].push(c);
       }
 
-      return Object.entries(mapa).map(([locacaoId, lista]) => ({
-        locacaoId,
-        produtoIdentificador: lista[0].produtoIdentificador,
-        saldoPendente: lista.reduce((s, c) => s + c.saldoDevedorGerado, 0),
-        cobranças: lista,
-      }));
-    } catch {
+      // Para cada locação, pegar APENAS a última cobrança (a mais recente)
+      // pois o saldoDevedorGerado já inclui o saldo anterior acumulado
+      const resultado = Object.entries(mapa).map(([locacaoId, lista]) => {
+        // Ordenar por data de atualização (mais recente primeiro)
+        const sorted = lista.sort((a, b) => {
+          const dateA = new Date(a.updatedAt || a.createdAt || a.dataInicio).getTime();
+          const dateB = new Date(b.updatedAt || b.createdAt || b.dataInicio).getTime();
+          return dateB - dateA;
+        });
+        const ultimaCobranca = sorted[0];
+
+        return {
+          locacaoId,
+          produtoIdentificador: ultimaCobranca.produtoIdentificador,
+          saldoPendente: ultimaCobranca.saldoDevedorGerado || 0,
+          cobranças: [ultimaCobranca], // apenas a última
+        };
+      });
+      console.log('[CobrancaRepository] Resultado getSaldosPendentesFinalizados:', resultado);
+      return resultado;
+    } catch (error) {
+      console.error('[CobrancaRepository] Erro em getSaldosPendentesFinalizados:', error);
       return [];
     }
   }

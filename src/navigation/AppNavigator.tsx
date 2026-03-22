@@ -54,10 +54,8 @@ import SettingsScreen from '../screens/SettingsScreen';
 import RotasGerenciarScreen from '../screens/RotasGerenciarScreen';
 import AtributosProdutoGerenciarScreen from '../screens/AtributosProdutoGerenciarScreen';
 import RelatorioManutencaoScreen       from '../screens/RelatorioManutencaoScreen';
-import RelatorioFinanceiroScreen        from '../screens/RelatorioFinanceiroScreen';
+import RelatorioCobrancasScreen         from '../screens/RelatorioCobrancasScreen';
 import RelatorioSaldoDevedorScreen      from '../screens/RelatorioSaldoDevedorScreen';
-import RelatorioPeriodoScreen           from '../screens/RelatorioPeriodoScreen';
-import RelatorioRotaDiariaScreen        from '../screens/RelatorioRotaDiariaScreen';
 import UsuariosGerenciarScreen from '../screens/UsuariosGerenciarScreen';
 
 // ============================================================================
@@ -128,10 +126,8 @@ export type ModalStackParamList = {
   AtributosProdutoGerenciar: undefined;
   UsuariosGerenciar: undefined;
   RelatorioManutencao:     undefined;
-  RelatorioFinanceiro:     undefined;
+  RelatorioCobrancas:      undefined;
   RelatorioSaldoDevedor:   undefined;
-  RelatorioPeriodo:        undefined;
-  RelatorioRotaDiaria:     undefined;
 };
 
 // Root Stack (gerencia auth state)
@@ -396,24 +392,14 @@ function ModalNavigator() {
         options={{ title: 'Relatório de Manutenções' }}
       />
       <ModalStack.Screen
-        name="RelatorioFinanceiro"
-        component={RelatorioFinanceiroScreen}
-        options={{ title: 'Resumo Financeiro' }}
+        name="RelatorioCobrancas"
+        component={RelatorioCobrancasScreen}
+        options={{ title: 'Relatório de Cobranças' }}
       />
       <ModalStack.Screen
         name="RelatorioSaldoDevedor"
         component={RelatorioSaldoDevedorScreen}
         options={{ title: 'Saldo Devedor' }}
-      />
-      <ModalStack.Screen
-        name="RelatorioPeriodo"
-        component={RelatorioPeriodoScreen}
-        options={{ title: 'Cobranças por Período' }}
-      />
-      <ModalStack.Screen
-        name="RelatorioRotaDiaria"
-        component={RelatorioRotaDiariaScreen}
-        options={{ title: 'Rota Diária'}}
       />
     </ModalStack.Navigator>
   );

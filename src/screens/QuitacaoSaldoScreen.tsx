@@ -36,7 +36,16 @@ export default function QuitacaoSaldoScreen() {
   const [observacao,   setObservacao]   = useState('');
   const [salvando,     setSalvando]     = useState(false);
 
-  const saldoTotal = cobrancasList.reduce((s, c) => s + c.saldoDevedorGerado, 0);
+  // O saldo total deve ser da ÚLTIMA cobrança, pois cada uma já carrega o saldo anterior
+  // Ordenar por data e pegar a mais recente
+  const ultimaCobranca = cobrancasList.length > 0
+    ? [...cobrancasList].sort((a, b) => {
+        const dateA = new Date(a.updatedAt || a.createdAt || a.dataInicio).getTime();
+        const dateB = new Date(b.updatedAt || b.createdAt || b.dataInicio).getTime();
+        return dateB - dateA;
+      })[0]
+    : null;
+  const saldoTotal = ultimaCobranca?.saldoDevedorGerado || 0;
 
   useEffect(() => {
     cobrancaRepository.getByLocacao(locacaoId)
@@ -59,33 +68,56 @@ export default function QuitacaoSaldoScreen() {
       return;
     }
 
+    if (!ultimaCobranca) {
+      Alert.alert('Erro', 'Cobrança não encontrada');
+      return;
+    }
+
     setSalvando(true);
     try {
-      // Distribuir o pagamento pelas cobrancasList mais antigas primeiro (FIFO)
-      let restante = valor;
-      const ordenadas = [...cobrancasList].sort(
-        (a, b) => new Date(a.dataInicio).getTime() - new Date(b.dataInicio).getTime()
-      );
+      // O saldoDevedorGerado já é o valor pendente acumulado
+      // Reduzir diretamente pelo valor pago
+      const novoSaldo = ultimaCobranca.saldoDevedorGerado - valor;
+      const novoRecebido = ultimaCobranca.valorRecebido + valor;
+      const novoStatus = novoSaldo <= 0
+        ? 'Pago'
+        : novoRecebido > 0 ? 'Parcial' : 'Pendente';
 
-      for (const c of ordenadas) {
-        if (restante <= 0) break;
-        const pagamento = Math.min(restante, c.saldoDevedorGerado);
-        const novoRecebido = c.valorRecebido + pagamento;
-        const novoSaldo = c.totalClientePaga - novoRecebido;
-        const novoStatus = novoSaldo <= 0
-          ? 'Pago'
-          : novoRecebido > 0 ? 'Parcial' : 'Pendente';
+      console.log('[QuitacaoSaldo] Atualizando cobrança:', {
+        id: ultimaCobranca.id,
+        saldoAnterior: ultimaCobranca.saldoDevedorGerado,
+        valorPago: valor,
+        novoSaldo,
+        novoStatus
+      });
 
-        await atualizarCobranca({
-          id: String(c.id),
-          valorRecebido:     novoRecebido,
-          saldoDevedorGerado: Math.max(0, novoSaldo),
-          status:            novoStatus,
-          dataPagamento:     novoStatus === 'Pago' ? new Date().toISOString() : undefined,
-          observacao:        observacao || `Quitação parcial: ${formatarMoeda(pagamento)}`,
-        });
+      // Atualizar a última cobrança
+      const resultado = await atualizarCobranca({
+        id: String(ultimaCobranca.id),
+        valorRecebido:     novoRecebido,
+        saldoDevedorGerado: Math.max(0, novoSaldo),
+        status:            novoStatus,
+        dataPagamento:     novoStatus === 'Pago' ? new Date().toISOString() : undefined,
+        observacao:        observacao || `Quitação saldo devedor: ${formatarMoeda(valor)}`,
+      });
 
-        restante -= pagamento;
+      console.log('[QuitacaoSaldo] Resultado atualização:', resultado);
+
+      // Se quitou totalmente, marcar TODAS as outras cobranças pendentes como 'Pago'
+      if (novoStatus === 'Pago') {
+        const outrasPendentes = cobrancasList.filter(c => String(c.id) !== String(ultimaCobranca.id));
+        console.log('[QuitacaoSaldo] Outras pendentes para atualizar:', outrasPendentes.length);
+        for (const c of outrasPendentes) {
+          console.log('[QuitacaoSaldo] Atualizando cobrança adicional:', c.id);
+          await atualizarCobranca({
+            id: String(c.id),
+            valorRecebido: c.totalClientePaga, // Marca como totalmente recebido
+            saldoDevedorGerado: 0,
+            status: 'Pago',
+            dataPagamento: new Date().toISOString(),
+            observacao: 'Quitado junto com a última cobrança',
+          });
+        }
       }
 
       const saldoRestante = saldoTotal - valor;
@@ -101,7 +133,7 @@ export default function QuitacaoSaldoScreen() {
     } finally {
       setSalvando(false);
     }
-  }, [valorPago, saldoTotal, cobrancasList, observacao, atualizarCobranca, navigation]);
+  }, [valorPago, saldoTotal, ultimaCobranca, observacao, atualizarCobranca, navigation]);
 
   if (carregando) {
     return <View style={s.center}><ActivityIndicator size="large" color="#E53935" /></View>;
@@ -140,30 +172,32 @@ export default function QuitacaoSaldoScreen() {
           <Text style={s.saldoValor}>{formatarMoeda(saldoTotal)}</Text>
         </View>
 
-        {/* cobrancasList pendentes */}
-        <Text style={s.secTitle}>Cobranças em aberto</Text>
-        {cobrancasList.map(c => (
-          <View key={String(c.id)} style={s.cobrancaCard}>
-            <View style={s.cobrancaRow}>
-              <Text style={s.cobrancaLabel}>Período</Text>
-              <Text style={s.cobrancaValue}>
-                {formatarData(c.dataInicio)} → {formatarData(c.dataFim)}
-              </Text>
+        {/* Última cobrança - a que contém o saldo acumulado */}
+        {ultimaCobranca && (
+          <>
+            <Text style={s.secTitle}>Última Cobrança</Text>
+            <View style={s.cobrancaCard}>
+              <View style={s.cobrancaRow}>
+                <Text style={s.cobrancaLabel}>Período</Text>
+                <Text style={s.cobrancaValue}>
+                  {formatarData(ultimaCobranca.dataInicio)} → {formatarData(ultimaCobranca.dataFim)}
+                </Text>
+              </View>
+              <View style={s.cobrancaRow}>
+                <Text style={s.cobrancaLabel}>Total cobrado</Text>
+                <Text style={s.cobrancaValue}>{formatarMoeda(ultimaCobranca.totalClientePaga)}</Text>
+              </View>
+              <View style={s.cobrancaRow}>
+                <Text style={s.cobrancaLabel}>Já recebido</Text>
+                <Text style={[s.cobrancaValue, { color: '#16A34A' }]}>{formatarMoeda(ultimaCobranca.valorRecebido)}</Text>
+              </View>
+              <View style={[s.cobrancaRow, s.cobrancaRowSaldo]}>
+                <Text style={s.cobrancaLabelSaldo}>Saldo devedor</Text>
+                <Text style={s.cobrancaValueSaldo}>{formatarMoeda(ultimaCobranca.saldoDevedorGerado)}</Text>
+              </View>
             </View>
-            <View style={s.cobrancaRow}>
-              <Text style={s.cobrancaLabel}>Total cobrado</Text>
-              <Text style={s.cobrancaValue}>{formatarMoeda(c.totalClientePaga)}</Text>
-            </View>
-            <View style={s.cobrancaRow}>
-              <Text style={s.cobrancaLabel}>Já recebido</Text>
-              <Text style={[s.cobrancaValue, { color: '#16A34A' }]}>{formatarMoeda(c.valorRecebido)}</Text>
-            </View>
-            <View style={[s.cobrancaRow, s.cobrancaRowSaldo]}>
-              <Text style={s.cobrancaLabelSaldo}>Saldo devedor</Text>
-              <Text style={s.cobrancaValueSaldo}>{formatarMoeda(c.saldoDevedorGerado)}</Text>
-            </View>
-          </View>
-        ))}
+          </>
+        )}
 
         {/* pagamento */}
         <Text style={s.secTitle}>Registrar Pagamento</Text>

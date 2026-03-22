@@ -184,6 +184,11 @@ export default function CobrancaClienteScreen() {
     }));
   }, [relogioAtual, descontoPartidas, descontoDinheiro, bonificacao, relogioAnterior, locacao, forma, isPeriodo]);
 
+  // ── antes do vencimento? ───────────────────────────────────────────────
+  const antesVencimento = isPeriodo && locacao?.dataPrimeiraCobranca
+    ? new Date(locacao.dataPrimeiraCobranca) > new Date()
+    : false;
+
   // ── total para modo período ────────────────────────────────────────────
   const valorPeriodo = locacao?.valorFixo ?? 0;
   // Para período: se não está antes do vencimento, SEMPRE incluir o valor do período
@@ -191,7 +196,7 @@ export default function CobrancaClienteScreen() {
   const totalPeriodo = isPeriodo
     ? saldoAnterior + (!antesVencimento || incluirPeriodo ? valorPeriodo : 0)
     : 0;
-    
+
   // Debug log
   useEffect(() => {
     if (isPeriodo && locacao) {
@@ -205,11 +210,6 @@ export default function CobrancaClienteScreen() {
     }
   }, [isPeriodo, locacao, valorPeriodo, saldoAnterior, totalPeriodo, incluirPeriodo]);
 
-  // ── antes do vencimento? ───────────────────────────────────────────────
-  const antesVencimento = isPeriodo && locacao?.dataPrimeiraCobranca
-    ? new Date(locacao.dataPrimeiraCobranca) > new Date()
-    : false;
-    
   // ── para período: se não está antes do vencimento, automaticamente incluir período ─────
   useEffect(() => {
     if (isPeriodo && !antesVencimento && !incluirPeriodo && valorPeriodo > 0) {
@@ -278,12 +278,53 @@ export default function CobrancaClienteScreen() {
       forma, totalPeriodo, incluirPeriodo, valorPeriodo, navigation]);
 
   if (carregando) return <View style={s.center}><ActivityIndicator size="large" color="#1976D2" /></View>;
-  if (locacoes.length === 0) return (
+
+  // Se não há produtos ativos E não há saldos pendentes de produtos finalizados, mostra mensagem
+  if (locacoes.length === 0 && saldosFinalizados.length === 0) return (
     <View style={s.center}>
       <Ionicons name="cube-outline" size={56} color="#E0E0E0" />
       <Text style={s.emptyText}>Nenhum produto ativo para este cliente</Text>
     </View>
   );
+
+  // Se há apenas saldos pendentes (sem produtos ativos), mostra lista de saldos para quitação
+  if (locacoes.length === 0 && saldosFinalizados.length > 0) {
+    return (
+      <SafeAreaView style={s.container} edges={['bottom']}>
+        <View style={s.onlySaldosHeader}>
+          <Ionicons name="alert-circle" size={24} color="#E53935" />
+          <Text style={s.onlySaldosTitle}>Saldos Devedores Pendentes</Text>
+          <Text style={s.onlySaldosSubtitle}>
+            Este cliente não possui produtos ativos, mas existem saldos devedores de produtos removidos.
+          </Text>
+        </View>
+        <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
+          {saldosFinalizados.map(sf => (
+            <TouchableOpacity
+              key={`fin_${sf.locacaoId}`}
+              style={s.saldoCard}
+              onPress={() => navigation.navigate('QuitacaoSaldo', {
+                locacaoId: sf.locacaoId, clienteId, clienteNome,
+                produtoIdentificador: sf.produtoIdentificador,
+              })}
+            >
+              <View style={s.saldoCardHeader}>
+                <Ionicons name="cube-outline" size={20} color="#E53935" />
+                <Text style={s.saldoCardTitle}>Produto N° {sf.produtoIdentificador}</Text>
+              </View>
+              <View style={s.saldoCardBody}>
+                <Text style={s.saldoCardLabel}>Saldo Devedor</Text>
+                <Text style={s.saldoCardValue}>{formatarMoeda(sf.saldoPendente)}</Text>
+              </View>
+              <View style={s.saldoCardFooter}>
+                <Text style={s.saldoCardAction}>Toque para quitar o saldo →</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   const labelTotal  = isPagar ? 'TOTAL (CLIENTE RECEBE)' : 'TOTAL (CLIENTE PAGA)';
   const labelValor  = isPagar ? 'VALOR PAGO' : 'VALOR RECEBIDO';
@@ -770,4 +811,16 @@ const s = StyleSheet.create({
   btnAvancar:   { backgroundColor: '#1565C0', borderRadius: 6, padding: 16, alignItems: 'center' },
   btnDisabled:  { backgroundColor: '#BDBDBD' },
   btnAvancarText:{ fontSize: 15, fontWeight: '700', color: '#FFFFFF', letterSpacing: 1 },
+  // Styles for saldo pendente only view (no active products)
+  onlySaldosHeader: { backgroundColor: '#FEF2F2', padding: 16, borderBottomWidth: 1, borderBottomColor: '#FECACA', alignItems: 'center' },
+  onlySaldosTitle: { fontSize: 16, fontWeight: '700', color: '#E53935', marginTop: 8, textAlign: 'center' },
+  onlySaldosSubtitle: { fontSize: 13, color: '#7F1D1D', marginTop: 4, textAlign: 'center', lineHeight: 18 },
+  saldoCard: { backgroundColor: '#FFFFFF', borderRadius: 8, marginBottom: 12, elevation: 2, overflow: 'hidden', borderLeftWidth: 4, borderLeftColor: '#E53935' },
+  saldoCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderBottomWidth: 1, borderBottomColor: '#F5F5F5', backgroundColor: '#FFFBEB' },
+  saldoCardTitle: { fontSize: 14, fontWeight: '600', color: '#212121' },
+  saldoCardBody: { padding: 16, alignItems: 'center' },
+  saldoCardLabel: { fontSize: 12, color: '#9E9E9E', marginBottom: 4 },
+  saldoCardValue: { fontSize: 24, fontWeight: '700', color: '#E53935' },
+  saldoCardFooter: { padding: 12, backgroundColor: '#F5F5F5', alignItems: 'center' },
+  saldoCardAction: { fontSize: 13, fontWeight: '600', color: '#1976D2' },
 });

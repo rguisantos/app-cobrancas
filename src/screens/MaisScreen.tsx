@@ -136,18 +136,17 @@ export default function MaisScreen() {
 
             {/* Relatórios */}
             <View style={{ height: 1, backgroundColor: '#F1F5F9', marginVertical: 4 }} />
-            <MenuItem icon="stats-chart"      iconBg="#EFF6FF" iconColor="#2563EB"
-              title="Resumo Financeiro"
-              subtitle="Totais, descontos e ticket médio" onPress={() => navModal('RelatorioFinanceiro')} />
+            <MenuItem
+              icon="stats-chart"
+              iconBg="#EFF6FF"
+              iconColor="#2563EB"
+              title="Relatório de Cobranças"
+              subtitle="Resumo, período e rotas unificado"
+              onPress={() => navModal('RelatorioCobrancas')}
+            />
             <MenuItem icon="warning"          iconBg="#FEF2F2" iconColor="#DC2626"
               title="Saldo Devedor"
               subtitle="Clientes com pagamento em aberto" onPress={() => navModal('RelatorioSaldoDevedor')} />
-            <MenuItem icon="calendar"         iconBg="#F0FDF4" iconColor="#16A34A"
-              title="Cobranças por Período"
-              subtitle="Mensal, semanal e diário" onPress={() => navModal('RelatorioPeriodo')} />
-            <MenuItem icon="map"              iconBg="#FFF7ED" iconColor="#EA580C"
-              title="Rota Diária"
-              subtitle="Cobranças do dia agrupadas por rota" onPress={() => navModal('RelatorioRotaDiaria')} />
           </MenuGroup>
         </>)}
 
