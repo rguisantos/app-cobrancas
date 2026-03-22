@@ -101,15 +101,13 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
 
       const [
         totalClientes,
-        totalProdutos,
-        resumoLocacoes,
+        resumoProdutos,
         cobrancasPendentes,
         resumoHoje,
         resumoMes,
       ] = await Promise.all([
         clienteRepository.count({ status: 'Ativo' }),
-        produtoRepository.count(),
-        locacaoRepository.getResumo(),
+        produtoRepository.getResumo(),
         cobrancaRepository.getPendentes(),
         databaseService.getResumoFinanceiro(hojeStr, hojeStr),
         databaseService.getResumoFinanceiro(primeiroDiaMes, hojeStr),
@@ -117,10 +115,10 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
 
       const metricas: DashboardMobileMetricas = {
         totalClientes,
-        totalProdutos,
+        totalProdutos: resumoProdutos.totalProdutos,
         cobrancasPendentes: cobrancasPendentes.length,
-        produtosLocados: resumoLocacoes.totalAtivas,
-        produtosEstoque: resumoLocacoes.totalLocacoes - resumoLocacoes.totalAtivas,
+        produtosLocados: resumoProdutos.totalLocados,
+        produtosEstoque: resumoProdutos.totalDisponiveis,
         // Financeiro
         totalRecebidoHoje: resumoHoje.totalArrecadado,
         totalRecebidoMes: resumoMes.totalArrecadado,
