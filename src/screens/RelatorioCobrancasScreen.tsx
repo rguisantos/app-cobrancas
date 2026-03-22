@@ -166,19 +166,15 @@ export default function RelatorioCobrancasScreen() {
       <View style={st.totaisCard}>
         <View style={st.totaisRow}>
           <View style={st.totaisItem}>
-            <Text style={st.totaisLabel}>Total Arrecadado</Text>
-            <Text style={st.totaisValue}>{formatarMoeda(resumo?.totalArrecadado ?? 0)}</Text>
+            <Text style={st.totaisLabel}>Total a Receber</Text>
+            <Text style={[st.totaisValue, { color: '#0891B2' }]}>{formatarMoeda(resumo?.totalClientePaga ?? 0)}</Text>
             <Text style={st.totaisSub}>{resumo?.totalCobrancas ?? 0} cobranças</Text>
           </View>
           <View style={st.totaisSep} />
           <View style={st.totaisItem}>
-            <Text style={st.totaisLabel}>Empresa Recebe</Text>
-            <Text style={[st.totaisValue, { color: '#2563EB' }]}>{formatarMoeda(resumo?.totalEmpresaRecebe ?? 0)}</Text>
-            <Text style={st.totaisSub}>
-              {resumo?.totalArrecadado > 0 
-                ? `${((resumo.totalEmpresaRecebe/resumo.totalArrecadado)*100).toFixed(1)}%` 
-                : '0%'}
-            </Text>
+            <Text style={st.totaisLabel}>Total Recebido</Text>
+            <Text style={st.totaisValue}>{formatarMoeda(resumo?.totalArrecadado ?? 0)}</Text>
+            <Text style={st.totaisSub}>Em caixa</Text>
           </View>
         </View>
       </View>
@@ -191,7 +187,7 @@ export default function RelatorioCobrancasScreen() {
 
       <StatCard icon="wallet" color="#16A34A" bg="#F0FDF4"
         label="Recebido (em caixa)"
-        value={formatarMoeda(resumo?.totalPago ?? 0)}
+        value={formatarMoeda(resumo?.totalArrecadado ?? 0)}
         sub="Valores já pagos" />
 
       <StatCard icon="alert-circle" color="#DC2626" bg="#FEF2F2"
@@ -201,11 +197,13 @@ export default function RelatorioCobrancasScreen() {
 
       <StatCard icon="pricetag" color="#EA580C" bg="#FFF7ED"
         label="Total em Descontos"
-        value={formatarMoeda(resumo?.totalDesconto ?? 0)} />
+        value={formatarMoeda(resumo?.totalDesconto ?? 0)}
+        sub="Descontos concedidos" />
 
       <StatCard icon="trending-up" color="#0891B2" bg="#F0F9FF"
         label="Ticket Médio"
-        value={formatarMoeda(ticketMedio)} />
+        value={formatarMoeda(ticketMedio)}
+        sub="Por cobrança" />
 
       <View style={{ height: 24 }} />
     </ScrollView>
@@ -235,7 +233,6 @@ export default function RelatorioCobrancasScreen() {
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={st.periodoTotal}>{formatarMoeda(item.total)}</Text>
-                <Text style={st.periodoEmpresa}>empresa: {formatarMoeda(item.empresaRecebe)}</Text>
               </View>
             </View>
             <BarraProgresso percentual={barPct} />
@@ -380,13 +377,13 @@ export default function RelatorioCobrancasScreen() {
           <View style={st.headerResumoItem}>
             <Ionicons name="cash" size={16} color="#16A34A" />
             <Text style={st.headerResumoValue}>{formatarMoeda(resumo?.totalArrecadado ?? 0)}</Text>
-            <Text style={st.headerResumoLabel}>Total</Text>
+            <Text style={st.headerResumoLabel}>Recebido</Text>
           </View>
           <View style={st.headerResumoSep} />
           <View style={st.headerResumoItem}>
-            <Ionicons name="business" size={16} color="#2563EB" />
-            <Text style={st.headerResumoValue}>{formatarMoeda(resumo?.totalEmpresaRecebe ?? 0)}</Text>
-            <Text style={st.headerResumoLabel}>Empresa</Text>
+            <Ionicons name="card" size={16} color="#0891B2" />
+            <Text style={st.headerResumoValue}>{formatarMoeda(resumo?.totalClientePaga ?? 0)}</Text>
+            <Text style={st.headerResumoLabel}>A Receber</Text>
           </View>
           <View style={st.headerResumoSep} />
           <View style={st.headerResumoItem}>
@@ -489,7 +486,6 @@ const st = StyleSheet.create({
   periodoLabel: { fontSize: 15, fontWeight: '700', color: '#1E293B' },
   periodoQtd: { fontSize: 12, color: '#94A3B8', marginTop: 2 },
   periodoTotal: { fontSize: 17, fontWeight: '800', color: '#16A34A' },
-  periodoEmpresa: { fontSize: 11, color: '#2563EB', marginTop: 2 },
 
   // Barra progresso
   barBg: { height: 6, backgroundColor: '#F1F5F9', borderRadius: 3, overflow: 'hidden' },

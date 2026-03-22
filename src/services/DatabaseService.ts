@@ -1213,11 +1213,10 @@ class DatabaseService {
 
   async getResumoFinanceiro(dataInicio?: string, dataFim?: string): Promise<{
     totalArrecadado: number;
-    totalEmpresaRecebe: number;
+    totalClientePaga: number;
     totalDesconto: number;
     totalSaldoDevedor: number;
     totalCobrancas: number;
-    totalPago: number;
   }> {
     if (!this.db) throw new Error('Database não inicializado');
     let where = `deletedAt IS NULL`;
@@ -1226,14 +1225,13 @@ class DatabaseService {
     if (dataFim)    { where += ` AND dataPagamento <= ?`; params.push(dataFim); }
 
     // Total arrecadado = valor recebido (dinheiro que entrou)
-    // totalClientePaga inclui saldo anterior, então usamos valorRecebido para saber o que realmente entrou
+    // totalClientePaga = valor que o cliente deveria pagar (incluindo saldo anterior)
     const row = await this.db.getFirstAsync<any>(
       `SELECT
         COALESCE(SUM(valorRecebido), 0)         AS totalArrecadado,
-        COALESCE(SUM(valorPercentual), 0)       AS totalEmpresaRecebe,
+        COALESCE(SUM(totalClientePaga), 0)      AS totalClientePaga,
         COALESCE(SUM(COALESCE(descontoDinheiro,0) + COALESCE(descontoPartidasValor,0)), 0) AS totalDesconto,
-        COUNT(*) AS totalCobrancas,
-        COALESCE(SUM(valorRecebido), 0) AS totalPago
+        COUNT(*) AS totalCobrancas
        FROM cobrancas WHERE ${where}`,
       params
     );
@@ -1252,16 +1250,15 @@ class DatabaseService {
     
     return { 
       totalArrecadado: row?.totalArrecadado || 0, 
-      totalEmpresaRecebe: row?.totalEmpresaRecebe || 0, 
+      totalClientePaga: row?.totalClientePaga || 0, 
       totalDesconto: row?.totalDesconto || 0, 
       totalSaldoDevedor: saldoDevedorRow?.totalSaldoDevedor || 0, 
-      totalCobrancas: row?.totalCobrancas || 0, 
-      totalPago: row?.totalPago || 0 
+      totalCobrancas: row?.totalCobrancas || 0
     };
   }
 
   async getCobrancasPorPeriodo(agrupamento: 'dia' | 'semana' | 'mes', dataInicio?: string, dataFim?: string): Promise<{
-    periodo: string; total: number; empresaRecebe: number; qtd: number;
+    periodo: string; total: number; qtd: number;
   }[]> {
     if (!this.db) throw new Error('Database não inicializado');
     const formatExpr = agrupamento === 'dia'
@@ -1279,7 +1276,6 @@ class DatabaseService {
     return await this.db.getAllAsync<any>(
       `SELECT ${formatExpr} AS periodo,
         COALESCE(SUM(valorRecebido), 0) AS total,
-        COALESCE(SUM(valorPercentual), 0) AS empresaRecebe,
         COUNT(*) AS qtd
        FROM cobrancas WHERE ${where}
        GROUP BY periodo ORDER BY dataPagamento DESC LIMIT 60`,
