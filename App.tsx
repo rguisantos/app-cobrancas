@@ -55,24 +55,6 @@ if (__DEV__) {
 }
 
 // ============================================================================
-// UTILITÁRIO: COMPOSE PROVIDERS
-// ============================================================================
-
-/**
- * Combina múltiplos providers em um único componente
- * Reduz o aninhamento excessivo de providers
- */
-const composeProviders = (
-  ...providers: Array<React.FC<{ children: React.ReactNode }>>
-) => {
-  return ({ children }: { children: React.ReactNode }) =>
-    providers.reduceRight(
-      (acc, Provider) => <Provider>{acc}</Provider>,
-      children
-    );
-};
-
-// ============================================================================
 // ERROR BOUNDARY
 // ============================================================================
 
@@ -118,7 +100,7 @@ class ErrorBoundary extends React.Component<
 }
 
 // ============================================================================
-// TELA DE ERRO (Componente único, sem duplicação)
+// TELA DE ERRO
 // ============================================================================
 
 interface ErrorScreenProps {
@@ -131,7 +113,6 @@ function ErrorScreen({ error, onRetry }: ErrorScreenProps) {
 
   return (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: '#FFFFFF' }}>
-      {/* Ícone de erro */}
       <View style={{
         width: 80,
         height: 80,
@@ -144,19 +125,16 @@ function ErrorScreen({ error, onRetry }: ErrorScreenProps) {
         <Ionicons name="alert-circle" size={40} color={primaryColor} />
       </View>
 
-      {/* Título */}
       <Text style={{ fontSize: 20, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>
         Oops! Algo deu errado
       </Text>
 
-      {/* Mensagem */}
       <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 24 }}>
         {__DEV__ && error?.message
           ? error.message
           : 'Ocorreu um erro inesperado. Tente novamente ou entre em contato com o suporte.'}
       </Text>
 
-      {/* Botão de retry */}
       <TouchableOpacity
         onPress={onRetry}
         style={{
@@ -175,7 +153,6 @@ function ErrorScreen({ error, onRetry }: ErrorScreenProps) {
         </Text>
       </TouchableOpacity>
 
-      {/* Debug info (apenas em dev) */}
       {__DEV__ && error && (
         <ScrollView style={{ marginTop: 24, maxHeight: 200 }}>
           <Text style={{ fontSize: 10, color: '#94A3B8', fontFamily: 'monospace' }}>
@@ -216,14 +193,9 @@ function AppContent() {
 // DASHBOARD PROVIDER COM AUTENTICAÇÃO
 // ============================================================================
 
-/**
- * Wrapper do DashboardProvider que consome o AuthContext
- * para obter dados do usuário logado
- */
 function DashboardProviderWithAuth({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   
-  // Usar dados do usuário logado ou defaults
   const usuarioNome = user?.nome || 'Usuário';
   const usuarioTipo = user?.tipoPermissao || 'Administrador';
   
@@ -259,18 +231,14 @@ function AppWithDatabase() {
     }, 'App');
   }, []);
 
-  // Função para recarregar o app (multi-plataforma)
   const handleReload = React.useCallback(async () => {
     try {
-      // Usar expo-updates para recarregar (funciona em nativo)
       await Updates.reloadAsync();
     } catch (e) {
-      // Fallback: apenas logar o erro (em web ou se updates não disponível)
       logger.error('Não foi possível recarregar o app', e, 'App');
     }
   }, []);
 
-  // Mostrar erro se houver
   if (error) {
     return (
       <ErrorScreen
@@ -280,29 +248,39 @@ function AppWithDatabase() {
     );
   }
 
-  // Mostrar loading enquanto inicializa
   if (isLoading || !isReady) {
     return <LoadingScreen />;
   }
 
-  // Compor todos os providers de forma limpa
-  // IMPORTANTE: A ordem é da esquerda para a direita (outermost para innermost)
-  // AuthProvider deve vir PRIMEIRO para que useAuth() funcione nos providers internos
-  const AppProviders = composeProviders(
-    AuthProvider,
-    SyncProvider,
-    DashboardProviderWithAuth,
-    LocacaoProvider,
-    ClienteProvider,
-    ProdutoProvider,
-    CobrancaProvider,
-    RotaProvider,
-  );
-
+  // Providers em ordem correta (mais externo para mais interno)
+  // AuthProvider deve ser o mais externo para que useAuth() funcione nos providers internos
   return (
-    <AppProviders>
-      <AppContent />
-    </AppProviders>
+    <AuthProvider>
+      <SyncProvider
+        config={{
+          autoSyncEnabled: true,
+          autoSyncInterval: ENV.SYNC_INTERVAL,
+          syncOnAppStart: true,
+          syncOnAppResume: true,
+          warnBeforeLargeSync: true,
+          maxRecordsPerSync: ENV.MAX_RECORDS_PER_SYNC,
+        }}
+      >
+        <DashboardProviderWithAuth>
+          <LocacaoProvider>
+            <ClienteProvider>
+              <ProdutoProvider>
+                <CobrancaProvider>
+                  <RotaProvider>
+                    <AppContent />
+                  </RotaProvider>
+                </CobrancaProvider>
+              </ProdutoProvider>
+            </ClienteProvider>
+          </LocacaoProvider>
+        </DashboardProviderWithAuth>
+      </SyncProvider>
+    </AuthProvider>
   );
 }
 
