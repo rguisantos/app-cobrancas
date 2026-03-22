@@ -5,11 +5,9 @@
  */
 
 import React, { useCallback } from 'react';
-import { Alert, TouchableOpacity, useColorScheme } from 'react-native';
+import { Alert, useColorScheme } from 'react-native';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
-import { Ionicons }      from '@expo/vector-icons';
-import { useAuth }       from '../contexts/AuthContext';
 import { StatusPagamento } from '../types';
 
 import CobrancasListScreen        from '../screens/CobrancasListScreen';
@@ -17,7 +15,6 @@ import RotasCobrancaScreen        from '../screens/RotasCobrancaScreen';
 import ClientesRotaScreen         from '../screens/ClientesRotaScreen';
 import CobrancaClienteScreen      from '../screens/CobrancaClienteScreen';
 import ConfirmacaoPagamentoScreen from '../screens/ConfirmacaoPagamentoScreen';
-import CobrancaConfirmScreen      from '../screens/CobrancaConfirmScreen';
 import CobrancaDetailScreen       from '../screens/CobrancaDetailScreen';
 import HistoricoCobrancaScreen    from '../screens/HistoricoCobrancaScreen';
 import QuitacaoSaldoScreen        from '../screens/QuitacaoSaldoScreen';
@@ -85,8 +82,7 @@ const Stack = createNativeStackNavigator<CobrancasStackParamList>();
 // ============================================================================
 
 export default function CobrancasStack() {
-  const { user, hasPermission } = useAuth();
-  const colorScheme             = useColorScheme();
+  const colorScheme = useColorScheme();
 
   const headerTheme = {
     headerStyle:      { backgroundColor: colorScheme === 'dark' ? '#1565C0' : '#1976D2' },
@@ -94,9 +90,6 @@ export default function CobrancasStack() {
     headerTitleStyle: { fontWeight: '600' as const, color: '#FFFFFF' as const },
     contentStyle:     { backgroundColor: colorScheme === 'dark' ? '#0F172A' : '#F0F0F0' },
   };
-
-  const canCobrar = () =>
-    !!user && (user.tipoPermissao === 'Administrador' || hasPermission('cobrancasFaturas', 'mobile'));
 
   return (
     <Stack.Navigator
@@ -108,27 +101,13 @@ export default function CobrancasStack() {
       <Stack.Screen name="ClientesRota"          component={ClientesRotaScreen}         options={({ route }) => ({ title: route.params.rotaNome })} />
       <Stack.Screen name="CobrancaCliente"       component={CobrancaClienteScreen}      options={({ route }) => ({ title: route.params.clienteNome })} />
       <Stack.Screen name="ConfirmacaoPagamento"  component={ConfirmacaoPagamentoScreen} options={{ title: 'Confirmação Pagamento' }} />
-      <Stack.Screen name="CobrancaConfirm"       component={CobrancaConfirmScreen}      options={{ title: 'Editar Cobrança' }} />
 
       <Stack.Screen
         name="CobrancaDetail"
         component={CobrancaDetailScreen}
-        options={({ route, navigation }) => ({
+        options={{
           title: 'Detalhes da Cobrança',
-          headerRight: () =>
-            canCobrar() && route.params.locacaoId ? (
-              <TouchableOpacity
-                style={{ padding: 8 }}
-                onPress={() => navigation.navigate('CobrancaConfirm', {
-                  locacaoId: route.params.locacaoId!,
-                  cobrancaId: route.params.cobrancaId,
-                  modo: 'parcial',
-                })}
-              >
-                <Ionicons name="create-outline" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-            ) : null,
-        })}
+        }}
       />
 
       <Stack.Screen name="HistoricoCobranca" component={HistoricoCobrancaScreen} options={{ title: 'Histórico de Cobranças' }} />
