@@ -5,9 +5,7 @@
  * Responsabilidades:
  * - Configurar todos os Providers (Contexts)
  * - Configurar Navigation
- * - Configurar StatusBar
  * - Error Boundary
- * - Deep Linking (opcional)
  * - Suporte white label via BrandingProvider
  */
 
@@ -16,13 +14,14 @@ import { StatusBar, LogBox, View, Text, TouchableOpacity, ScrollView, ActivityIn
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Updates from 'expo-updates';
 
 // Navigation
 import AppNavigator from './src/navigation/AppNavigator';
 
 // Contexts
 import { DatabaseProvider, useDatabase } from './src/contexts/DatabaseContext';
-import { AuthProvider } from './src/contexts/AuthContext';
+import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { SyncProvider } from './src/contexts/SyncContext';
 import { DashboardProvider } from './src/contexts/DashboardContext';
 import { LocacaoProvider } from './src/contexts/LocacaoContext';
@@ -54,6 +53,24 @@ if (__DEV__) {
   ]);
   logger.setEnabled(true);
 }
+
+// ============================================================================
+// UTILITÁRIO: COMPOSE PROVIDERS
+// ============================================================================
+
+/**
+ * Combina múltiplos providers em um único componente
+ * Reduz o aninhamento excessivo de providers
+ */
+const composeProviders = (
+  ...providers: Array<React.FC<{ children: React.ReactNode }>>
+) => {
+  return ({ children }: { children: React.ReactNode }) =>
+    providers.reduceRight(
+      (acc, Provider) => <Provider>{acc}</Provider>,
+      children
+    );
+};
 
 // ============================================================================
 // ERROR BOUNDARY
@@ -89,13 +106,10 @@ class ErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <SafeAreaProvider>
-          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-          <ErrorScreen
-            error={this.state.error}
-            onRetry={this.handleRetry}
-          />
-        </SafeAreaProvider>
+        <ErrorScreen
+          error={this.state.error}
+          onRetry={this.handleRetry}
+        />
       );
     }
 
@@ -104,7 +118,7 @@ class ErrorBoundary extends React.Component<
 }
 
 // ============================================================================
-// TELA DE ERRO (Componente simples)
+// TELA DE ERRO (Componente único, sem duplicação)
 // ============================================================================
 
 interface ErrorScreenProps {
@@ -113,24 +127,10 @@ interface ErrorScreenProps {
 }
 
 function ErrorScreen({ error, onRetry }: ErrorScreenProps) {
-  return (
-    <SafeAreaProvider>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <GestureHandlerRootView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        <ErrorScreenContent error={error} onRetry={onRetry} />
-      </GestureHandlerRootView>
-    </SafeAreaProvider>
-  );
-}
-
-function ErrorScreenContent({ error, onRetry }: ErrorScreenProps) {
   const { primaryColor } = getBrandingConfig();
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: '#FFFFFF' }}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: '#FFFFFF' }}>
       {/* Ícone de erro */}
       <View style={{
         width: 80,
@@ -183,7 +183,7 @@ function ErrorScreenContent({ error, onRetry }: ErrorScreenProps) {
           </Text>
         </ScrollView>
       )}
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
@@ -195,13 +195,12 @@ function LoadingScreen() {
   const { primaryColor } = getBrandingConfig();
   
   return (
-    <GestureHandlerRootView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
       <ActivityIndicator size="large" color={primaryColor} />
       <Text style={{ marginTop: 16, fontSize: 16, color: '#64748B' }}>
         Inicializando banco de dados...
       </Text>
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
@@ -210,18 +209,28 @@ function LoadingScreen() {
 // ============================================================================
 
 function AppContent() {
+  return <AppNavigator />;
+}
+
+// ============================================================================
+// DASHBOARD PROVIDER COM AUTENTICAÇÃO
+// ============================================================================
+
+/**
+ * Wrapper do DashboardProvider que consome o AuthContext
+ * para obter dados do usuário logado
+ */
+function DashboardProviderWithAuth({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  
+  // Usar dados do usuário logado ou defaults
+  const usuarioNome = user?.nome || 'Usuário';
+  const usuarioTipo = user?.tipoPermissao || 'Administrador';
+  
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <StatusBar
-          barStyle="dark-content"
-          backgroundColor="#FFFFFF"
-          translucent={false}
-        />
-        {/* Navegação Principal */}
-        <AppNavigator />
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <DashboardProvider usuarioNome={usuarioNome} usuarioTipo={usuarioTipo}>
+      {children}
+    </DashboardProvider>
   );
 }
 
@@ -250,16 +259,24 @@ function AppWithDatabase() {
     }, 'App');
   }, []);
 
+  // Função para recarregar o app (multi-plataforma)
+  const handleReload = React.useCallback(async () => {
+    try {
+      // Usar expo-updates para recarregar (funciona em nativo)
+      await Updates.reloadAsync();
+    } catch (e) {
+      // Fallback: apenas logar o erro (em web ou se updates não disponível)
+      logger.error('Não foi possível recarregar o app', e, 'App');
+    }
+  }, []);
+
   // Mostrar erro se houver
   if (error) {
     return (
-      <SafeAreaProvider>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        <ErrorScreen
-          error={new Error(error)}
-          onRetry={() => window.location?.reload?.()}
-        />
-      </SafeAreaProvider>
+      <ErrorScreen
+        error={new Error(error)}
+        onRetry={handleReload}
+      />
     );
   }
 
@@ -268,37 +285,22 @@ function AppWithDatabase() {
     return <LoadingScreen />;
   }
 
-  // App pronto
+  // Compor todos os providers de forma limpa
+  const AppProviders = composeProviders(
+    RotaProvider,
+    CobrancaProvider,
+    ProdutoProvider,
+    ClienteProvider,
+    LocacaoProvider,
+    DashboardProviderWithAuth,
+    SyncProvider,
+    AuthProvider,
+  );
+
   return (
-    <AuthProvider>
-      <SyncProvider
-        config={{
-          autoSyncEnabled: true,
-          autoSyncInterval: ENV.SYNC_INTERVAL,
-          syncOnAppStart: true,
-          syncOnAppResume: true,
-          warnBeforeLargeSync: true,
-          maxRecordsPerSync: ENV.MAX_RECORDS_PER_SYNC,
-        }}
-      >
-        <DashboardProvider
-          usuarioNome="Usuário"
-          usuarioTipo="Administrador"
-        >
-          <LocacaoProvider>
-            <ClienteProvider>
-              <ProdutoProvider>
-                <CobrancaProvider>
-                  <RotaProvider>
-                    <AppContent />
-                  </RotaProvider>
-                </CobrancaProvider>
-              </ProdutoProvider>
-            </ClienteProvider>
-          </LocacaoProvider>
-        </DashboardProvider>
-      </SyncProvider>
-    </AuthProvider>
+    <AppProviders>
+      <AppContent />
+    </AppProviders>
   );
 }
 
@@ -307,14 +309,21 @@ function AppWithDatabase() {
 // ============================================================================
 
 export default function App() {
-  const clientId = undefined;
-
   return (
     <ErrorBoundary>
-      <BrandingProvider clientId={clientId}>
-        <DatabaseProvider>
-          <AppWithDatabase />
-        </DatabaseProvider>
+      <BrandingProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <SafeAreaProvider>
+            <StatusBar
+              barStyle="dark-content"
+              backgroundColor="#FFFFFF"
+              translucent={false}
+            />
+            <DatabaseProvider>
+              <AppWithDatabase />
+            </DatabaseProvider>
+          </SafeAreaProvider>
+        </GestureHandlerRootView>
       </BrandingProvider>
     </ErrorBoundary>
   );

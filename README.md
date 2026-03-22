@@ -323,12 +323,11 @@ Copie `.env.example` para `.env` e configure:
 
 ---
 
-## 👤 Login Padrão (Modo Mock)
+## 👤 Login (Modo Mock)
 
-```
-Email: admin@locacao.com
-Senha: admin123
-```
+Quando executando em modo mock (`EXPO_PUBLIC_USE_MOCK=true`), as credenciais são definidas no arquivo `.env`. Copie o `.env.example` e configure conforme necessário.
+
+> ⚠️ **Importante**: Nunca use credenciais reais de produção em arquivos .env!
 
 ---
 
