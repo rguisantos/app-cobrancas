@@ -82,7 +82,7 @@ const getNumberValue = (key: string, defaultValue: number = 0): number => {
 const parseEnvConfig = (): EnvConfig => {
   const rawConfig = {
     API_URL: getEnvValue('API_URL', 'https://api.seuservidor.com.br'),
-    USE_MOCK: true, // Sempre usar mock para demonstração
+    USE_MOCK: getBoolValue('USE_MOCK', true), // Respeita a variável de ambiente
     APP_VERSION: getEnvValue('APP_VERSION', '1.0.0'),
     APP_NAME: getEnvValue('APP_NAME', 'App Cobranças'),
     DEBUG: getBoolValue('DEBUG', true),

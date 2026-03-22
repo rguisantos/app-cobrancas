@@ -5,6 +5,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CONFIG } from '../config/config';
+import { ENV } from '../config/env';
 import logger from '../utils/logger';
 import { usuarioRepository, UsuarioLogin } from '../repositories/UsuarioRepository';
 import { databaseService } from './DatabaseService';
@@ -284,7 +285,7 @@ class AuthService {
           tipo: 'usuario',
           nome: 'Administrador',
           email: 'admin@locacao.com',
-          senha: 'admin123',
+          senha: ENV.MOCK_PASSWORD || 'admin123',
           cpf: '',
           telefone: '',
           tipoPermissao: 'Administrador',
@@ -300,19 +301,19 @@ class AuthService {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
-        logger.info('Usuário admin criado: admin@locacao.com / admin123');
+        logger.info('Usuário admin criado com credenciais do ambiente');
       } else {
         // Garantir que o admin tem a senha correta
         logger.info('Admin já existe, verificando credenciais...');
         
-        if ((adminExistente as any).senha !== 'admin123' || (adminExistente as any).status !== 'Ativo') {
+        if ((adminExistente as any).senha !== (ENV.MOCK_PASSWORD || 'admin123') || (adminExistente as any).status !== 'Ativo') {
           logger.info('Atualizando credenciais do admin...');
           await databaseService.saveUsuario({
             id: adminExistente.id || 'usr_admin',
             tipo: 'usuario',
             nome: 'Administrador',
             email: 'admin@locacao.com',
-            senha: 'admin123',
+            senha: ENV.MOCK_PASSWORD || 'admin123',
             cpf: (adminExistente as any).cpf || '',
             telefone: (adminExistente as any).telefone || '',
             tipoPermissao: 'Administrador',

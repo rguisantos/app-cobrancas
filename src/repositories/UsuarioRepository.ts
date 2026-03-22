@@ -11,6 +11,7 @@ import {
   PermissoesUsuario,
   EntityType 
 } from '../types';
+import logger from '../utils/logger';
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -264,14 +265,9 @@ class UsuarioRepository {
 
       const senhaArmazenada = (result as any).senha;
       
-      console.log('[UsuarioRepository] Comparando senhas:', {
-        senhaFornecida: senha,
-        senhaArmazenada: senhaArmazenada ? '***' + senhaArmazenada.slice(-3) : 'VAZIA',
-      });
-
       // Comparar senha (em produção usar bcrypt ou similar)
       if (senhaArmazenada && senhaArmazenada === senha) {
-        console.log('[UsuarioRepository] Senha correta! Login autorizado.');
+        logger.debug('[UsuarioRepository] Senha correta! Login autorizado.');
         
         // Atualizar último acesso
         await this.atualizarUltimoAcesso((result as any).id, 'Mobile');
