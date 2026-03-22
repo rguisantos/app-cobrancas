@@ -576,21 +576,33 @@ class CobrancaRepository {
 
   /**
    * Busca total de saldo devedor por cliente
+   * IMPORTANTE: Soma apenas a última cobrança de cada locação
+   * para evitar duplicação (cada cobrança carrega saldo anterior acumulado)
    */
   async getTotalSaldoDevedorByCliente(clienteId: string): Promise<number> {
     try {
-      const cobranças = await this.getAll({ clienteId });
-      
-      return cobranças.reduce(
-        (total, c) => total + c.saldoDevedorGerado,
-        0
+      // Buscar apenas a última cobrança de cada locação
+      // Usando subquery para obter o saldo mais recente por locação
+      const db = (await import('../services/DatabaseService')).databaseService;
+      const rows = await db.getAllAsync<any>(
+        `SELECT locacaoId, saldoDevedorGerado,
+                ROW_NUMBER() OVER (PARTITION BY locacaoId ORDER BY updatedAt DESC, createdAt DESC) as rn
+         FROM cobrancas 
+         WHERE deletedAt IS NULL AND clienteId = ? AND status != 'Pago'
+         AND saldoDevedorGerado > 0`,
+        [clienteId]
       );
+      
+      // Somar apenas as cobranças mais recentes (rn = 1)
+      const total = rows
+        .filter((r: any) => r.rn === 1)
+        .reduce((sum: number, r: any) => sum + (r.saldoDevedorGerado || 0), 0);
+      
+      return total;
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao calcular saldo devedor:', error);
       return 0;
-  
-  }
-
+    }
   }
 
   /**
