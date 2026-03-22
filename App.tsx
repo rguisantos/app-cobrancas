@@ -286,15 +286,17 @@ function AppWithDatabase() {
   }
 
   // Compor todos os providers de forma limpa
+  // IMPORTANTE: A ordem é da esquerda para a direita (outermost para innermost)
+  // AuthProvider deve vir PRIMEIRO para que useAuth() funcione nos providers internos
   const AppProviders = composeProviders(
-    RotaProvider,
-    CobrancaProvider,
-    ProdutoProvider,
-    ClienteProvider,
-    LocacaoProvider,
-    DashboardProviderWithAuth,
-    SyncProvider,
     AuthProvider,
+    SyncProvider,
+    DashboardProviderWithAuth,
+    LocacaoProvider,
+    ClienteProvider,
+    ProdutoProvider,
+    CobrancaProvider,
+    RotaProvider,
   );
 
   return (
