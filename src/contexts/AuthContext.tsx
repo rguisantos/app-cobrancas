@@ -119,16 +119,22 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   const login = useCallback(async (email: string, password: string) => {
     try {
       setIsLoading(true);
-      logger.info('[Auth] Tentando login', { email });
+      logger.info('[Auth] ====== INICIANDO LOGIN ======', { email });
 
       // Usar o AuthService que autentica com API ou SQLite local
       const response = await authService.login(email, password);
 
       const { token: newToken, user: usuarioLogado } = response;
 
+      logger.info('[Auth] Login bem-sucedido', { token: newToken ? 'recebido' : 'nulo', userId: usuarioLogado.id });
+
       // Passar token para o ApiService (para requisições autenticadas)
       apiService.setToken(newToken);
       logger.info('[Auth] Token configurado no ApiService');
+      
+      // Verificar se foi configurado
+      const tokenVerificado = apiService['token'];
+      logger.info('[Auth] Verificação do token no ApiService:', { hasToken: !!tokenVerificado, tokenPreview: tokenVerificado ? tokenVerificado.substring(0, 20) + '...' : 'nulo' });
 
       // Salvar no AsyncStorage
       await AsyncStorage.multiSet([
@@ -141,18 +147,19 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       setUser(usuarioLogado as Usuario);
       setIsSignout(false);
 
-      logger.info('[Auth] Login bem-sucedido', { email, role: usuarioLogado.tipoPermissao });
+      logger.info('[Auth] Login completo', { email, role: usuarioLogado.tipoPermissao });
 
       // Registrar dispositivo automaticamente após login
+      logger.info('[Auth] ====== INICIANDO REGISTRO DE DISPOSITIVO ======');
       try {
         const registrado = await syncService.ensureDeviceRegistered();
         if (registrado) {
-          logger.info('[Auth] Dispositivo registrado com sucesso');
+          logger.info('[Auth] ====== DISPOSITIVO REGISTRADO COM SUCESSO ======');
         } else {
-          logger.warn('[Auth] Falha ao registrar dispositivo');
+          logger.warn('[Auth] ====== FALHA AO REGISTRAR DISPOSITIVO ======');
         }
       } catch (regError) {
-        logger.warn('[Auth] Erro ao registrar dispositivo:', regError);
+        logger.error('[Auth] Erro ao registrar dispositivo:', regError);
         // Não falha o login se o registro falhar
       }
       

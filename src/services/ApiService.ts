@@ -142,6 +142,11 @@ class ApiService {
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseURL}${endpoint}`;
     
+    console.log(`[API] ====== REQUEST ======`);
+    console.log(`[API] URL: ${url}`);
+    console.log(`[API] Method: ${options.method || 'GET'}`);
+    console.log(`[API] Has Token: ${!!this.token}`);
+    
     // Configurar headers
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -151,29 +156,36 @@ class ApiService {
     // Adicionar token se existir
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
-  
-  }
+      console.log(`[API] Token: ${this.token.substring(0, 20)}...`);
+    } else {
+      console.warn('[API] ATENÇÃO: Requisição sem token!');
+    }
 
     // Criar AbortController para esta requisição
     this.abortController = new AbortController();
 
     try {
+      console.log(`[API] Enviando requisição...`);
       const response = await fetch(url, {
         ...options,
         headers,
         signal: this.abortController.signal,
       });
 
+      console.log(`[API] Status: ${response.status}`);
+      
       const data = await response.json();
+      console.log(`[API] Response data:`, JSON.stringify(data).substring(0, 200));
 
       if (!response.ok) {
+        console.error(`[API] ERRO: ${response.status}`, data);
         return {
-          success: false,          error: data.message || `Erro ${response.status}`,
+          success: false,          error: data.message || data.error || `Erro ${response.status}`,
           statusCode: response.status,
         };
-    
-  }
+      }
 
+      console.log(`[API] SUCESSO`);
       return {
         success: true,
         data: data as T,
@@ -182,23 +194,22 @@ class ApiService {
     } catch (error) {
       // Verificar se foi cancelado
       if (error instanceof Error && error.name === 'AbortError') {
+        console.log(`[API] Requisição cancelada`);
         return {
           success: false,
           error: 'Requisição cancelada',
         };
-    
-  }
+      }
 
       // Erro de rede
+      console.error(`[API] ERRO DE REDE:`, error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Erro de conexão',
       };
     } finally {
       this.abortController = null;
-  
-  }
-
+    }
   }
 
   /**

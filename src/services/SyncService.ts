@@ -359,7 +359,7 @@ class SyncService {
    */
   async registerDevice(): Promise<boolean> {
     try {
-      logger.info('[Sync] Registrando dispositivo...');
+      logger.info('[Sync] ====== INICIANDO REGISTRO DE DISPOSITIVO ======');
 
       // Gerar ID e chave únicos
       const deviceId = await this.generateDeviceId();
@@ -367,13 +367,37 @@ class SyncService {
       const deviceName = await this.getDeviceName();
       const deviceType = this.getDeviceType();
 
+      logger.info('[Sync] Dados do dispositivo gerados:', {
+        deviceId,
+        deviceKey: deviceKey.substring(0, 20) + '...',
+        deviceName,
+        deviceType,
+      });
+
+      // Verificar se há token
+      const hasToken = !!apiService['token'];
+      logger.info('[Sync] Token presente:', hasToken);
+
+      if (!hasToken) {
+        logger.error('[Sync] ERRO: Token não configurado no ApiService!');
+        return false;
+      }
+
       // Registrar no servidor
+      logger.info('[Sync] Enviando requisição para API...');
       const response = await apiService.registrarEquipamento({
         id: deviceId,
         nome: deviceName,
         chave: deviceKey,
         tipo: deviceType,
         dataCadastro: new Date().toISOString(),
+      });
+
+      logger.info('[Sync] Resposta da API:', {
+        success: response.success,
+        error: response.error,
+        statusCode: response.statusCode,
+        data: response.data,
       });
 
       if (!response.success) {
@@ -384,11 +408,11 @@ class SyncService {
       // Salvar localmente
       await databaseService.setDeviceId(deviceId, deviceName, deviceKey);
 
-      logger.info('[Sync] Dispositivo registrado com sucesso', { deviceId, deviceName });
+      logger.info('[Sync] ====== DISPOSITIVO REGISTRADO COM SUCESSO ======', { deviceId, deviceName });
 
       return true;
     } catch (error) {
-      logger.error('[Sync] Erro ao registrar dispositivo:', error);
+      logger.error('[Sync] ERRO CRÍTICO ao registrar dispositivo:', error);
       return false;
     }
   }
