@@ -66,7 +66,12 @@ const getEnvValue = (key: string, defaultValue: string = ''): string => {
 };
 
 const getBoolValue = (key: string, defaultValue: boolean = false): boolean => {
-  const value = getEnvValue(key, defaultValue.toString());
+  const value = getEnvValue(key, '');
+  // Se valor vazio, usar default
+  if (value === '' || value === undefined) {
+    return defaultValue;
+  }
+  // Aceitar 'true', '1', ou converter explicitamente
   return value === 'true' || value === '1';
 };
 

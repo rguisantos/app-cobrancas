@@ -15,6 +15,8 @@ import {
 } from '../types';
 import { databaseService } from '../services/DatabaseService';
 import { apiService } from '../services/ApiService';
+import { syncService } from '../services/SyncService';
+import logger from '../utils/logger';
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -217,19 +219,40 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   
   }
 
-    // Verificar se dispositivo está registrado
-    if (!dispositivo?.registrado && !forca) {
-      setErro('Dispositivo não registrado. Registre antes de sincronizar.');
-      return;
-  
-  }
-
     setIsSyncing(true);
     setStatus('pending');
     setErro(null);
     setLastSyncMessage('Iniciando sincronização...');
 
     try {
+      // Verificar/registrar dispositivo automaticamente
+      let deviceId = dispositivo?.id;
+      let deviceKey = dispositivo?.chave;
+      
+      if (!deviceId || !deviceKey) {
+        console.log('[SyncContext] Dispositivo não registrado, registrando automaticamente...');
+        setLastSyncMessage('Registrando dispositivo...');
+        
+        const registrado = await syncService.ensureDeviceRegistered();
+        if (!registrado) {
+          throw new Error('Falha ao registrar dispositivo');
+        }
+        
+        // Recarregar metadata
+        const metadata = await databaseService.getSyncMetadata();
+        deviceId = metadata.deviceId;
+        deviceKey = metadata.deviceKey;
+        
+        setDispositivo({
+          id: deviceId || '',
+          nome: metadata.deviceName || '',
+          chave: deviceKey || '',
+          registrado: true,
+        });
+        
+        console.log('[SyncContext] Dispositivo registrado:', deviceId);
+      }
+
       // 1. Push - Enviar mudanças locais
       setProgress({
         current: 0,
@@ -244,8 +267,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
         console.log(`[SyncContext] Enviando ${mudancasLocais.length} mudanças...`);
         
         const pushResponse = await apiService.pushChanges({
-          deviceId: dispositivo?.id || '',
-          deviceKey: dispositivo?.chave || '',
+          deviceId: deviceId || '',
+          deviceKey: deviceKey || '',
           lastSyncAt: lastSyncAt || new Date(0).toISOString(),
           changes: mudancasLocais,
         });
@@ -276,8 +299,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       });
 
       const pullResponse = await apiService.pullChanges({
-        deviceId: dispositivo?.id || '',
-        deviceKey: dispositivo?.chave || '',
+        deviceId: deviceId || '',
+        deviceKey: deviceKey || '',
         lastSyncAt: lastSyncAt || new Date(0).toISOString(),
       });
 
@@ -324,7 +347,7 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       setUltimoErro(mensagem);
       setStatus('error');
       setLastSyncMessage(`Erro: ${mensagem}`);
-      console.error('[SyncContext] Erro na sincronização:', error);
+      logger.error('[SyncContext] Erro na sincronização:', error);
     } finally {
       setIsSyncing(false);
   

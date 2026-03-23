@@ -11,6 +11,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Usuario, TipoPermissaoUsuario, PermissoesUsuario } from '../types';
 import { databaseService } from '../services/DatabaseService';
 import authService from '../services/AuthService';
+import { apiService } from '../services/ApiService';
+import { syncService } from '../services/SyncService';
 import logger from '../utils/logger';
 
 // ============================================================================
@@ -119,10 +121,14 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       setIsLoading(true);
       logger.info('[Auth] Tentando login', { email });
 
-      // Usar o AuthService que autentica com SQLite local
+      // Usar o AuthService que autentica com API ou SQLite local
       const response = await authService.login(email, password);
 
       const { token: newToken, user: usuarioLogado } = response;
+
+      // Passar token para o ApiService (para requisições autenticadas)
+      apiService.setToken(newToken);
+      logger.info('[Auth] Token configurado no ApiService');
 
       // Salvar no AsyncStorage
       await AsyncStorage.multiSet([
@@ -136,6 +142,19 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       setIsSignout(false);
 
       logger.info('[Auth] Login bem-sucedido', { email, role: usuarioLogado.tipoPermissao });
+
+      // Registrar dispositivo automaticamente após login
+      try {
+        const registrado = await syncService.ensureDeviceRegistered();
+        if (registrado) {
+          logger.info('[Auth] Dispositivo registrado com sucesso');
+        } else {
+          logger.warn('[Auth] Falha ao registrar dispositivo');
+        }
+      } catch (regError) {
+        logger.warn('[Auth] Erro ao registrar dispositivo:', regError);
+        // Não falha o login se o registro falhar
+      }
       
       onAuthChange?.(usuarioLogado as Usuario);
 

@@ -17,8 +17,24 @@ import {
 // CONFIGURAÇÃO DA API
 // ============================================================================
 
+import Constants from 'expo-constants';
+
+// Obter URL da API das variáveis de ambiente
+const getApiUrl = (): string => {
+  // Tentar pegar do extra do expo config
+  const extraUrl = (Constants.expoConfig as any)?.extra?.API_URL;
+  if (extraUrl) return extraUrl;
+  
+  // Tentar pegar do process.env
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (envUrl) return envUrl;
+  
+  // Fallback
+  return 'https://app-cobrancas-web.vercel.app';
+};
+
 const API_CONFIG = {
-  baseURL: process.env.EXPO_PUBLIC_API_URL || 'https://api.seuservidor.com.br',
+  baseURL: getApiUrl(),
   timeout: 30000, // 30 segundos
   retries: 3,
   retryDelay: 1000, // 1 segundo
@@ -463,9 +479,8 @@ class ApiService {
   /**
    * Login do usuário
    */
-  async login(email: string, senha: string): Promise<ApiResponse<{ token: string; usuario: any }>> {
-    return this.post('/api/auth/login', { email, senha });
-
+  async login(email: string, senha: string): Promise<ApiResponse<{ token: string; user: any }>> {
+    return this.post('/api/auth/login', { email, password: senha });
   }
 
   /**
