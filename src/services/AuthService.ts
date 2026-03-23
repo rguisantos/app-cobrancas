@@ -1,6 +1,7 @@
 /**
  * AuthService.ts
  * Serviço de autenticação com persistência local SQLite
+ * Integração: API Web + Fallback Local (Offline-first)
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -9,6 +10,7 @@ import { ENV } from '../config/env';
 import logger from '../utils/logger';
 import { usuarioRepository, UsuarioLogin } from '../repositories/UsuarioRepository';
 import { databaseService } from './DatabaseService';
+import { apiService } from './ApiService';
 import { TipoPermissaoUsuario, PermissoesUsuario } from '../types';
 
 interface LoginResponse {
@@ -54,13 +56,36 @@ const PERMISSOES_PADRAO: Record<TipoPermissaoUsuario, PermissoesUsuario> = {
 class AuthService {
   /**
    * Login com email e senha
-   * Tenta autenticar localmente primeiro, depois na API
+   * Estratégia: API primeiro (se USE_MOCK=false), depois local (offline-first)
    */
   async login(email: string, password: string): Promise<LoginResponse> {
     try {
-      logger.info('Tentando login', { email });
+      logger.info('Tentando login', { email, useMock: ENV.USE_MOCK });
 
-      // 1. Tentar autenticação local
+      // 1. Se não está em modo mock, tentar API primeiro
+      if (!ENV.USE_MOCK) {
+        try {
+          const apiResponse = await apiService.login(email, password);
+          
+          if (apiResponse.success && apiResponse.data) {
+            const { token, user } = apiResponse.data;
+            
+            // Salvar token no ApiService para requisições futuras
+            apiService.setToken(token);
+            
+            // Salvar usuário localmente para offline
+            await this.salvarUsuarioLocal(user, password);
+            
+            logger.info('Login via API bem-sucedido', { email });
+            return { token, user };
+          }
+        } catch (apiError) {
+          logger.warn('Login via API falhou, tentando local', { error: String(apiError) });
+          // Continua para tentar autenticação local
+        }
+      }
+
+      // 2. Tentar autenticação local (fallback ou modo mock)
       const usuarioLocal = await usuarioRepository.autenticar(email, password);
       
       if (usuarioLocal) {
@@ -82,15 +107,47 @@ class AuthService {
         return response;
       }
 
-      // 2. Se não encontrou localmente, tentar API (quando disponível)
-      // TODO: Integrar com API real
-      // const response = await ApiService.post('/auth/login', { email, password });
-
-      // Não criar usuário automaticamente - apenas retornar erro
+      // 3. Nenhum método funcionou
       throw new Error('Email e/ou senha incorretos');
     } catch (error) {
       logger.error('Erro ao fazer login', error);
       throw error;
+    }
+  }
+
+  /**
+   * Salva usuário localmente após login via API
+   */
+  private async salvarUsuarioLocal(user: LoginResponse['user'], password: string): Promise<void> {
+    try {
+      const usuarioExistente = await databaseService.getUsuarioByEmail(user.email);
+      
+      const dadosUsuario = {
+        id: user.id,
+        tipo: 'usuario',
+        nome: user.nome,
+        email: user.email,
+        senha: password, // Em produção, usar hash
+        cpf: (usuarioExistente as any)?.cpf || '',
+        telefone: (usuarioExistente as any)?.telefone || '',
+        tipoPermissao: user.tipoPermissao,
+        permissoesWeb: JSON.stringify(user.permissoes.web),
+        permissoesMobile: JSON.stringify(user.permissoes.mobile),
+        rotasPermitidas: JSON.stringify(user.rotasPermitidas),
+        status: user.status,
+        bloqueado: 0,
+        syncStatus: 'synced',
+        needsSync: 0,
+        version: (usuarioExistente as any)?.version || 1,
+        deviceId: '',
+        createdAt: (usuarioExistente as any)?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      
+      await databaseService.saveUsuario(dadosUsuario);
+      logger.info('Usuário salvo localmente', { email: user.email });
+    } catch (error) {
+      logger.error('Erro ao salvar usuário local', error);
     }
   }
 
