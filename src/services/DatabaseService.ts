@@ -791,37 +791,58 @@ class DatabaseService {
   }
 
   /**
-   * Aplica mudanças recebidas do servidor
+   * Aplica mudanças recebidas do servidor (sem criar ChangeLog)
+   * IMPORTANTE: Este método NÃO cria change logs para evitar loop de sincronização
    */
   async applyRemoteChanges(response: SyncResponse): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
 
     await this.runTransaction(async () => {
-      // Aplicar mudanças de cada entidade
+      // Aplicar mudanças de cada entidade usando upsert direto
       const changes = response.changes || {};
+      
+      // Clientes
       for (const cliente of changes.clientes || []) {
-        await this.save('cliente', cliente);
-    
-  }
+        await this.upsertFromSync('cliente', cliente);
+      }
 
+      // Produtos
       for (const produto of changes.produtos || []) {
-        await this.save('produto', produto);
-    
-  }
+        await this.upsertFromSync('produto', produto);
+      }
 
+      // Locações
       for (const locacao of changes.locacoes || []) {
-        await this.save('locacao', locacao);
-    
-  }
-      for (const cobranca of changes.cobrancas || []) {
-        await this.save('cobranca', cobranca);
-    
-  }
+        await this.upsertFromSync('locacao', locacao);
+      }
 
+      // Cobranças
+      for (const cobranca of changes.cobrancas || []) {
+        await this.upsertFromSync('cobranca', cobranca);
+      }
+
+      // Rotas
       for (const rota of changes.rotas || []) {
-        await this.save('rota', rota);
-    
-  }
+        await this.upsertFromSync('rota', rota);
+      }
+
+      // Tipos de Produto (atributos)
+      const tiposProduto = (response as any).tiposProduto || [];
+      for (const tipo of tiposProduto) {
+        await this.upsertTipoProdutoFromSync(tipo);
+      }
+
+      // Descrições de Produto (atributos)
+      const descricoesProduto = (response as any).descricoesProduto || [];
+      for (const desc of descricoesProduto) {
+        await this.upsertDescricaoProdutoFromSync(desc);
+      }
+
+      // Tamanhos de Produto (atributos)
+      const tamanhosProduto = (response as any).tamanhosProduto || [];
+      for (const tam of tamanhosProduto) {
+        await this.upsertTamanhoProdutoFromSync(tam);
+      }
 
       // Atualizar metadata
       await this.updateSyncMetadata({
@@ -831,7 +852,106 @@ class DatabaseService {
     });
 
     console.log('[Database] Mudanças remotas aplicadas com sucesso');
+  }
 
+  /**
+   * Upsert de entidade recebida do servidor (SEM criar ChangeLog)
+   */
+  private async upsertFromSync(entityType: EntityType, entity: any): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+
+    const tableName = this.getTableName(entityType);
+    const now = new Date().toISOString();
+
+    // Campos virtuais que não existem como colunas
+    const CAMPOS_EXCLUIDOS = new Set([
+      'cpfCnpj', 'rgIe',
+      'locacaoAtiva', 'estaLocado', 'locacaoAtual',
+      'totalLocacoesAtivas', 'totalLocacoesFinalizadas', 'saldoDevedorTotal'
+    ]);
+
+    // Preparar dados
+    const data = { ...entity };
+    delete data.id;
+
+    // Verificar se existe
+    const existing = await this.getById<any>(entityType, entity.id);
+
+    if (existing) {
+      // UPDATE - não incrementar version se veio do servidor
+      const fields = Object.keys(data).filter(
+        (key) => !CAMPOS_EXCLUIDOS.has(key) && data[key] !== undefined
+      );
+      const setClause = fields.map((field) => `${field} = ?`).join(', ');
+      
+      const values = fields.map((field) => {
+        const val = data[field];
+        if (val !== null && val !== undefined && typeof val === 'object') {
+          return JSON.stringify(val);
+        }
+        return val;
+      });
+
+      await this.db.runAsync(
+        `UPDATE ${tableName} SET ${setClause} WHERE id = ?`,
+        [...values, entity.id]
+      );
+    } else {
+      // INSERT
+      const fields = Object.keys(data).filter(
+        (key) => !CAMPOS_EXCLUIDOS.has(key) && data[key] !== undefined
+      );
+      const placeholders = fields.map(() => '?').join(', ');
+
+      const values = fields.map((field) => {
+        const val = data[field];
+        if (val !== null && val !== undefined && typeof val === 'object') {
+          return JSON.stringify(val);
+        }
+        return val;
+      });
+
+      await this.db.runAsync(
+        `INSERT INTO ${tableName} (id, ${fields.join(', ')}) VALUES (?, ${placeholders})`,
+        [entity.id, ...values]
+      );
+    }
+  }
+
+  /**
+   * Upsert de tipo de produto (SEM criar ChangeLog)
+   */
+  private async upsertTipoProdutoFromSync(tipo: any): Promise<void> {
+    if (!this.db) return;
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO ${TABLES.TIPOS_PRODUTO} (id, nome, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
+      [tipo.id, tipo.nome, tipo.lastSyncedAt || new Date().toISOString(), tipo.version || 1, tipo.deviceId || '', tipo.createdAt || new Date().toISOString(), tipo.updatedAt || new Date().toISOString(), tipo.deletedAt || null]
+    );
+  }
+
+  /**
+   * Upsert de descrição de produto (SEM criar ChangeLog)
+   */
+  private async upsertDescricaoProdutoFromSync(desc: any): Promise<void> {
+    if (!this.db) return;
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO ${TABLES.DESCRICOES_PRODUTO} (id, nome, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
+      [desc.id, desc.nome, desc.lastSyncedAt || new Date().toISOString(), desc.version || 1, desc.deviceId || '', desc.createdAt || new Date().toISOString(), desc.updatedAt || new Date().toISOString(), desc.deletedAt || null]
+    );
+  }
+
+  /**
+   * Upsert de tamanho de produto (SEM criar ChangeLog)
+   */
+  private async upsertTamanhoProdutoFromSync(tam: any): Promise<void> {
+    if (!this.db) return;
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO ${TABLES.TAMANHOS_PRODUTO} (id, nome, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
+      [tam.id, tam.nome, tam.lastSyncedAt || new Date().toISOString(), tam.version || 1, tam.deviceId || '', tam.createdAt || new Date().toISOString(), tam.updatedAt || new Date().toISOString(), tam.deletedAt || null]
+    );
   }
 
   // ==========================================================================
