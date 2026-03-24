@@ -374,16 +374,7 @@ class SyncService {
         deviceType,
       });
 
-      // Verificar se há token
-      const hasToken = !!apiService['token'];
-      logger.info('[Sync] Token presente:', hasToken);
-
-      if (!hasToken) {
-        logger.error('[Sync] ERRO: Token não configurado no ApiService!');
-        return false;
-      }
-
-      // Registrar no servidor
+      // Registrar no servidor (endpoint não requer autenticação)
       logger.info('[Sync] Enviando requisição para API...');
       const response = await apiService.registrarEquipamento({
         id: deviceId,
