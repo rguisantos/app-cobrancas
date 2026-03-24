@@ -141,11 +141,12 @@ class ApiService {
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseURL}${endpoint}`;
+    const requestId = `${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     
-    console.log(`[API] ====== REQUEST ======`);
-    console.log(`[API] URL: ${url}`);
-    console.log(`[API] Method: ${options.method || 'GET'}`);
-    console.log(`[API] Has Token: ${!!this.token}`);
+    console.log(`\n[API:${requestId}] ========== REQUEST START ==========`);
+    console.log(`[API:${requestId}] URL: ${url}`);
+    console.log(`[API:${requestId}] Method: ${options.method || 'GET'}`);
+    console.log(`[API:${requestId}] Has Token: ${!!this.token}`);
     
     // Configurar headers
     const headers: Record<string, string> = {
@@ -156,45 +157,74 @@ class ApiService {
     // Adicionar token se existir
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
-      console.log(`[API] Token: ${this.token.substring(0, 20)}...`);
+      console.log(`[API:${requestId}] Token preview: ${this.token.substring(0, 30)}...`);
     } else {
-      console.warn('[API] ATENÇÃO: Requisição sem token!');
+      console.warn(`[API:${requestId}] ⚠️ ATENÇÃO: Requisição sem token! Endpoint: ${endpoint}`);
+    }
+    
+    // Log do body se existir
+    if (options.body) {
+      const bodyPreview = typeof options.body === 'string' 
+        ? options.body.substring(0, 300) 
+        : JSON.stringify(options.body).substring(0, 300);
+      console.log(`[API:${requestId}] Body: ${bodyPreview}...`);
     }
 
     // Criar AbortController para esta requisição
     this.abortController = new AbortController();
 
+    const startTime = Date.now();
+
     try {
-      console.log(`[API] Enviando requisição...`);
+      console.log(`[API:${requestId}] Enviando requisição...`);
       const response = await fetch(url, {
         ...options,
         headers,
         signal: this.abortController.signal,
       });
 
-      console.log(`[API] Status: ${response.status}`);
+      const duration = Date.now() - startTime;
+      console.log(`[API:${requestId}] Status: ${response.status} (${duration}ms)`);
       
-      const data = await response.json();
-      console.log(`[API] Response data:`, JSON.stringify(data).substring(0, 200));
+      // Tentar ler resposta
+      let data: any;
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType?.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        console.log(`[API:${requestId}] Response (text): ${text.substring(0, 200)}`);
+        data = { message: text };
+      }
+      
+      console.log(`[API:${requestId}] Response:`, JSON.stringify(data).substring(0, 300));
 
       if (!response.ok) {
-        console.error(`[API] ERRO: ${response.status}`, data);
+        console.error(`[API:${requestId}] ❌ ERRO HTTP ${response.status}`);
+        console.error(`[API:${requestId}] Error details:`, data);
+        console.log(`[API:${requestId}] ========== REQUEST END (ERROR) ==========\n`);
         return {
-          success: false,          error: data.message || data.error || `Erro ${response.status}`,
+          success: false,
+          error: data.message || data.error || `Erro HTTP ${response.status}`,
           statusCode: response.status,
         };
       }
 
-      console.log(`[API] SUCESSO`);
+      console.log(`[API:${requestId}] ✅ SUCESSO`);
+      console.log(`[API:${requestId}] ========== REQUEST END (OK) ==========\n`);
       return {
         success: true,
         data: data as T,
         statusCode: response.status,
       };
     } catch (error) {
+      const duration = Date.now() - startTime;
+      
       // Verificar se foi cancelado
       if (error instanceof Error && error.name === 'AbortError') {
-        console.log(`[API] Requisição cancelada`);
+        console.log(`[API:${requestId}] Requisição cancelada após ${duration}ms`);
+        console.log(`[API:${requestId}] ========== REQUEST END (CANCELLED) ==========\n`);
         return {
           success: false,
           error: 'Requisição cancelada',
@@ -202,7 +232,10 @@ class ApiService {
       }
 
       // Erro de rede
-      console.error(`[API] ERRO DE REDE:`, error);
+      console.error(`[API:${requestId}] ❌ ERRO DE REDE após ${duration}ms:`, error);
+      console.error(`[API:${requestId}] Error type: ${error instanceof Error ? error.name : typeof error}`);
+      console.error(`[API:${requestId}] Error message: ${error instanceof Error ? error.message : String(error)}`);
+      console.log(`[API:${requestId}] ========== REQUEST END (NETWORK ERROR) ==========\n`);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Erro de conexão',
@@ -265,9 +298,24 @@ class ApiService {
    * Envia mudanças locais para o servidor (PUSH)
    */
   async pushChanges(payload: PushChangesRequest): Promise<SyncResponse> {
+    console.log(`\n[SYNC:PUSH] ========== INICIANDO PUSH ==========`);
+    console.log(`[SYNC:PUSH] DeviceId: ${payload.deviceId}`);
+    console.log(`[SYNC:PUSH] DeviceKey: ${payload.deviceKey?.substring(0, 20)}...`);
+    console.log(`[SYNC:PUSH] LastSyncAt: ${payload.lastSyncAt}`);
+    console.log(`[SYNC:PUSH] Changes count: ${payload.changes?.length || 0}`);
+    
+    if (payload.changes && payload.changes.length > 0) {
+      console.log(`[SYNC:PUSH] Changes summary:`);
+      payload.changes.forEach((c, i) => {
+        console.log(`[SYNC:PUSH]   ${i + 1}. ${c.operation} ${c.entityType}:${c.entityId?.substring(0, 8)}...`);
+      });
+    }
+    
     const response = await this.post<SyncResponse>('/api/sync/push', payload);
 
     if (!response.success) {
+      console.error(`[SYNC:PUSH] ❌ FALHA: ${response.error}`);
+      console.log(`[SYNC:PUSH] ========== PUSH END (ERROR) ==========\n`);
       return {
         success: false,
         lastSyncAt: new Date().toISOString(),
@@ -281,19 +329,28 @@ class ApiService {
         conflicts: [],
         errors: [response.error || 'Falha ao enviar mudanças'],
       };
-  
-  }
+    }
 
+    console.log(`[SYNC:PUSH] ✅ SUCESSO`);
+    console.log(`[SYNC:PUSH] Conflicts: ${response.data?.conflicts?.length || 0}`);
+    console.log(`[SYNC:PUSH] Errors: ${response.data?.errors?.length || 0}`);
+    console.log(`[SYNC:PUSH] ========== PUSH END (OK) ==========\n`);
     return response.data!;
-
   }
 
   /**   * Busca mudanças do servidor (PULL)
    */
   async pullChanges(payload: PullChangesRequest): Promise<SyncResponse> {
+    console.log(`\n[SYNC:PULL] ========== INICIANDO PULL ==========`);
+    console.log(`[SYNC:PULL] DeviceId: ${payload.deviceId}`);
+    console.log(`[SYNC:PULL] DeviceKey: ${payload.deviceKey?.substring(0, 20)}...`);
+    console.log(`[SYNC:PULL] LastSyncAt: ${payload.lastSyncAt}`);
+    
     const response = await this.post<SyncResponse>('/api/sync/pull', payload);
 
     if (!response.success) {
+      console.error(`[SYNC:PULL] ❌ FALHA: ${response.error}`);
+      console.log(`[SYNC:PULL] ========== PULL END (ERROR) ==========\n`);
       return {
         success: false,
         lastSyncAt: new Date().toISOString(),
@@ -307,11 +364,17 @@ class ApiService {
         conflicts: [],
         errors: [response.error || 'Falha ao buscar mudanças'],
       };
-  
-  }
+    }
 
+    const changes = response.data?.changes || {};
+    console.log(`[SYNC:PULL] ✅ SUCESSO`);
+    console.log(`[SYNC:PULL] Clientes: ${changes.clientes?.length || 0}`);
+    console.log(`[SYNC:PULL] Produtos: ${changes.produtos?.length || 0}`);
+    console.log(`[SYNC:PULL] Locações: ${changes.locacoes?.length || 0}`);
+    console.log(`[SYNC:PULL] Cobranças: ${changes.cobrancas?.length || 0}`);
+    console.log(`[SYNC:PULL] Rotas: ${changes.rotas?.length || 0}`);
+    console.log(`[SYNC:PULL] ========== PULL END (OK) ==========\n`);
     return response.data!;
-
   }
 
   /**
@@ -340,8 +403,22 @@ class ApiService {
    * Registra novo equipamento no servidor
    */
   async registrarEquipamento(dados: RegistrarEquipamentoRequest): Promise<ApiResponse<{ success: boolean; id: string }>> {
-    return this.post('/api/equipamentos', dados);
-
+    console.log(`\n[DEVICE:REGISTER] ========== REGISTRANDO DISPOSITIVO ==========`);
+    console.log(`[DEVICE:REGISTER] ID: ${dados.id}`);
+    console.log(`[DEVICE:REGISTER] Nome: ${dados.nome}`);
+    console.log(`[DEVICE:REGISTER] Chave: ${dados.chave?.substring(0, 20)}...`);
+    console.log(`[DEVICE:REGISTER] Tipo: ${dados.tipo}`);
+    
+    const response = await this.post('/api/equipamentos', dados);
+    
+    if (response.success) {
+      console.log(`[DEVICE:REGISTER] ✅ Dispositivo registrado: ${response.data?.id}`);
+    } else {
+      console.error(`[DEVICE:REGISTER] ❌ Falha: ${response.error}`);
+    }
+    console.log(`[DEVICE:REGISTER] ========== REGISTRO END ==========\n`);
+    
+    return response;
   }
   /**
    * Atualiza informações do equipamento
