@@ -235,17 +235,38 @@ class SyncService {
       // Preparar payload
       const metadata = await databaseService.getSyncMetadata();
       
+      // Converter tipos do SQLite para tipos esperados pela API
       const payload = {
         deviceId: metadata.deviceId,
         deviceKey: metadata.deviceKey,
         lastSyncAt: metadata.lastSyncAt,
         changes: pendingChanges.map(change => ({
-          ...change,
+          id: change.id,
+          entityId: change.entityId,
+          entityType: change.entityType,
+          operation: change.operation,
+          // Converter changes de string JSON para objeto
           changes: typeof change.changes === 'string' 
             ? JSON.parse(change.changes) 
             : change.changes,
+          timestamp: change.timestamp,
+          deviceId: change.deviceId,
+          // Converter synced de number (0/1) para boolean
+          synced: Boolean(change.synced),
+          // Converter syncedAt null para undefined
+          syncedAt: change.syncedAt || undefined,
         })),
       };
+
+      logger.info('[Sync/Push] Payload preparado:', {
+        deviceId: payload.deviceId,
+        changesCount: payload.changes.length,
+        firstChange: payload.changes[0] ? {
+          entityType: payload.changes[0].entityType,
+          operation: payload.changes[0].operation,
+          entityId: payload.changes[0].entityId,
+        } : null,
+      });
 
       // Enviar para o servidor
       const response = await apiService.pushChanges(payload);
