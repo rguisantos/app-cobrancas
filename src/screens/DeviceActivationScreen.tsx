@@ -29,6 +29,7 @@ import * as Updates from 'expo-updates';
 
 import { apiService } from '../services/ApiService';
 import { useAuth } from '../contexts/AuthContext';
+import { databaseService } from '../services/DatabaseService';
 
 const { width } = Dimensions.get('window');
 
@@ -182,13 +183,18 @@ export default function DeviceActivationScreen() {
       console.log('[DeviceActivation] Resposta:', response);
       
       if (response.success && response.data?.success) {
-        // Salvar informacoes do dispositivo localmente
+        // Salvar informacoes do dispositivo localmente (AsyncStorage para o AppNavigator)
         await AsyncStorage.setItem('@device:id', dispositivoId.trim());
         await AsyncStorage.setItem('@device:key', finalDeviceKey);
         await AsyncStorage.setItem('@device:name', deviceName);
         await AsyncStorage.setItem('@device:activated', 'true');
         
+        // IMPORTANTE: Salvar também no SyncMetadata (SQLite) para o SyncService
+        // O SyncService usa databaseService.getSyncMetadata() para obter a deviceKey
+        await databaseService.setDeviceId(dispositivoId.trim(), deviceName, finalDeviceKey);
+        
         console.log('[DeviceActivation] Dispositivo ativado com sucesso!');
+        console.log('[DeviceActivation] DeviceKey salva no SyncMetadata:', finalDeviceKey.substring(0, 20) + '...');
         
         Alert.alert(
           'Sucesso!',

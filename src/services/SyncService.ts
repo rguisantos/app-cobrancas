@@ -5,6 +5,7 @@
  */
 
 import * as Device from 'expo-device';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   SyncMetadata, 
   ChangeLog, 
@@ -362,13 +363,32 @@ class SyncService {
     try {
       const metadata = await databaseService.getSyncMetadata();
       
-      // Se já tem deviceId e deviceKey, verificar se ainda é válido
+      // Se já tem deviceId e deviceKey no SyncMetadata, verificar se ainda é válido
       if (metadata.deviceId && metadata.deviceKey) {
+        logger.info('[Sync] Dispositivo já registrado no SyncMetadata:', {
+          deviceId: metadata.deviceId,
+          deviceKey: metadata.deviceKey.substring(0, 20) + '...'
+        });
         return true;
       }
 
-      // Registrar dispositivo
-      return await this.registerDevice();
+      // Verificar se existe deviceKey no AsyncStorage (salvo pelo DeviceActivationScreen)
+      const savedDeviceKey = await AsyncStorage.getItem('@device:key');
+      const savedDeviceId = await AsyncStorage.getItem('@device:id');
+      const savedDeviceName = await AsyncStorage.getItem('@device:name');
+      
+      if (savedDeviceId && savedDeviceKey) {
+        logger.info('[Sync] Encontrado deviceKey no AsyncStorage, sincronizando com SyncMetadata...');
+        // Salvar no SyncMetadata para uso futuro
+        await databaseService.setDeviceId(savedDeviceId, savedDeviceName || 'Dispositivo', savedDeviceKey);
+        logger.info('[Sync] SyncMetadata atualizado com deviceKey do AsyncStorage');
+        return true;
+      }
+
+      // Se não tem deviceKey em nenhum lugar, precisa registrar
+      // Mas isso só deve acontecer se o dispositivo ainda não foi ativado
+      logger.warn('[Sync] Dispositivo não registrado. Precisa de ativação.');
+      return false;
     } catch (error) {
       logger.error('[Sync] Erro ao verificar registro:', error);
       return false;
