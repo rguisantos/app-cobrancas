@@ -25,6 +25,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
+import * as Updates from 'expo-updates';
 
 import { apiService } from '../services/ApiService';
 import { useAuth } from '../contexts/AuthContext';
@@ -181,7 +182,7 @@ export default function DeviceActivationScreen() {
       console.log('[DeviceActivation] Resposta:', response);
       
       if (response.success && response.data?.success) {
-        // Salvar informações do dispositivo localmente
+        // Salvar informacoes do dispositivo localmente
         await AsyncStorage.setItem('@device:id', dispositivoId.trim());
         await AsyncStorage.setItem('@device:key', finalDeviceKey);
         await AsyncStorage.setItem('@device:name', deviceName);
@@ -191,17 +192,22 @@ export default function DeviceActivationScreen() {
         
         Alert.alert(
           'Sucesso!',
-          'Dispositivo ativado com sucesso. Você já pode sincronizar seus dados.',
+          'Dispositivo ativado com sucesso. O app será recarregado.',
           [
             {
               text: 'OK',
-              onPress: () => {
-                // Forçar recarga do app
-                // O AppNavigator vai detectar @device:activated e permitir acesso
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'App' }],
-                });
+              onPress: async () => {
+                // Recarregar o app para aplicar a ativação
+                try {
+                  await Updates.reloadAsync();
+                } catch (e) {
+                  console.error('[DeviceActivation] Erro ao recarregar:', e);
+                  // Fallback: tentar navegar manualmente
+                  navigation.reset({
+                    index: 0,
+                    routes: [{ name: 'App' }],
+                  });
+                }
               },
             },
           ]

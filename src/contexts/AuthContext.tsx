@@ -89,11 +89,15 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       if (savedToken[1] && savedUserJson[1]) {
         const parsedUser = JSON.parse(savedUserJson[1]) as Usuario;
         
+        // IMPORTANTE: Sincronizar token com ApiService
+        apiService.setToken(savedToken[1]);
+        logger.info('[Auth] Token sincronizado com ApiService no bootstrap');
+        
         setToken(savedToken[1]);
         setUser(parsedUser);
         setIsSignout(false);
         
-        logger.info('[Auth] Sessão restaurada', { user: parsedUser.nome, role: parsedUser.tipoPermissao });
+        logger.info('[Auth] Sessao restaurada', { user: parsedUser.nome, role: parsedUser.tipoPermissao });
         
         onAuthChange?.(parsedUser);
       } else {

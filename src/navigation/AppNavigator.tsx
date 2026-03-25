@@ -10,7 +10,7 @@
  */
 
 import React, { useCallback, useState, useEffect, useRef } from 'react';
-import { View, ActivityIndicator, useColorScheme, Text } from 'react-native';
+import { View, ActivityIndicator, useColorScheme, Text, AppState, AppStateStatus } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { createBottomTabNavigator, BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -428,7 +428,6 @@ export function AppNavigator() {
   const [checkingDevice, setCheckingDevice] = useState(true);
   const [deviceActivated, setDeviceActivated] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
-  const hasCheckedRef = useRef(false);
 
   // Gerar chave única do dispositivo
   const generateDeviceKey = async (): Promise<string> => {
@@ -454,15 +453,12 @@ export function AppNavigator() {
   // Verificar se o dispositivo está ativado
   useEffect(() => {
     const checkDeviceActivation = async () => {
-      // Evitar verificações duplicadas
-      if (hasCheckedRef.current) return;
-      
       if (!isAuthenticated || isSignout) {
         setCheckingDevice(false);
+        setDeviceActivated(false);
         return;
       }
       
-      hasCheckedRef.current = true;
       logger.info('[AppNavigator] Verificando ativação do dispositivo...');
       
       try {
@@ -526,6 +522,25 @@ export function AppNavigator() {
     
     checkDeviceActivation();
   }, [isAuthenticated, isSignout, token]);
+  
+  // Listener para mudanças na ativação do dispositivo
+  useEffect(() => {
+    const checkActivation = async () => {
+      const activated = await AsyncStorage.getItem('@device:activated');
+      if (activated === 'true') {
+        setDeviceActivated(true);
+      }
+    };
+    
+    // Verificar a cada vez que o app volta para primeiro plano
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkActivation();
+      }
+    });
+    
+    return () => subscription.remove();
+  }, []);
 
   // Enquanto carrega auth ou verifica dispositivo, mostra loading
   if (isLoading || checkingDevice) {
