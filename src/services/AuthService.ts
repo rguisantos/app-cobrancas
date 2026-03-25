@@ -323,80 +323,47 @@ class AuthService {
 
   /**
    * Inicializar dados de autenticação
+   * Quando USE_MOCK=false, não cria usuário mockado - dados devem vir do servidor via sync
    */
   async inicializar(): Promise<void> {
     try {
       // Garantir que o banco está inicializado
       await databaseService.initialize();
       
-      logger.info('Verificando usuário admin...');
-      
-      // Buscar admin existente diretamente do banco
-      const adminExistente = await databaseService.getUsuarioByEmail('admin@locacao.com');
-      
-      if (!adminExistente) {
-        // Criar novo admin
-        logger.info('Criando usuário admin padrão...');
-        await databaseService.saveUsuario({
-          id: 'usr_admin',
-          tipo: 'usuario',
-          nome: 'Administrador',
-          email: 'admin@locacao.com',
-          senha: ENV.MOCK_PASSWORD || 'admin123',
-          cpf: '',
-          telefone: '',
-          tipoPermissao: 'Administrador',
-          permissoesWeb: JSON.stringify(PERMISSOES_PADRAO['Administrador'].web),
-          permissoesMobile: JSON.stringify(PERMISSOES_PADRAO['Administrador'].mobile),
-          rotasPermitidas: '[]',
-          status: 'Ativo',
-          bloqueado: 0, // Integer para SQLite
-          syncStatus: 'pending',
-          needsSync: 1,
-          version: 1,
-          deviceId: '',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-        logger.info('Usuário admin criado com credenciais do ambiente');
-      } else {
-        // Garantir que o admin tem a senha correta
-        logger.info('Admin já existe, verificando credenciais...');
+      // Se USE_MOCK for true, criar usuário admin padrão para desenvolvimento
+      if (ENV.USE_MOCK) {
+        logger.info('Modo desenvolvimento: Verificando usuário admin mockado...');
         
-        if ((adminExistente as any).senha !== (ENV.MOCK_PASSWORD || 'admin123') || (adminExistente as any).status !== 'Ativo') {
-          logger.info('Atualizando credenciais do admin...');
+        const adminExistente = await databaseService.getUsuarioByEmail('admin@locacao.com');
+        
+        if (!adminExistente) {
+          logger.info('Criando usuário admin padrão para desenvolvimento...');
           await databaseService.saveUsuario({
-            id: adminExistente.id || 'usr_admin',
+            id: 'usr_admin',
             tipo: 'usuario',
             nome: 'Administrador',
             email: 'admin@locacao.com',
             senha: ENV.MOCK_PASSWORD || 'admin123',
-            cpf: (adminExistente as any).cpf || '',
-            telefone: (adminExistente as any).telefone || '',
+            cpf: '',
+            telefone: '',
             tipoPermissao: 'Administrador',
             permissoesWeb: JSON.stringify(PERMISSOES_PADRAO['Administrador'].web),
             permissoesMobile: JSON.stringify(PERMISSOES_PADRAO['Administrador'].mobile),
             rotasPermitidas: '[]',
             status: 'Ativo',
-            bloqueado: 0, // Integer para SQLite
+            bloqueado: 0,
             syncStatus: 'pending',
             needsSync: 1,
-            version: ((adminExistente as any).version || 0) + 1,
+            version: 1,
             deviceId: '',
-            createdAt: (adminExistente as any).createdAt || new Date().toISOString(),
+            createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           });
-          logger.info('Credenciais do admin atualizadas');
+          logger.info('Usuário admin de desenvolvimento criado');
         }
+      } else {
+        logger.info('Modo produção: Usuários serão sincronizados do servidor');
       }
-      
-      // Verificar se ficou correto
-      const verificado = await databaseService.getUsuarioByEmail('admin@locacao.com');
-      logger.info('Verificação admin:', { 
-        email: (verificado as any)?.email, 
-        senha: (verificado as any)?.senha ? '***definida***' : 'NÃO DEFINIDA',
-        status: (verificado as any)?.status 
-      });
       
     } catch (error) {
       logger.error('Erro ao inicializar autenticação:', error);

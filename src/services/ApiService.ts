@@ -10,7 +10,9 @@ import {
   ChangeLog,
   Equipamento,
   SyncMetadata,
-  SyncConflict
+  SyncConflict,
+  DeviceActivationRequest,
+  DeviceActivationResponse
 } from '../types';
 
 // ============================================================================
@@ -442,6 +444,68 @@ class ApiService {
   async removerEquipamento(id: string): Promise<ApiResponse<{ success: boolean }>> {
     return this.delete(`/api/equipamentos/${id}`);
 
+  }
+
+  // ==========================================================================
+  // ATIVAÇÃO DE DISPOSITIVO
+  // ==========================================================================
+
+  /**
+   * Ativa dispositivo com senha de 6 dígitos
+   * Usado quando o dispositivo é novo e precisa ser ativado
+   */
+  async ativarDispositivo(dados: DeviceActivationRequest): Promise<ApiResponse<DeviceActivationResponse>> {
+    return this.post('/api/dispositivos/ativar', dados);
+  }
+
+  /**
+   * Verifica se o dispositivo precisa de ativação
+   * Faz uma requisição de sync para verificar status do dispositivo
+   */
+  async verificarStatusDispositivo(deviceKey: string): Promise<ApiResponse<{
+    needsActivation: boolean;
+    dispositivoId?: string;
+    status?: string;
+  }>> {
+    // Tenta fazer uma requisição de sync para verificar status
+    const response = await this.post<any>('/api/sync/push', {
+      deviceId: '',
+      deviceKey,
+      lastSyncAt: new Date(0).toISOString(),
+      changes: [],
+    });
+
+    // Se retornar needsActivation, dispositivo precisa ser ativado
+    if (response.statusCode === 403 || (response.data as any)?.needsActivation) {
+      return {
+        success: true,
+        data: {
+          needsActivation: true,
+          dispositivoId: (response.data as any)?.dispositivoId,
+          status: 'pendente',
+        },
+      };
+    }
+
+    // Se sucesso, dispositivo já está ativo
+    if (response.success) {
+      return {
+        success: true,
+        data: {
+          needsActivation: false,
+          status: 'ativo',
+        },
+      };
+    }
+
+    // Dispositivo não encontrado
+    return {
+      success: true,
+      data: {
+        needsActivation: true,
+        status: 'nao_encontrado',
+      },
+    };
   }
 
   // ==========================================================================

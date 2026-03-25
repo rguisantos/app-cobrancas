@@ -9,12 +9,13 @@
  * - ModalStack: Telas em modal (Detalhes, Formulários)
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { View, ActivityIndicator, useColorScheme } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { createBottomTabNavigator, BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Contexts
 import { useAuth } from '../contexts/AuthContext';
@@ -47,7 +48,8 @@ import ProdutoAlterarRelogioScreen from '../screens/ProdutoAlterarRelogioScreen'
 import LocacoesListScreen from '../screens/LocacoesListScreen';
 import LocacaoFormScreen from '../screens/LocacaoFormScreen';
 import LocacaoDetailScreen from '../screens/LocacaoDetailScreen';
-import EnviarEstoqueScreen from '../screens/EnviarEstoqueScreen';import CobrancaConfirmScreen from '../screens/CobrancaConfirmScreen';
+import EnviarEstoqueScreen from '../screens/EnviarEstoqueScreen';
+import CobrancaConfirmScreen from '../screens/CobrancaConfirmScreen';
 import CobrancaDetailScreen from '../screens/CobrancaDetailScreen';
 import SyncStatusScreen from '../screens/SyncStatusScreen';
 import SettingsScreen from '../screens/SettingsScreen';
@@ -57,6 +59,7 @@ import RelatorioManutencaoScreen       from '../screens/RelatorioManutencaoScree
 import RelatorioCobrancasScreen         from '../screens/RelatorioCobrancasScreen';
 import RelatorioSaldoDevedorScreen      from '../screens/RelatorioSaldoDevedorScreen';
 import UsuariosGerenciarScreen from '../screens/UsuariosGerenciarScreen';
+import DeviceActivationScreen from '../screens/DeviceActivationScreen';
 
 // ============================================================================
 // CONFIGURAÇÃO DE TEMAS
@@ -133,6 +136,7 @@ export type ModalStackParamList = {
 // Root Stack (gerencia auth state)
 export type RootStackParamList = {
   Auth: undefined;
+  DeviceActivation: undefined;
   App: undefined;
   Modal: ModalStackParamList;
 };
@@ -411,12 +415,44 @@ function ModalNavigator() {
 
 export function AppNavigator() {
   const { user, isLoading, isAuthenticated, isSignout } = useAuth();
-  const { status: syncStatus } = useSync();
+  const { status: syncStatus, dispositivo } = useSync();
   const colorScheme = useColorScheme();
   const theme = colorScheme === 'dark' ? DarkNavTheme : LightNavTheme;
+  
+  // Estado para verificação de ativação do dispositivo
+  const [checkingDevice, setCheckingDevice] = useState(true);
+  const [deviceActivated, setDeviceActivated] = useState(false);
 
-  // Enquanto carrega auth, mostra splash/loading
-  if (isLoading) {
+  // Verificar se o dispositivo está ativado
+  useEffect(() => {
+    const checkDeviceActivation = async () => {
+      if (!isAuthenticated || isSignout) {
+        setCheckingDevice(false);
+        return;
+      }
+      
+      try {
+        const activated = await AsyncStorage.getItem('@device:activated');
+        const deviceId = await AsyncStorage.getItem('@device:id');
+        
+        if (activated === 'true' && deviceId) {
+          setDeviceActivated(true);
+        } else {
+          setDeviceActivated(false);
+        }
+      } catch (error) {
+        console.error('[AppNavigator] Erro ao verificar ativação:', error);
+        setDeviceActivated(false);
+      } finally {
+        setCheckingDevice(false);
+      }
+    };
+    
+    checkDeviceActivation();
+  }, [isAuthenticated, isSignout]);
+
+  // Enquanto carrega auth ou verifica dispositivo, mostra loading
+  if (isLoading || checkingDevice) {
     return (
       <NavigationContainer theme={theme}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -433,16 +469,17 @@ export function AppNavigator() {
         {/* Se não autenticado ou signout, mostra Auth */}
         {!isAuthenticated || isSignout ? (
           <RootStack.Screen name="Auth" component={AuthNavigator} />
+        ) : !deviceActivated ? (
+          /* Dispositivo não ativado - mostrar tela de ativação */
+          <RootStack.Screen name="DeviceActivation" component={DeviceActivationScreen} />
         ) : (
-          <>
-            {/* App principal */}
-            <RootStack.Screen name="App" component={ModalNavigator} />
-          </>
+          /* App principal */
+          <RootStack.Screen name="App" component={ModalNavigator} />
         )}
       </RootStack.Navigator>
       
       {/* Overlay de sincronização (opcional) */}
-      {isAuthenticated && syncStatus === 'syncing' && (
+      {isAuthenticated && deviceActivated && syncStatus === 'syncing' && (
         <SyncOverlay />
       )}
     </NavigationContainer>

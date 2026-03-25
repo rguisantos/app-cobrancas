@@ -11,7 +11,9 @@ import {
   SyncConflict, 
   ChangeLog,
   ConflictResolutionStrategy,
-  Equipamento
+  Equipamento,
+  DeviceActivationRequest,
+  DeviceActivationResponse
 } from '../types';
 import { databaseService } from '../services/DatabaseService';
 import { apiService } from '../services/ApiService';
@@ -52,6 +54,11 @@ export interface SyncState {
     registrado: boolean;
   } | null;
   
+  // Ativação de dispositivo
+  needsDeviceActivation: boolean;
+  dispositivoPendenteId: string | null;
+  ativacaoErro: string | null;
+  
   // Erros
   erro: string | null;
   ultimoErro: string | null;
@@ -69,6 +76,8 @@ export interface SyncContextData extends SyncState {
   // Dispositivo
   registrarDispositivo: (nome: string, chave: string) => Promise<boolean>;
   atualizarDispositivo: (dados: Partial<Equipamento>) => Promise<void>;
+  ativarDispositivo: (dispositivoId: string, senhaNumerica: string) => Promise<boolean>;
+  verificarAtivacao: () => Promise<void>;
   
   // Conflitos
   resolverConflito: (conflitoId: string, estrategia: ConflictResolutionStrategy) => Promise<void>;
@@ -152,6 +161,11 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   const [dispositivo, setDispositivo] = useState<SyncState['dispositivo']>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [ultimoErro, setUltimoErro] = useState<string | null>(null);
+  
+  // Estados para ativação de dispositivo
+  const [needsDeviceActivation, setNeedsDeviceActivation] = useState(false);
+  const [dispositivoPendenteId, setDispositivoPendenteId] = useState<string | null>(null);
+  const [ativacaoErro, setAtivacaoErro] = useState<string | null>(null);
 
   // Timer para auto sync
   const [autoSyncTimer, setAutoSyncTimer] = useState<NodeJS.Timeout | null>(null);
@@ -442,6 +456,116 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   
   }
   }, [dispositivo]);
+
+  // ==========================================================================
+  // ATIVAÇÃO DE DISPOSITIVO COM SENHA
+  // ==========================================================================
+
+  /**
+   * Verifica se o dispositivo precisa de ativação
+   * Deve ser chamado após o login bem-sucedido
+   */
+  const verificarAtivacao = useCallback(async () => {
+    console.log('[SyncContext] Verificando necessidade de ativação...');
+    
+    try {
+      const metadata = await databaseService.getSyncMetadata();
+      
+      // Se já tem deviceId e deviceKey, verificar se está ativo no servidor
+      if (metadata.deviceId && metadata.deviceKey) {
+        const response = await apiService.verificarStatusDispositivo(metadata.deviceKey);
+        
+        if (response.success && response.data?.needsActivation) {
+          // Dispositivo existe mas precisa de ativação
+          setNeedsDeviceActivation(true);
+          setDispositivoPendenteId(response.data.dispositivoId || metadata.deviceId);
+          console.log('[SyncContext] Dispositivo precisa de ativação');
+          return;
+        }
+        
+        // Dispositivo já ativo
+        setNeedsDeviceActivation(false);
+        setDispositivo({
+          id: metadata.deviceId,
+          nome: metadata.deviceName || '',
+          chave: metadata.deviceKey,
+          registrado: true,
+        });
+        console.log('[SyncContext] Dispositivo já está ativo');
+        return;
+      }
+      
+      // Não tem deviceId - precisa cadastrar novo dispositivo
+      // Mas primeiro precisa que o admin cadastre no web e forneça a senha
+      setNeedsDeviceActivation(true);
+      console.log('[SyncContext] Nenhum dispositivo registrado localmente');
+      
+    } catch (error) {
+      console.error('[SyncContext] Erro ao verificar ativação:', error);
+      setNeedsDeviceActivation(true);
+    }
+  }, []);
+
+  /**
+   * Ativa dispositivo com senha de 6 dígitos
+   * @param dispositivoId ID do dispositivo cadastrado no painel web
+   * @param senhaNumerica Senha de 6 dígitos fornecida pelo admin
+   */
+  const ativarDispositivo = useCallback(async (
+    dispositivoId: string,
+    senhaNumerica: string
+  ): Promise<boolean> => {
+    console.log('[SyncContext] Ativando dispositivo:', dispositivoId);
+    setAtivacaoErro(null);
+    
+    try {
+      // Gerar chave única para este dispositivo
+      const deviceKey = `dev_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+      const deviceName = `Dispositivo ${dispositivoId.substring(0, 8)}`;
+      
+      const response = await apiService.ativarDispositivo({
+        dispositivoId,
+        deviceKey,
+        deviceName,
+        senhaNumerica,
+      });
+      
+      if (!response.success || !response.data?.success) {
+        const errorMsg = response.error || 'Falha ao ativar dispositivo';
+        setAtivacaoErro(errorMsg);
+        console.error('[SyncContext] Erro na ativação:', errorMsg);
+        return false;
+      }
+      
+      // Salvar informações do dispositivo localmente
+      await databaseService.setDeviceId(
+        dispositivoId,
+        deviceName,
+        deviceKey
+      );
+      
+      // Atualizar estado
+      setDispositivo({
+        id: dispositivoId,
+        nome: deviceName,
+        chave: deviceKey,
+        registrado: true,
+      });
+      
+      setNeedsDeviceActivation(false);
+      setDispositivoPendenteId(null);
+      setAtivacaoErro(null);
+      
+      console.log('[SyncContext] Dispositivo ativado com sucesso!');
+      return true;
+      
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Erro ao ativar dispositivo';
+      setAtivacaoErro(errorMsg);
+      console.error('[SyncContext] Erro ao ativar dispositivo:', error);
+      return false;
+    }
+  }, []);
   // ==========================================================================
   // CONFLITOS
   // ==========================================================================
@@ -648,6 +772,10 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     dispositivo,
     erro,
     ultimoErro,
+    // Ativação
+    needsDeviceActivation,
+    dispositivoPendenteId,
+    ativacaoErro,
     // Inicialização
     inicializar,
 
@@ -659,6 +787,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     // Dispositivo
     registrarDispositivo,
     atualizarDispositivo,
+    ativarDispositivo,
+    verificarAtivacao,
 
     // Conflitos
     resolverConflito,

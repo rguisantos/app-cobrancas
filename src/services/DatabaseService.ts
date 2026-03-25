@@ -17,6 +17,7 @@ import {
   HistoricoCobranca,
   Rota
 } from '../types';
+import { ENV } from '../config/env';
 
 // ============================================================================
 // CONFIGURAÇÃO DO BANCO DE DADOS
@@ -1511,9 +1512,20 @@ class DatabaseService {
 
   /**
    * Inicializa dados padrão de atributos se não existirem
+   * Apenas em modo de desenvolvimento (USE_MOCK=true)
+   * Em produção, os dados vêm do servidor via sincronização
    */
   async inicializarAtributosPadrao(): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
+    
+    // Se USE_MOCK for false, não criar dados mockados
+    // Os dados devem vir do servidor via sincronização
+    if (!ENV.USE_MOCK) {
+      console.log('[Database] Modo produção: Atributos serão sincronizados do servidor');
+      return;
+    }
+    
+    console.log('[Database] Modo desenvolvimento: Inicializando atributos padrão...');
     
     const tiposExistentes = await this.getTiposProduto();
     if (tiposExistentes.length === 0) {

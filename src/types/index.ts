@@ -534,9 +534,31 @@ export interface Equipamento {
   tipo: 'Celular' | 'Tablet' | 'Outro';
   dataCadastro: string;
   ultimaSincronizacao?: string;
-  status: 'ativo' | 'inativo' | 'nao_sincronizado';
+  status: 'ativo' | 'inativo' | 'pendente';
   tempoDesdeUltimaSync?: string;
   estaAtrasado?: boolean;
+  senhaNumerica?: string;  // Senha de 6 dígitos para ativação
+}
+
+// ============================================================================
+// 📱 ATIVAÇÃO DE DISPOSITIVO
+// ============================================================================
+
+export interface DeviceActivationRequest {
+  dispositivoId: string;  // ID do dispositivo cadastrado no web
+  deviceKey: string;       // Chave única gerada pelo mobile
+  deviceName: string;      // Nome amigável do dispositivo
+  senhaNumerica: string;   // Senha de 6 dígitos
+}
+
+export interface DeviceActivationResponse {
+  success: boolean;
+  dispositivo?: {
+    id: string;
+    nome: string;
+    status: string;
+  };
+  error?: string;
 }
 
 // ============================================================================
