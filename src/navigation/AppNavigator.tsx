@@ -9,17 +9,22 @@
  * - ModalStack: Telas em modal (Detalhes, Formulários)
  */
 
-import React, { useCallback, useState, useEffect } from 'react';
-import { View, ActivityIndicator, useColorScheme } from 'react-native';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
+import { View, ActivityIndicator, useColorScheme, Text } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { createBottomTabNavigator, BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Device from 'expo-device';
 
 // Contexts
 import { useAuth } from '../contexts/AuthContext';
 import { useSync } from '../contexts/SyncContext';
+
+// Services
+import { apiService } from '../services/ApiService';
+import logger from '../utils/logger';
 
 // Types
 import { TipoPermissaoUsuario, PermissoesUsuario } from '../types';
@@ -414,7 +419,7 @@ function ModalNavigator() {
 // ============================================================================
 
 export function AppNavigator() {
-  const { user, isLoading, isAuthenticated, isSignout } = useAuth();
+  const { user, isLoading, isAuthenticated, isSignout, token } = useAuth();
   const { status: syncStatus, dispositivo } = useSync();
   const colorScheme = useColorScheme();
   const theme = colorScheme === 'dark' ? DarkNavTheme : LightNavTheme;
@@ -422,26 +427,97 @@ export function AppNavigator() {
   // Estado para verificação de ativação do dispositivo
   const [checkingDevice, setCheckingDevice] = useState(true);
   const [deviceActivated, setDeviceActivated] = useState(false);
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const hasCheckedRef = useRef(false);
+
+  // Gerar chave única do dispositivo
+  const generateDeviceKey = async (): Promise<string> => {
+    try {
+      const deviceId = Device.modelId || 
+                       `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      
+      const manufacturer = Device.manufacturer || 'unknown';
+      const model = Device.modelName || Device.modelId || 'unknown';
+      const osVersion = Device.osVersion || 'unknown';
+      
+      const key = `${manufacturer}_${model}_${osVersion}_${deviceId}`
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '_')
+        .substring(0, 100);
+      
+      return key;
+    } catch (error) {
+      return `device_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    }
+  };
 
   // Verificar se o dispositivo está ativado
   useEffect(() => {
     const checkDeviceActivation = async () => {
+      // Evitar verificações duplicadas
+      if (hasCheckedRef.current) return;
+      
       if (!isAuthenticated || isSignout) {
         setCheckingDevice(false);
         return;
       }
       
+      hasCheckedRef.current = true;
+      logger.info('[AppNavigator] Verificando ativação do dispositivo...');
+      
       try {
-        const activated = await AsyncStorage.getItem('@device:activated');
-        const deviceId = await AsyncStorage.getItem('@device:id');
+        // Verificar se já tem dados de ativação salvos localmente
+        const [activated, savedDeviceId, savedDeviceKey] = await AsyncStorage.multiGet([
+          '@device:activated',
+          '@device:id',
+          '@device:key'
+        ]);
         
-        if (activated === 'true' && deviceId) {
+        logger.info('[AppNavigator] Dados locais:', {
+          activated: activated[1],
+          deviceId: savedDeviceId[1],
+          deviceKey: savedDeviceKey[1]?.substring(0, 20) + '...'
+        });
+        
+        // Se já está marcado como ativado localmente, confiar
+        if (activated[1] === 'true' && savedDeviceId[1] && savedDeviceKey[1]) {
+          logger.info('[AppNavigator] Dispositivo já ativado localmente');
+          setDeviceActivated(true);
+          setCheckingDevice(false);
+          return;
+        }
+        
+        // Verificar com o servidor se o dispositivo está cadastrado e ativo
+        const deviceKey = savedDeviceKey[1] || await generateDeviceKey();
+        
+        logger.info('[AppNavigator] Verificando status no servidor...', { deviceKey: deviceKey.substring(0, 30) });
+        
+        // Fazer requisição para verificar status
+        const response = await apiService.verificarStatusDispositivo(deviceKey);
+        
+        logger.info('[AppNavigator] Resposta do servidor:', response.data);
+        
+        if (response.success && response.data?.needsActivation === false) {
+          // Dispositivo já está ativo no servidor
+          logger.info('[AppNavigator] Dispositivo ativo no servidor');
+          await AsyncStorage.setItem('@device:activated', 'true');
+          if (!savedDeviceKey[1]) {
+            await AsyncStorage.setItem('@device:key', deviceKey);
+          }
           setDeviceActivated(true);
         } else {
+          // Dispositivo precisa de ativação
+          logger.info('[AppNavigator] Dispositivo precisa de ativação');
           setDeviceActivated(false);
+          
+          // Salvar o deviceKey gerado para uso na tela de ativação
+          if (!savedDeviceKey[1]) {
+            await AsyncStorage.setItem('@device:key', deviceKey);
+          }
         }
       } catch (error) {
-        console.error('[AppNavigator] Erro ao verificar ativação:', error);
+        logger.error('[AppNavigator] Erro ao verificar ativação:', error);
+        setCheckError(error instanceof Error ? error.message : 'Erro ao verificar dispositivo');
         setDeviceActivated(false);
       } finally {
         setCheckingDevice(false);
@@ -449,18 +525,34 @@ export function AppNavigator() {
     };
     
     checkDeviceActivation();
-  }, [isAuthenticated, isSignout]);
+  }, [isAuthenticated, isSignout, token]);
 
   // Enquanto carrega auth ou verifica dispositivo, mostra loading
   if (isLoading || checkingDevice) {
     return (
       <NavigationContainer theme={theme}>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background }}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={{ marginTop: 16, color: theme.colors.text, fontSize: 14 }}>
+            {isLoading ? 'Carregando...' : 'Verificando dispositivo...'}
+          </Text>
         </View>
       </NavigationContainer>
     );
-
+  }
+  
+  // Mostrar erro se houver
+  if (checkError && isAuthenticated && !isSignout) {
+    return (
+      <NavigationContainer theme={theme}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background, padding: 20 }}>
+          <Ionicons name="alert-circle" size={48} color="#EF4444" />
+          <Text style={{ marginTop: 16, color: '#EF4444', fontSize: 16, textAlign: 'center' }}>
+            {checkError}
+          </Text>
+        </View>
+      </NavigationContainer>
+    );
   }
 
   return (

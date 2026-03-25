@@ -148,20 +148,10 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       setIsSignout(false);
 
       logger.info('[Auth] Login completo', { email, role: usuarioLogado.tipoPermissao });
-
-      // Registrar dispositivo automaticamente após login
-      logger.info('[Auth] ====== INICIANDO REGISTRO DE DISPOSITIVO ======');
-      try {
-        const registrado = await syncService.ensureDeviceRegistered();
-        if (registrado) {
-          logger.info('[Auth] ====== DISPOSITIVO REGISTRADO COM SUCESSO ======');
-        } else {
-          logger.warn('[Auth] ====== FALHA AO REGISTRAR DISPOSITIVO ======');
-        }
-      } catch (regError) {
-        logger.error('[Auth] Erro ao registrar dispositivo:', regError);
-        // Não falha o login se o registro falhar
-      }
+      
+      // NÃO registrar dispositivo automaticamente - o AppNavigator vai verificar
+      // se o dispositivo está ativado e mostrar a tela de ativação se necessário
+      logger.info('[Auth] Verificação de dispositivo será feita no AppNavigator');
       
       onAuthChange?.(usuarioLogado as Usuario);
 
@@ -187,6 +177,10 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       await AsyncStorage.multiRemove([
         STORAGE_KEYS.TOKEN,
         STORAGE_KEYS.USER,
+        '@device:id',
+        '@device:key',
+        '@device:name',
+        '@device:activated',
       ]);
 
       // Limpar estado
