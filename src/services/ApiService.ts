@@ -460,52 +460,20 @@ class ApiService {
 
   /**
    * Verifica se o dispositivo precisa de ativação
-   * Faz uma requisição de sync para verificar status do dispositivo
+   * Usa endpoint específico para verificar status
    */
-  async verificarStatusDispositivo(deviceKey: string): Promise<ApiResponse<{
+  async verificarStatusDispositivo(deviceKey?: string): Promise<ApiResponse<{
     needsActivation: boolean;
     dispositivoId?: string;
     status?: string;
   }>> {
-    // Tenta fazer uma requisição de sync para verificar status
-    const response = await this.post<any>('/api/sync/push', {
-      deviceId: '',
-      deviceKey,
-      lastSyncAt: new Date(0).toISOString(),
-      changes: [],
-    });
+    const response = await this.post<{
+      needsActivation: boolean;
+      dispositivoId?: string;
+      status?: string;
+    }>('/api/dispositivos/status', { deviceKey });
 
-    // Se retornar needsActivation, dispositivo precisa ser ativado
-    if (response.statusCode === 403 || (response.data as any)?.needsActivation) {
-      return {
-        success: true,
-        data: {
-          needsActivation: true,
-          dispositivoId: (response.data as any)?.dispositivoId,
-          status: 'pendente',
-        },
-      };
-    }
-
-    // Se sucesso, dispositivo já está ativo
-    if (response.success) {
-      return {
-        success: true,
-        data: {
-          needsActivation: false,
-          status: 'ativo',
-        },
-      };
-    }
-
-    // Dispositivo não encontrado
-    return {
-      success: true,
-      data: {
-        needsActivation: true,
-        status: 'nao_encontrado',
-      },
-    };
+    return response;
   }
 
   // ==========================================================================

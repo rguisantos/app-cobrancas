@@ -32,7 +32,7 @@ import { useAuth } from '../contexts/AuthContext';
 const { width } = Dimensions.get('window');
 
 export default function DeviceActivationScreen() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const navigation = useNavigation<any>();
   
   // Estados
@@ -40,12 +40,29 @@ export default function DeviceActivationScreen() {
   const [senha, setSenha] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [deviceKey, setDeviceKey] = useState<string | null>(null);
   
   // Refs para os inputs
   const inputRefs = useRef<(TextInput | null)[]>([]);
   
   // Animação
   const shakeAnim = useRef(new Animated.Value(0)).current;
+  
+  // Carregar deviceKey salvo
+  useEffect(() => {
+    const loadDeviceKey = async () => {
+      try {
+        const savedKey = await AsyncStorage.getItem('@device:key');
+        if (savedKey) {
+          setDeviceKey(savedKey);
+          console.log('[DeviceActivation] DeviceKey carregado:', savedKey.substring(0, 20) + '...');
+        }
+      } catch (error) {
+        console.error('[DeviceActivation] Erro ao carregar deviceKey:', error);
+      }
+    };
+    loadDeviceKey();
+  }, []);
   
   // Gerar chave única do dispositivo
   const generateDeviceKey = async (): Promise<string> => {
@@ -143,27 +160,30 @@ export default function DeviceActivationScreen() {
     setErro(null);
     
     try {
-      const deviceKey = await generateDeviceKey();
+      // Usar deviceKey existente ou gerar novo
+      const finalDeviceKey = deviceKey || await generateDeviceKey();
       const deviceName = getDeviceName();
       
       console.log('[DeviceActivation] Tentando ativar dispositivo:', {
-        dispositivoId,
-        deviceKey,
+        dispositivoId: dispositivoId.trim(),
+        deviceKey: finalDeviceKey.substring(0, 20) + '...',
         deviceName,
       });
       
       // Fazer requisição de ativação
       const response = await apiService.ativarDispositivo({
         dispositivoId: dispositivoId.trim(),
-        deviceKey,
+        deviceKey: finalDeviceKey,
         deviceName,
         senhaNumerica: senhaCompleta,
       });
       
+      console.log('[DeviceActivation] Resposta:', response);
+      
       if (response.success && response.data?.success) {
         // Salvar informações do dispositivo localmente
         await AsyncStorage.setItem('@device:id', dispositivoId.trim());
-        await AsyncStorage.setItem('@device:key', deviceKey);
+        await AsyncStorage.setItem('@device:key', finalDeviceKey);
         await AsyncStorage.setItem('@device:name', deviceName);
         await AsyncStorage.setItem('@device:activated', 'true');
         
@@ -176,10 +196,11 @@ export default function DeviceActivationScreen() {
             {
               text: 'OK',
               onPress: () => {
-                // Recarregar o app para aplicar a ativação
+                // Forçar recarga do app
+                // O AppNavigator vai detectar @device:activated e permitir acesso
                 navigation.reset({
                   index: 0,
-                  routes: [{ name: 'Main' }],
+                  routes: [{ name: 'App' }],
                 });
               },
             },
@@ -293,6 +314,22 @@ export default function DeviceActivationScreen() {
             )}
           </TouchableOpacity>
         </View>
+        
+        {/* Botão de logout */}
+        <TouchableOpacity
+          style={[styles.button, styles.buttonLogout]}
+          onPress={async () => {
+            try {
+              await logout();
+            } catch (e) {
+              console.error('Erro ao fazer logout:', e);
+            }
+          }}
+          disabled={loading}
+        >
+          <Ionicons name="log-out-outline" size={20} color="#64748B" />
+          <Text style={styles.buttonLogoutText}>Sair</Text>
+        </TouchableOpacity>
         
         {/* Instruções */}
         <View style={styles.instructionsContainer}>
@@ -427,6 +464,15 @@ const styles = StyleSheet.create({
   buttonSecondaryText: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#64748B',
+  },
+  buttonLogout: {
+    backgroundColor: 'transparent',
+    marginTop: 16,
+  },
+  buttonLogoutText: {
+    fontSize: 14,
+    fontWeight: '500',
     color: '#64748B',
   },
   instructionsContainer: {
