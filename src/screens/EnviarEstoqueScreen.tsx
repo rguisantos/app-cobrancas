@@ -75,15 +75,17 @@ export default function EnviarEstoqueScreen() {
           onPress: async () => {
             setSalvando(true);
             try {
-              // 1. Finalizar locação
-              const ok = await finalizarLocacao(locacaoId, `Envio para ${nomeEstab}: ${motivo}`);
+              // 1. Finalizar locação (observação da retirada fica na locação, NÃO no produto)
+              const ok = await finalizarLocacao(locacaoId, `Envio para ${nomeEstab}: ${motivo}${observacao ? ` - ${observacao}` : ''}`);
               if (!ok) throw new Error('Não foi possível finalizar a locação');
 
-              // 2. Atualizar produto (estabelecimento e observação)
+              // 2. Atualizar produto (apenas estabelecimento, SEM observação)
+              // A observação da retirada fica registrada na locação finalizada
               await atualizarProduto({
                 id: produtoId,
                 estabelecimento: nomeEstab,
-                observacao: observacao || `Enviado para ${nomeEstab}: ${motivo}`,
+                // NÃO salvar observação no produto - isso evita que a observação
+                // da retirada apareça em futuras locações
                 statusProduto: 'Ativo',
               });
 
