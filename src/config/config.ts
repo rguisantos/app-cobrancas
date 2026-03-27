@@ -10,8 +10,20 @@ const getApiUrl = (): string => {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   if (envUrl) return envUrl;
   
-  // Fallback para desenvolvimento local
-  return 'http://localhost:3000';
+  // Fallback - AVISO: isso provavelmente não funcionará em produção!
+  console.warn('⚠️ API_URL não configurado! Configure EXPO_PUBLIC_API_URL no .env');
+  return 'https://api.seuservidor.com.br';
+};
+
+// Modo mock - lê da variável de ambiente
+const getUseMock = (): boolean => {
+  const mockEnv = process.env.EXPO_PUBLIC_USE_MOCK;
+  // Se não definido, assume FALSE (precisa configurar .env)
+  if (mockEnv === undefined) {
+    console.warn('⚠️ USE_MOCK não configurado. Configure EXPO_PUBLIC_USE_MOCK=false no .env para conectar ao backend.');
+    return false;
+  }
+  return mockEnv === 'true' || mockEnv === '1';
 };
 
 export const CONFIG = {
@@ -35,9 +47,6 @@ export const CONFIG = {
   
   // Modo mock
   get useMock() {
-    const mockEnv = process.env.EXPO_PUBLIC_USE_MOCK;
-    // Se não definido, assume true para compatibilidade
-    if (mockEnv === undefined) return true;
-    return mockEnv === 'true' || mockEnv === '1';
+    return getUseMock();
   },
 };

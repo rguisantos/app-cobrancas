@@ -827,6 +827,12 @@ class DatabaseService {
         await this.upsertFromSync('rota', rota);
       }
 
+      // Usuários - sincronizar permissões alteradas no web
+      const usuarios = (changes as any).usuarios || [];
+      for (const usuario of usuarios) {
+        await this.upsertUsuarioFromSync(usuario);
+      }
+
       // Tipos de Produto (atributos)
       const tiposProduto = (response as any).tiposProduto || [];
       for (const tipo of tiposProduto) {
@@ -952,6 +958,54 @@ class DatabaseService {
       `INSERT OR REPLACE INTO ${TABLES.TAMANHOS_PRODUTO} (id, nome, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
        VALUES (?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
       [tam.id, tam.nome, tam.lastSyncedAt || new Date().toISOString(), tam.version || 1, tam.deviceId || '', tam.createdAt || new Date().toISOString(), tam.updatedAt || new Date().toISOString(), tam.deletedAt || null]
+    );
+  }
+
+  /**
+   * Upsert de usuário recebido do servidor (SEM criar ChangeLog)
+   * Sincroniza permissões alteradas no web para o mobile
+   */
+  private async upsertUsuarioFromSync(usuario: any): Promise<void> {
+    if (!this.db) return;
+    
+    // Converter objetos JSON para string
+    const permissoesWeb = typeof usuario.permissoesWeb === 'object' 
+      ? JSON.stringify(usuario.permissoesWeb) 
+      : usuario.permissoesWeb || '{}';
+    const permissoesMobile = typeof usuario.permissoesMobile === 'object' 
+      ? JSON.stringify(usuario.permissoesMobile) 
+      : usuario.permissoesMobile || '{}';
+    const rotasPermitidas = typeof usuario.rotasPermitidas === 'object' 
+      ? JSON.stringify(usuario.rotasPermitidas) 
+      : usuario.rotasPermitidas || '[]';
+
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO ${TABLES.USUARIOS} 
+       (id, tipo, nome, cpf, telefone, email, senha, tipoPermissao, permissoesWeb, permissoesMobile, rotasPermitidas, status, bloqueado, dataUltimoAcesso, ultimoAcessoDispositivo, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
+      [
+        usuario.id,
+        usuario.tipo || 'usuario',
+        usuario.nome,
+        usuario.cpf || null,
+        usuario.telefone || null,
+        usuario.email,
+        usuario.senha || '',
+        usuario.tipoPermissao,
+        permissoesWeb,
+        permissoesMobile,
+        rotasPermitidas,
+        usuario.status || 'Ativo',
+        usuario.bloqueado ? 1 : 0,
+        usuario.dataUltimoAcesso || null,
+        usuario.ultimoAcessoDispositivo || null,
+        usuario.lastSyncedAt || new Date().toISOString(),
+        usuario.version || 1,
+        usuario.deviceId || '',
+        usuario.createdAt || new Date().toISOString(),
+        usuario.updatedAt || new Date().toISOString(),
+        usuario.deletedAt || null
+      ]
     );
   }
 

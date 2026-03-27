@@ -332,7 +332,8 @@ class SyncService {
         (changes.produtos?.length || 0) +
         (changes.locacoes?.length || 0) +
         (changes.cobrancas?.length || 0) +
-        (changes.rotas?.length || 0);
+        (changes.rotas?.length || 0) +
+        ((changes as any).usuarios?.length || 0);  // Incluir usuários
 
       if (pulled > 0) {
         logger.info('[Sync/Pull] Aplicando mudanças...', { count: pulled });

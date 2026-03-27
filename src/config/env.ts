@@ -20,15 +20,16 @@ const envSchema = z.object({
   // API
   API_URL: z.string().default('https://api.seuservidor.com.br'),
   
-  // Mock (desenvolvimento) - TRUE por padrão para funcionar offline
-  USE_MOCK: z.boolean().default(true),
+  // Mock (desenvolvimento) - FALSE por padrão para evitar confusão em produção
+  // IMPORTANTE: Se não configurar .env, o app não conectará ao backend!
+  USE_MOCK: z.boolean().default(false),
   
   // App Info
   APP_VERSION: z.string().default('1.0.0'),
   APP_NAME: z.string().default('App Cobranças'),
   
   // Debug
-  DEBUG: z.boolean().default(true),
+  DEBUG: z.boolean().default(false),
   
   // Sync
   SYNC_INTERVAL: z.number().int().positive().default(15),
@@ -87,10 +88,10 @@ const getNumberValue = (key: string, defaultValue: number = 0): number => {
 const parseEnvConfig = (): EnvConfig => {
   const rawConfig = {
     API_URL: getEnvValue('API_URL', 'https://api.seuservidor.com.br'),
-    USE_MOCK: getBoolValue('USE_MOCK', true), // Respeita a variável de ambiente
+    USE_MOCK: getBoolValue('USE_MOCK', false), // FALSE por padrão - precisa configurar .env
     APP_VERSION: getEnvValue('APP_VERSION', '1.0.0'),
     APP_NAME: getEnvValue('APP_NAME', 'App Cobranças'),
-    DEBUG: getBoolValue('DEBUG', true),
+    DEBUG: getBoolValue('DEBUG', false),
     SYNC_INTERVAL: getNumberValue('SYNC_INTERVAL', 15),
     MAX_RECORDS_PER_SYNC: getNumberValue('MAX_RECORDS_PER_SYNC', 100),
     TIMEOUT: getNumberValue('TIMEOUT', 30000),
@@ -100,7 +101,23 @@ const parseEnvConfig = (): EnvConfig => {
   };
 
   try {
-    return envSchema.parse(rawConfig);
+    const config = envSchema.parse(rawConfig);
+    
+    // AVISO CRÍTICO: Se USE_MOCK está true mas sem credenciais mock
+    if (config.USE_MOCK && !config.MOCK_EMAIL) {
+      console.warn('⚠️ AVISO: USE_MOCK=true mas MOCK_EMAIL não configurado!');
+      console.warn('   Configure MOCK_EMAIL e MOCK_PASSWORD no .env para usar modo mock.');
+    }
+    
+    // AVISO CRÍTICO: Se USE_MOCK está false mas API_URL é o fallback
+    if (!config.USE_MOCK && config.API_URL === 'https://api.seuservidor.com.br') {
+      console.error('⚠️⚠️⚠️ CONFIGURAÇÃO CRÍTICA ⚠️⚠️⚠️');
+      console.error('USE_MOCK=false mas API_URL não está configurado!');
+      console.error('Configure EXPO_PUBLIC_API_URL no arquivo .env');
+      console.error('Exemplo: EXPO_PUBLIC_API_URL=https://seu-servidor.com.br');
+    }
+    
+    return config;
   } catch (error) {
     if (error instanceof z.ZodError) {
       console.error('[ENV] Erro de validação das variáveis de ambiente:');
