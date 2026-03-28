@@ -274,6 +274,81 @@ class ApiService {
   }
 
   /**
+   * Requisição POST sem autenticação (para sync via deviceKey)
+   * A sincronização usa deviceKey como credencial, não token JWT
+   */
+  private async postWithoutAuth<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
+    const url = `${this.baseURL}${endpoint}`;
+    const requestId = `${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    
+    console.log(`\n[SYNC:${requestId}] ========== SYNC REQUEST START ==========`);
+    console.log(`[SYNC:${requestId}] URL: ${url}`);
+    console.log(`[SYNC:${requestId}] Method: POST (sem token - autenticação via deviceKey)`);
+    
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    
+    const bodyPreview = JSON.stringify(body).substring(0, 300);
+    console.log(`[SYNC:${requestId}] Body: ${bodyPreview}...`);
+
+    this.abortController = new AbortController();
+    const startTime = Date.now();
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: this.abortController.signal,
+      });
+
+      const duration = Date.now() - startTime;
+      console.log(`[SYNC:${requestId}] Status: ${response.status} (${duration}ms)`);
+      
+      let data: any;
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType?.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        data = { message: text };
+      }
+      
+      console.log(`[SYNC:${requestId}] Response:`, JSON.stringify(data).substring(0, 300));
+
+      if (!response.ok) {
+        console.error(`[SYNC:${requestId}] ❌ ERRO HTTP ${response.status}`);
+        console.log(`[SYNC:${requestId}] ========== SYNC REQUEST END (ERROR) ==========\n`);
+        return {
+          success: false,
+          error: data.message || data.error || `Erro HTTP ${response.status}`,
+          statusCode: response.status,
+        };
+      }
+
+      console.log(`[SYNC:${requestId}] ✅ SUCESSO`);
+      console.log(`[SYNC:${requestId}] ========== SYNC REQUEST END (OK) ==========\n`);
+      return {
+        success: true,
+        data: data as T,
+        statusCode: response.status,
+      };
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      console.error(`[SYNC:${requestId}] ❌ ERRO DE REDE após ${duration}ms:`, error);
+      console.log(`[SYNC:${requestId}] ========== SYNC REQUEST END (NETWORK ERROR) ==========\n`);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro de conexão',
+      };
+    } finally {
+      this.abortController = null;
+    }
+  }
+
+  /**
    * Requisição PUT
    */
   private async put<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
@@ -293,11 +368,12 @@ class ApiService {
   }
 
   // ==========================================================================
-  // SINCRONIZAÇÃO
+  // SINCRONIZAÇÃO (usa deviceKey, não token JWT)
   // ==========================================================================
 
   /**
    * Envia mudanças locais para o servidor (PUSH)
+   * Autenticação via deviceKey, não requer token JWT
    */
   async pushChanges(payload: PushChangesRequest): Promise<SyncResponse> {
     console.log(`\n[SYNC:PUSH] ========== INICIANDO PUSH ==========`);
@@ -313,7 +389,7 @@ class ApiService {
       });
     }
     
-    const response = await this.post<SyncResponse>('/api/sync/push', payload);
+    const response = await this.postWithoutAuth<SyncResponse>('/api/sync/push', payload);
 
     if (!response.success) {
       console.error(`[SYNC:PUSH] ❌ FALHA: ${response.error}`);
@@ -340,7 +416,9 @@ class ApiService {
     return response.data!;
   }
 
-  /**   * Busca mudanças do servidor (PULL)
+  /**
+   * Busca mudanças do servidor (PULL)
+   * Autenticação via deviceKey, não requer token JWT
    */
   async pullChanges(payload: PullChangesRequest): Promise<SyncResponse> {
     console.log(`\n[SYNC:PULL] ========== INICIANDO PULL ==========`);
@@ -348,7 +426,7 @@ class ApiService {
     console.log(`[SYNC:PULL] DeviceKey: ${payload.deviceKey?.substring(0, 20)}...`);
     console.log(`[SYNC:PULL] LastSyncAt: ${payload.lastSyncAt}`);
     
-    const response = await this.post<SyncResponse>('/api/sync/pull', payload);
+    const response = await this.postWithoutAuth<SyncResponse>('/api/sync/pull', payload);
 
     if (!response.success) {
       console.error(`[SYNC:PULL] ❌ FALHA: ${response.error}`);
