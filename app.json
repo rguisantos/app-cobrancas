@@ -60,7 +60,7 @@
       "policy": "appVersion"
     },
     "extra": {
-      "API_URL": "http://localhost:3000",
+      "API_URL": "https://app-cobrancas-web.vercel.app",
       "USE_MOCK": "false",
       "APP_VERSION": "1.0.0",
       "APP_NAME": "App Cobranças",
