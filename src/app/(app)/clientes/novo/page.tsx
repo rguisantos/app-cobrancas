@@ -268,7 +268,7 @@ export default function NovoClientePage() {
                     <Input
                       id="cpf"
                       value={formData.cpf}
-                      onChange={(e) => setFormData(prev => ({ ...prev, cpf: formatCpf(e.target.value) })}
+                      onChange={(e) => setFormData(prev => ({ ...prev, cpf: formatCpf(e.target.value) }))}
                       placeholder="000.000.000-00"
                       maxLength={14}
                     />

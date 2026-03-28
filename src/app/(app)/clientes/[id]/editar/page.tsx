@@ -255,7 +255,7 @@ export default function EditarClientePage() {
                 </div>
                 <div className="space-y-2">
                   <Label>CPF</Label>
-                  <Input value={formData.cpf} onChange={(e) => setFormData(prev => ({ ...prev, cpf: formatCpf(e.target.value) })} maxLength={14} />
+                  <Input value={formData.cpf} onChange={(e) => setFormData(prev => ({ ...prev, cpf: formatCpf(e.target.value) }))} maxLength={14} />
                 </div>
                 <div className="space-y-2">
                   <Label>RG</Label>
@@ -274,7 +274,7 @@ export default function EditarClientePage() {
                 </div>
                 <div className="space-y-2">
                   <Label>CNPJ</Label>
-                  <Input value={formData.cnpj} onChange={(e) => setFormData(prev => ({ ...prev, cnpj: formatCnpj(e.target.value) })} maxLength={18} />
+                  <Input value={formData.cnpj} onChange={(e) => setFormData(prev => ({ ...prev, cnpj: formatCnpj(e.target.value) }))} maxLength={18} />
                 </div>
                 <div className="space-y-2">
                   <Label>Inscrição Estadual</Label>
@@ -291,7 +291,7 @@ export default function EditarClientePage() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Telefone Principal *</Label>
-                <Input value={formData.telefonePrincipal} onChange={(e) => setFormData(prev => ({ ...prev, telefonePrincipal: formatPhone(e.target.value) })} maxLength={15} />
+                <Input value={formData.telefonePrincipal} onChange={(e) => setFormData(prev => ({ ...prev, telefonePrincipal: formatPhone(e.target.value) }))} maxLength={15} />
               </div>
               <div className="space-y-2">
                 <Label>Email</Label>

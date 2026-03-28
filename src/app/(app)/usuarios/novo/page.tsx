@@ -98,7 +98,7 @@ export default function NovoUsuarioPage() {
               <div className="space-y-2"><Label>CPF</Label><Input value={formData.cpf} onChange={(e) => setFormData(p => ({ ...p, cpf: formatCpf(e.target.value) }))} maxLength={14} /></div>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2"><Label>Telefone</Label><Input value={formData.telefone} onChange={(e) => setFormData(p => ({ ...p, telefone: formatPhone(e.target.value }))} maxLength={15} /></div>
+              <div className="space-y-2"><Label>Telefone</Label><Input value={formData.telefone} onChange={(e) => setFormData(p => ({ ...p, telefone: formatPhone(e.target.value) }))} maxLength={15} /></div>
               <div className="space-y-2"><Label>Email *</Label><Input type="email" value={formData.email} onChange={(e) => setFormData(p => ({ ...p, email: e.target.value }))} /></div>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
