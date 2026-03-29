@@ -489,7 +489,7 @@ class ApiService {
     console.log(`[DEVICE:REGISTER] Chave: ${dados.chave?.substring(0, 20)}...`);
     console.log(`[DEVICE:REGISTER] Tipo: ${dados.tipo}`);
     
-    const response = await this.post('/api/equipamentos', dados);
+    const response = await this.post<{ success: boolean; id: string }>('/api/equipamentos', dados);
     
     if (response.success) {
       console.log(`[DEVICE:REGISTER] ✅ Dispositivo registrado: ${response.data?.id}`);

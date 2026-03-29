@@ -80,7 +80,7 @@ class RotaRepository {
    */
   async save(rota: Partial<Rota>): Promise<Rota> {
     try {
-      const id = rota.id || `rota_${Date.now()}`;
+      const id = String(rota.id || `rota_${Date.now()}`);
       const descricao = rota.descricao || '';
       const status = rota.status || 'Ativo';
 
@@ -92,9 +92,8 @@ class RotaRepository {
         id,
         descricao,
         status: status as 'Ativo' | 'Inativo',
-        tipo: 'rota',
         syncStatus: 'pending',
-        needsSync: 1,
+        needsSync: true,
         version: 1,
         deviceId: '',
         createdAt: new Date().toISOString(),
@@ -166,14 +165,12 @@ class RotaRepository {
       id: data.id,
       descricao: data.descricao,
       status: data.status || 'Ativo',
-      tipo: 'rota',
       syncStatus: data.syncStatus || 'synced',
       needsSync: data.needsSync === 1 || data.needsSync === true,
       version: data.version || 1,
       deviceId: data.deviceId || '',
       createdAt: data.createdAt || new Date().toISOString(),
       updatedAt: data.updatedAt || new Date().toISOString(),
-      deletedAt: data.deletedAt,
     };
   }
 

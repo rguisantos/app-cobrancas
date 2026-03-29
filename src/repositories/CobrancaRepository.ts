@@ -183,7 +183,7 @@ class CobrancaRepository {
         tipo: this.entityType,
         syncStatus: 'pending',
         lastSyncedAt: undefined,
-        needsSync: 1, // Integer para SQLite
+        needsSync: true,
         version: 0,
         deviceId: await databaseService.getDeviceId(),
         createdAt: new Date().toISOString(),
