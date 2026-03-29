@@ -48,6 +48,7 @@ export interface CalculoCobrancaOutput {
   // Descontos aplicados
   descontoPartidasValor: number;
   descontoDinheiroValor: number;
+  bonificacaoValor: number;
     // Percentual
   valorPercentual: number;
   
@@ -174,6 +175,7 @@ class CobrancaService {
       subtotalAposDescontoPartidas: valorFixo,      subtotalAposDescontoDinheiro: totalClientePaga,
       descontoPartidasValor: 0,
       descontoDinheiroValor: desconto,
+      bonificacaoValor: 0,
       valorPercentual: 0,
       totalClientePaga,
       valorEmpresaRecebe: totalClientePaga,

@@ -159,7 +159,7 @@ class UsuarioRepository {
   /**
    * Atualiza usuário existente
    */
-  async update(usuario: Partial<Usuario> & { id: string }): Promise<Usuario | null> {
+  async update(usuario: (Partial<Usuario> & { id: string }) & { senha?: string }): Promise<Usuario | null> {
     try {
       const existing = await this.getById(usuario.id);
       if (!existing) {
@@ -278,8 +278,17 @@ class UsuarioRepository {
           nome: (result as any).nome,
           tipoPermissao: (result as any).tipoPermissao,
           permissoes: {
-            web: this.parseJSON((result as any).permissoesWeb, {}),
-            mobile: this.parseJSON((result as any).permissoesMobile, {}),
+            web: this.parseJSON((result as any).permissoesWeb, {
+              todosCadastros: false,
+              locacaoRelocacaoEstoque: false,
+              relatorios: false,
+            }),
+            mobile: this.parseJSON((result as any).permissoesMobile, {
+              todosCadastros: false,
+              alteracaoRelogio: false,
+              locacaoRelocacaoEstoque: false,
+              cobrancasFaturas: true,
+            }),
           },
           rotasPermitidas: this.parseJSON((result as any).rotasPermitidas, []),
           status: (result as any).status,

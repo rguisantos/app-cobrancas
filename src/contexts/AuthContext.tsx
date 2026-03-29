@@ -54,6 +54,36 @@ export interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const toUsuario = (
+  authUser: {
+    id: string;
+    email: string;
+    nome: string;
+    tipoPermissao: TipoPermissaoUsuario;
+    permissoes: PermissoesUsuario;
+    rotasPermitidas: Array<string | number>;
+    status: 'Ativo' | 'Inativo';
+  }
+): Usuario => ({
+  id: authUser.id,
+  tipo: 'usuario',
+  nome: authUser.nome,
+  cpf: '',
+  telefone: '',
+  email: authUser.email,
+  tipoPermissao: authUser.tipoPermissao,
+  permissoes: authUser.permissoes,
+  rotasPermitidas: authUser.rotasPermitidas,
+  status: authUser.status,
+  bloqueado: false,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  syncStatus: 'synced',
+  needsSync: false,
+  version: 1,
+  deviceId: '',
+});
+
 // ============================================================================
 // PROVIDER
 // ============================================================================
@@ -148,7 +178,8 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
 
       // Atualizar estado
       setToken(newToken);
-      setUser(usuarioLogado as Usuario);
+      const usuarioContexto = toUsuario(usuarioLogado);
+      setUser(usuarioContexto);
       setIsSignout(false);
 
       logger.info('[Auth] Login completo', { email, role: usuarioLogado.tipoPermissao });
@@ -157,7 +188,7 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       // se o dispositivo está ativado e mostrar a tela de ativação se necessário
       logger.info('[Auth] Verificação de dispositivo será feita no AppNavigator');
       
-      onAuthChange?.(usuarioLogado as Usuario);
+      onAuthChange?.(usuarioContexto);
 
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao fazer login';
@@ -217,7 +248,7 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       // Recarregar dados do usuário do banco local
       const usuarioAtualizado = await authService.getUsuarioLogado();
       if (usuarioAtualizado) {
-        setUser(usuarioAtualizado as Usuario);
+        setUser(toUsuario(usuarioAtualizado));
         await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(usuarioAtualizado));
         logger.info('[Auth] Usuário atualizado');
       }

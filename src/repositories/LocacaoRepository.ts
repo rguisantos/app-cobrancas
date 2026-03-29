@@ -261,7 +261,7 @@ class LocacaoRepository {
         tipo: this.entityType,
         syncStatus: 'pending',
         lastSyncedAt: undefined,
-        needsSync: 1,
+        needsSync: true,
         version: 0,
         deviceId: await databaseService.getDeviceId(),
         createdAt: new Date().toISOString(),
