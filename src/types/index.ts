@@ -614,6 +614,7 @@ export interface SyncResponse {
     locacoes?: any[];
     cobrancas?: any[];
     rotas?: any[];
+    usuarios?: any[];  // Sincronização de permissões
   };
   conflicts?: SyncConflict[];
   errors?: string[];
@@ -623,6 +624,10 @@ export interface SyncResponse {
   locacoes?: any[];
   cobrancas?: any[];
   rotas?: any[];
+  // Atributos de produto
+  tiposProduto?: any[];
+  descricoesProduto?: any[];
+  tamanhosProduto?: any[];
 }
 
 // ============================================================================

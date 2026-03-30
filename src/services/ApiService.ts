@@ -631,7 +631,7 @@ class ApiService {
    * Busca locações ativas
    */
   async getLocacoesAtivas(): Promise<ApiResponse<any[]>> {
-    return this.get('/api/locativas/ativas');
+    return this.get('/api/locacoes/ativas');
 
   }
 
