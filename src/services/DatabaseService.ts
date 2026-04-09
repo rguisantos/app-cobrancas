@@ -109,6 +109,15 @@ class DatabaseService {
       
       // Habilitar foreign keys
       await this.db.execAsync('PRAGMA foreign_keys = ON;');
+
+      // WAL mode: leituras concorrentes durante escritas (sync não trava a UI)
+      await this.db.execAsync('PRAGMA journal_mode = WAL;');
+      // Menos fsync (NORMAL: seguro e mais rápido que FULL)
+      await this.db.execAsync('PRAGMA synchronous = NORMAL;');
+      // Cache de ~8MB (padrão é 2MB)
+      await this.db.execAsync('PRAGMA cache_size = -8000;');
+      // Aguarda 5s antes de "database is locked"
+      await this.db.execAsync('PRAGMA busy_timeout = 5000;');
       
       // Criar tabelas
       await this.createTables();
@@ -441,6 +450,7 @@ class DatabaseService {
       `CREATE INDEX IF NOT EXISTS idx_cobrancas_status ON ${TABLES.COBRANCAS}(status)`,
       
       `CREATE INDEX IF NOT EXISTS idx_change_log_sync ON ${TABLES.CHANGE_LOG}(synced, timestamp)`,
+      `CREATE INDEX IF NOT EXISTS idx_change_log_purge ON ${TABLES.CHANGE_LOG}(synced, syncedAt)`,  // Para purge
       `CREATE INDEX IF NOT EXISTS idx_change_log_entity ON ${TABLES.CHANGE_LOG}(entityId, entityType)`,
       
       `CREATE INDEX IF NOT EXISTS idx_usuarios_email ON ${TABLES.USUARIOS}(email)`,
@@ -851,6 +861,10 @@ class DatabaseService {
         await this.upsertTamanhoProdutoFromSync(tam);
       }
 
+      // Reconciliar IDs temporários (tmp_/novo_) criados offline com UUIDs reais do servidor
+      // Deve rodar APÓS aplicar todos os atributos do pull
+      await this.reconciliarAtributosTemporarios();
+
       // Atualizar metadata
       await this.updateSyncMetadata({
         lastSyncAt: response.lastSyncAt,
@@ -922,6 +936,98 @@ class DatabaseService {
         `INSERT INTO ${tableName} (id, ${fields.join(', ')}) VALUES (?, ${placeholders})`,
         [entity.id, ...values]
       );
+    }
+  }
+
+
+
+  /**
+   * Remove entradas do ChangeLog sincronizadas há mais de N dias.
+   * Chame após sync para evitar crescimento infinito.
+   */
+  async purgeOldChangeLogs(diasRetencao: number = 30): Promise<number> {
+    if (!this.db) return 0;
+    const limite = new Date();
+    limite.setDate(limite.getDate() - diasRetencao);
+    try {
+      const result = await this.db.runAsync(
+        `DELETE FROM ${TABLES.CHANGE_LOG} WHERE synced = 1 AND syncedAt < ?`,
+        [limite.toISOString()]
+      );
+      const count = result.changes ?? 0;
+      if (count > 0) console.log(`[Database] Purge: ${count} changelogs removidos`);
+      return count;
+    } catch (error) {
+      console.error('[Database] Erro no purge:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Reconcilia IDs temporários (tmp_xxx) criados offline com UUIDs reais vindos do servidor.
+   * Executado automaticamente após cada pull de atributos.
+   *
+   * Fluxo:
+   *   1. Mobile cria tipo offline → tipoId = 'tmp_xxx', tipoNome = 'Snooker'
+   *   2. Servidor cria o mesmo tipo com UUID real
+   *   3. No pull, servidor envia { id: 'uuid-real', nome: 'Snooker' }
+   *   4. Este método detecta o tmp_ pelo nome, migra referências e remove o tmp_
+   */
+  async reconciliarAtributosTemporarios(): Promise<void> {
+    if (!this.db) return;
+    try {
+      // Para cada tabela de atributos, encontrar pares (tmp_, nome) e (uuid, nome)
+      const tabelas = [
+        { tabela: TABLES.TIPOS_PRODUTO,    colProduto: 'tipoId',      colNome: 'tipoNome'      },
+        { tabela: TABLES.DESCRICOES_PRODUTO, colProduto: 'descricaoId', colNome: 'descricaoNome' },
+        { tabela: TABLES.TAMANHOS_PRODUTO,  colProduto: 'tamanhoId',   colNome: 'tamanhoNome'   },
+      ];
+
+      for (const { tabela, colProduto, colNome } of tabelas) {
+        // Encontrar todos os IDs temporários nesta tabela
+        const tmps = await this.db.getAllAsync<{ id: string; nome: string }>(
+          `SELECT id, nome FROM ${tabela} WHERE id LIKE 'tmp_%' OR id LIKE 'novo_%'`,
+          []
+        );
+        if (tmps.length === 0) continue;
+
+        for (const tmp of tmps) {
+          // Procurar se já existe um UUID real com o mesmo nome
+          const server = await this.db.getFirstAsync<{ id: string }>(
+            `SELECT id FROM ${tabela}
+             WHERE nome = ?
+               AND id NOT LIKE 'tmp_%'
+               AND id NOT LIKE 'novo_%'
+             LIMIT 1`,
+            [tmp.nome]
+          );
+          if (!server) continue; // Ainda não sincronizou — aguardar
+
+          // Migrar referências em produtos
+          await this.db.runAsync(
+            `UPDATE ${TABLES.PRODUTOS} SET ${colProduto} = ? WHERE ${colProduto} = ?`,
+            [server.id, tmp.id]
+          );
+          // Atualizar o nome caso tenha mudado
+          await this.db.runAsync(
+            `UPDATE ${TABLES.PRODUTOS} SET ${colNome} = (
+               SELECT nome FROM ${tabela} WHERE id = ?
+             ) WHERE ${colProduto} = ?`,
+            [server.id, server.id]
+          );
+          // Remover o registro temporário
+          await this.db.runAsync(
+            `DELETE FROM ${tabela} WHERE id = ?`,
+            [tmp.id]
+          );
+
+          console.log(
+            \`[Database] Reconciliado atributo temporário: \${tmp.id} → \${server.id} (nome: "\${tmp.nome}")\`
+          );
+        }
+      }
+    } catch (error) {
+      console.error('[Database] Erro na reconciliação de IDs temporários:', error);
     }
   }
 

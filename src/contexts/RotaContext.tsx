@@ -43,6 +43,7 @@ interface RotaProviderProps {
 }
 
 export function RotaProvider({ children }: RotaProviderProps) {
+  const { isAdmin } = useAuth();
   // Verificar se o banco está pronto
   const { isReady } = useDatabase();
   
@@ -82,6 +83,10 @@ export function RotaProvider({ children }: RotaProviderProps) {
   }, []);
 
   const salvarRota = useCallback(async (dados: Partial<Rota>): Promise<Rota | null> => {
+    if (!isAdmin()) {
+      setErro('Apenas administradores podem gerenciar rotas');
+      return null;
+    }
     setCarregando(true);
     try {
       const rota = await rotaRepository.save(dados as Rota);
@@ -92,9 +97,8 @@ export function RotaProvider({ children }: RotaProviderProps) {
       return null;
     } finally {
       setCarregando(false);
-  
-  }
-  }, [carregarRotas]);
+    }
+  }, [carregarRotas, isAdmin]);
 
   const refresh = useCallback(async () => {
     await carregarRotas();
@@ -108,6 +112,10 @@ export function RotaProvider({ children }: RotaProviderProps) {
   }, [carregarRotas, isReady]);
 
   const excluirRota = useCallback(async (id: string | number): Promise<boolean> => {
+    if (!isAdmin()) {
+      setErro('Apenas administradores podem excluir rotas');
+      return false;
+    }
     try {
       const ok = await rotaRepository.delete(id);
       if (ok) await carregarRotas();
@@ -116,7 +124,7 @@ export function RotaProvider({ children }: RotaProviderProps) {
       console.error('[RotaContext] Erro ao excluir rota:', error);
       return false;
     }
-  }, [carregarRotas]);
+  }, [carregarRotas, isAdmin]);
 
   const contextValue: RotaContextData = {    rotas,
     rotaSelecionada,

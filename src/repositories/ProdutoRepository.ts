@@ -400,30 +400,32 @@ class ProdutoRepository {
     totalManutencao: number;
   }> {
     try {
-      const [total, locados, disponiveis, manutencao] = await Promise.all([
-        this.count(),
-        this.count({ comLocacaoAtiva: true }),
-        this.count({ comLocacaoAtiva: false, statusProduto: 'Ativo' }),
-        this.count({ statusProduto: 'Manutenção' }),
-      ]);
-
+      // Uma única query SQL em vez de 4 queries separadas
+      const rows = await databaseService.getAllAsync<any>(
+        `SELECT
+           COUNT(*)                                          AS totalProdutos,
+           COUNT(CASE WHEN loc.id IS NOT NULL THEN 1 END)   AS totalLocados,
+           COUNT(CASE WHEN loc.id IS NULL AND p.statusProduto = 'Ativo' THEN 1 END) AS totalDisponiveis,
+           COUNT(CASE WHEN p.statusProduto = 'Manutenção'  THEN 1 END) AS totalManutencao
+         FROM produtos p
+         LEFT JOIN locacoes loc
+           ON loc.produtoId = p.id
+          AND loc.status = 'Ativa'
+          AND loc.deletedAt IS NULL
+         WHERE p.deletedAt IS NULL`,
+        []
+      );
+      const r = rows[0] ?? {};
       return {
-        totalProdutos: total,
-        totalLocados: locados,
-        totalDisponiveis: disponiveis,
-        totalManutencao: manutencao,
+        totalProdutos:    r.totalProdutos    ?? 0,
+        totalLocados:     r.totalLocados     ?? 0,
+        totalDisponiveis: r.totalDisponiveis ?? 0,
+        totalManutencao:  r.totalManutencao  ?? 0,
       };
     } catch (error) {
       console.error('[ProdutoRepository] Erro ao buscar resumo de produtos:', error);
-      return {
-        totalProdutos: 0,
-        totalLocados: 0,
-        totalDisponiveis: 0,
-        totalManutencao: 0,
-      };
-  
-  }
-
+      return { totalProdutos: 0, totalLocados: 0, totalDisponiveis: 0, totalManutencao: 0 };
+    }
   }
 
   /**

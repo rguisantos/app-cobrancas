@@ -4,7 +4,8 @@
  * Integração: DatabaseService + ApiService + Tipos
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { 
   SyncMetadata, 
   SyncStatus, 
@@ -219,6 +220,26 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   
   }
   }, [syncConfig.syncOnAppStart]);
+
+  // Sync automático ao voltar do background (AppState: background → active)
+  useEffect(() => {
+    if (!syncConfig.syncOnAppResume) return;
+
+    const appStateRef = { current: AppState.currentState };
+
+    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      const prev = appStateRef.current;
+      appStateRef.current = nextState;
+
+      // Só sincroniza quando voltar para foreground (background/inactive → active)
+      if ((prev === 'background' || prev === 'inactive') && nextState === 'active') {
+        logger.info('[SyncContext] App voltou ao foreground — iniciando sync');
+        sincronizar();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [syncConfig.syncOnAppResume, sincronizar]);
 
   // ==========================================================================
   // SINCRONIZAÇÃO

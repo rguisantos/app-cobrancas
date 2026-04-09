@@ -204,26 +204,37 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
       const hoje = new Date();
       const clientesNaoCobrados: ClienteNaoCobrado[] = [];
 
+      // Coletar IDs dos clientes que precisam de dados (atraso > 90 dias)
+      // Evita N+1: filtra primeiro, depois busca em batch
+      const clientesParaBuscar: { clienteId: string; cobranca: any; dias: number }[] = [];
       for (const [clienteId, cobranca] of ultimaCobrancaPorCliente.entries()) {
         const diasDesdeUltima = Math.floor(
           (hoje.getTime() - new Date(cobranca.dataInicio).getTime()) / (1000 * 60 * 60 * 24)
         );
-
         if (diasDesdeUltima > 90) {
-          // Buscar dados do cliente
-          const cliente = await clienteRepository.getById(clienteId);
-          
-          if (cliente) {
-            clientesNaoCobrados.push({
-              clienteId: cliente.id,
-              clienteNome: cliente.nomeExibicao,
-              ultimaDataPagamento: cobranca.dataPagamento || cobranca.dataInicio,
-              rotaId: cliente.rotaId,
-              rotaNome: cliente.rotaNome || '',
-              diasAtraso: diasDesdeUltima,            });
+          clientesParaBuscar.push({ clienteId, cobranca, dias: diasDesdeUltima });
+        }
+      }
+
+      // Batch: buscar todos os clientes de uma vez
+      const idsParaBuscar = clientesParaBuscar.map(c => c.clienteId);
+      const todosClientes = idsParaBuscar.length > 0
+        ? await clienteRepository.getAll({ termoBusca: undefined })
+        : [];
+      const clienteMap = new Map(todosClientes.map(c => [String(c.id), c]));
+
+      for (const { clienteId, cobranca, dias } of clientesParaBuscar) {
+        const cliente = clienteMap.get(clienteId);
+        if (cliente) {
+          clientesNaoCobrados.push({
+            clienteId: cliente.id,
+            clienteNome: cliente.nomeExibicao,
+            ultimaDataPagamento: cobranca.dataPagamento || cobranca.dataInicio,
+            rotaId: cliente.rotaId,
+            rotaNome: cliente.rotaNome || '',
+            diasAtraso: dias,
+          });
         
-  }
-      
   }
     
   }

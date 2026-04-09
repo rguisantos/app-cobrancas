@@ -37,23 +37,17 @@ export default function RelatorioSaldoDevedorScreen() {
     setCarregando(true);
     try {
       const clientes = await clienteRepository.getComSaldoDevedor();
-      const comSaldo: ClienteSaldo[] = await Promise.all(
-        clientes.map(async c => {
-          const cobrancas = await cobrancaRepository.getByCliente(String(c.id));
-          const pendentes = cobrancas.filter(cb =>
-            ['Parcial', 'Pendente', 'Atrasado'].includes(cb.status)
-          );
-          return {
-            id:                 String(c.id),
-            nomeExibicao:       (c as any).nomeExibicao || (c as any).nome || '',
-            rotaId:             (c as any).rotaId,
-            rotaNome:           (c as any).rotaNome,
-            telefone:           (c as any).telefone,
-            saldoTotal:         (c as any).saldoDevedorTotal ?? 0,
-            cobrancasPendentes: pendentes.length,
-          };
-        })
-      );
+      // Dados já vêm agregados do getComSaldoDevedor — sem N+1 adicional.
+      // cobrancasPendentes estimado a partir do saldo: se tem saldo > 0, tem pelo menos 1 pendente.
+      const comSaldo: ClienteSaldo[] = clientes.map(c => ({
+        id:                 String(c.id),
+        nomeExibicao:       (c as any).nomeExibicao || (c as any).nome || '',
+        rotaId:             (c as any).rotaId,
+        rotaNome:           (c as any).rotaNome,
+        telefone:           (c as any).telefonePrincipal || (c as any).telefone || '',
+        saldoTotal:         (c as any).saldoDevedorTotal ?? 0,
+        cobrancasPendentes: (c as any).saldoDevedorTotal > 0 ? 1 : 0,
+      }));
       const ordenados = comSaldo
         .filter(c => c.saldoTotal > 0)
         .sort((a, b) => b.saldoTotal - a.saldoTotal);

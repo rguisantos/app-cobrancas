@@ -333,23 +333,62 @@ class ClienteRepository {
    */
   async getComSaldoDevedor(): Promise<ClienteComLocacoes[]> {
     try {
-      const clientes = await databaseService.getAll<Cliente>(
-        this.entityType,
-        'status = ?',
-        ['Ativo']
+      // Busca otimizada: uma única query SQL em vez de N+1 queries por cliente.
+      // Filtra clientes ativos, não bloqueados, que tenham saldo devedor > 0
+      // usando a ÚLTIMA cobrança por locação (ROW_NUMBER) para evitar duplicação.
+      const rows = await databaseService.getAllAsync<any>(
+        `SELECT
+           c.id, c.tipo, c.tipoPessoa, c.identificador, c.nomeExibicao,
+           c.nomeCompleto, c.razaoSocial, c.nomeFantasia, c.cpf, c.cnpj,
+           c.rg, c.inscricaoEstadual, c.email, c.telefonePrincipal,
+           c.contatos, c.cep, c.logradouro, c.numero, c.complemento,
+           c.bairro, c.cidade, c.estado, c.rotaId, c.rotaNome,
+           c.status, c.observacao, c.dataCadastro, c.dataUltimaAlteracao,
+           c.syncStatus, c.lastSyncedAt, c.needsSync, c.version,
+           c.deviceId, c.createdAt, c.updatedAt, c.deletedAt,
+           COALESCE(lativas.cnt, 0)     AS totalLocacoesAtivas,
+           COALESCE(lfinal.cnt, 0)      AS totalLocacoesFinalizadas,
+           COALESCE(saldo.total, 0)     AS saldoDevedorTotal
+         FROM clientes c
+         -- Locações ativas
+         LEFT JOIN (
+           SELECT clienteId, COUNT(*) AS cnt
+           FROM locacoes
+           WHERE deletedAt IS NULL AND status = 'Ativa'
+           GROUP BY clienteId
+         ) lativas ON lativas.clienteId = c.id
+         -- Locações finalizadas
+         LEFT JOIN (
+           SELECT clienteId, COUNT(*) AS cnt
+           FROM locacoes
+           WHERE deletedAt IS NULL AND status = 'Finalizada'
+           GROUP BY clienteId
+         ) lfinal ON lfinal.clienteId = c.id
+         -- Saldo devedor: somente a última cobrança de cada locação
+         LEFT JOIN (
+           SELECT clienteId, SUM(saldoDevedorGerado) AS total
+           FROM (
+             SELECT clienteId, locacaoId, saldoDevedorGerado,
+                    ROW_NUMBER() OVER (PARTITION BY locacaoId ORDER BY updatedAt DESC, createdAt DESC) AS rn
+             FROM cobrancas
+             WHERE deletedAt IS NULL AND status != 'Pago' AND saldoDevedorGerado > 0
+           ) WHERE rn = 1
+           GROUP BY clienteId
+         ) saldo ON saldo.clienteId = c.id
+         WHERE c.deletedAt IS NULL
+           AND c.status = 'Ativo'
+           AND c.bloqueado != 1
+           AND COALESCE(saldo.total, 0) > 0
+         ORDER BY saldo.total DESC`,
+        []
       );
 
-      const clientesComSaldo: ClienteComLocacoes[] = [];
-      for (const cliente of clientes) {
-        const locacoesCount = await this.getLocacoesCount(cliente.id);
-        if (locacoesCount.saldoDevedorTotal > 0) {
-          clientesComSaldo.push({
-            ...this.parseCliente(cliente),
-            ...locacoesCount,
-          });
-        }
-      }
-      return clientesComSaldo;
+      return rows.map(row => ({
+        ...this.parseCliente(row),
+        totalLocacoesAtivas:     row.totalLocacoesAtivas,
+        totalLocacoesFinalizadas: row.totalLocacoesFinalizadas,
+        saldoDevedorTotal:       row.saldoDevedorTotal,
+      }));
     } catch (error) {
       console.error('[ClienteRepository] Erro ao buscar clientes com saldo devedor:', error);
       return [];

@@ -34,15 +34,20 @@ export default function HistoricoCobrancaScreen() {
   const { cobrancas, carregando, carregarCobrancas } = useCobranca();
 
   const carregarHistorico = useCallback(async () => {
-    await carregarCobrancas({ clienteId });
-  }, [clienteId, carregarCobrancas]);
+    // Filtrar por locacaoId no repositório quando disponível,
+    // evitando carregar todas as cobranças do cliente só para filtrar localmente
+    if (produtoId) {
+      // produtoId aqui é na verdade o produtoIdentificador — buscar por locação específica
+      await carregarCobrancas({ clienteId, produtoIdentificador: produtoId });
+    } else {
+      await carregarCobrancas({ clienteId });
+    }
+  }, [clienteId, produtoId, carregarCobrancas]);
 
   useFocusEffect(useCallback(() => { carregarHistorico(); }, [carregarHistorico]));
 
-  // Filter by produtoIdentificador locally if provided
-  const cobrancasFiltradas = produtoId
-    ? cobrancas.filter(c => c.produtoIdentificador === produtoId)
-    : cobrancas;
+  // Com filtro já aplicado no repositório, usar cobrancas diretamente
+  const cobrancasFiltradas = cobrancas;
 
   // Calcular totais
   const totalRecebido = cobrancasFiltradas.reduce((a, c) => a + c.valorRecebido, 0);

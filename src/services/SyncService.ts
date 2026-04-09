@@ -335,10 +335,23 @@ class SyncService {
         (changes.rotas?.length || 0) +
         ((changes as any).usuarios?.length || 0);  // Incluir usuários
 
+      // Avisar se o dispositivo está muito tempo sem sync (servidor truncou o payload)
+      if ((response as any).isStale) {
+        logger.warn(
+          '[Sync/Pull] AVISO: dispositivo sem sync há mais de 30 dias. ' +
+          'Dados podem estar incompletos — considere forçar um resync completo.'
+        );
+        this.notify({
+          phase: 'pull',
+          total: pulled,
+          current: pulled,
+          message: '⚠️ Dispositivo desatualizado — alguns dados podem estar incompletos. Sincronize com frequência.',
+          errors: [],
+        });
+      }
+
       if (pulled > 0) {
         logger.info('[Sync/Pull] Aplicando mudanças...', { count: pulled });
-        
-        // Aplicar mudanças no banco local
         await databaseService.applyRemoteChanges(response);
       }
 

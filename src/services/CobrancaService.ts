@@ -354,7 +354,8 @@ class CobrancaService {
    * Arredonda valor para 2 casas decimais
    */
   private arredondar(valor: number): number {
-    return Math.round(valor * 100) / 100;
+    // Number.EPSILON evita drift de ponto flutuante (ex: 1.005 → 1.00 sem ele)
+    return Math.round((valor + Number.EPSILON) * 100) / 100;
 
   }
 

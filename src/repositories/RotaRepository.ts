@@ -175,11 +175,18 @@ class RotaRepository {
   }
 
   /**
-   * Conta total de rotas ativas
+   * Conta total de rotas ativas usando SQL COUNT (evita carregar todos os registros)
    */
   async count(): Promise<number> {
-    const rotas = await this.getAtivas();
-    return rotas.length;
+    try {
+      const rows = await databaseService.getAllAsync<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM rotas WHERE deletedAt IS NULL AND status = 'Ativo'`,
+        []
+      );
+      return rows[0]?.cnt ?? 0;
+    } catch {
+      return 0;
+    }
   }
 }
 

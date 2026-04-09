@@ -4,6 +4,7 @@
  * Persistência local usando SQLite (DatabaseService)
  */
 
+import bcrypt from 'bcryptjs';
 import { databaseService } from '../services/DatabaseService';
 import { 
   Usuario, 
@@ -264,9 +265,24 @@ class UsuarioRepository {
       }
 
       const senhaArmazenada = (result as any).senha;
-      
-      // Comparar senha (em produção usar bcrypt ou similar)
-      if (senhaArmazenada && senhaArmazenada === senha) {
+
+      // Comparar senha com bcrypt (suporta tanto hash bcrypt quanto plaintext legado)
+      let senhaOk = false;
+      if (senhaArmazenada) {
+        if (senhaArmazenada.startsWith('$2')) {
+          senhaOk = await bcrypt.compare(senha, senhaArmazenada);
+        } else {
+          // Fallback para senhas antigas em plaintext — migrar para hash após login
+          senhaOk = senhaArmazenada === senha;
+          if (senhaOk) {
+            const novoHash = await bcrypt.hash(senha, 10);
+            await this.definirSenha((result as any).id, novoHash);
+            logger.info('[UsuarioRepository] Senha migrada para bcrypt');
+          }
+        }
+      }
+
+      if (senhaOk) {
         logger.debug('[UsuarioRepository] Senha correta! Login autorizado.');
         
         // Atualizar último acesso
@@ -326,9 +342,14 @@ class UsuarioRepository {
   async definirSenha(id: string, novaSenha: string): Promise<boolean> {
     try {
       const now = new Date().toISOString();
+      // Se já é um hash bcrypt (migration path), armazenar diretamente;
+      // caso contrário, gerar hash antes de armazenar.
+      const senhaParaSalvar = novaSenha.startsWith('$2')
+        ? novaSenha
+        : await bcrypt.hash(novaSenha, 10);
       await databaseService.update(this.entityType, {
         id,
-        senha: novaSenha, // Em produção, hash com bcrypt
+        senha: senhaParaSalvar,
         updatedAt: now,
       } as any);
       return true;

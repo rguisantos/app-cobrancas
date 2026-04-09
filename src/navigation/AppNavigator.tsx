@@ -419,7 +419,7 @@ function ModalNavigator() {
 // ============================================================================
 
 export function AppNavigator() {
-  const { user, isLoading, isAuthenticated, isSignout, token } = useAuth();
+  const { user, isLoading, isAuthenticated, isSignout, token, logout } = useAuth();
   const { status: syncStatus, dispositivo } = useSync();
   const colorScheme = useColorScheme();
   const theme = colorScheme === 'dark' ? DarkNavTheme : LightNavTheme;
@@ -475,16 +475,17 @@ export function AppNavigator() {
           deviceKey: savedDeviceKey[1]?.substring(0, 20) + '...'
         });
         
-        // Se já está marcado como ativado localmente, confiar
-        if (activated[1] === 'true' && savedDeviceId[1] && savedDeviceKey[1]) {
-          logger.info('[AppNavigator] Dispositivo já ativado localmente');
-          setDeviceActivated(true);
+        // Sempre verificar com o servidor se temos uma chave salva
+        // (não confiar apenas no AsyncStorage — admin pode ter desativado o dispositivo)
+        const deviceKey = savedDeviceKey[1] || await generateDeviceKey();
+        
+        // Se não tem marcação local E não tem chave, definitivamente precisa ativar
+        if (!deviceKey && activated[1] !== 'true') {
+          logger.info('[AppNavigator] Sem deviceKey — precisa ativação');
+          setDeviceActivated(false);
           setCheckingDevice(false);
           return;
         }
-        
-        // Verificar com o servidor se o dispositivo está cadastrado e ativo
-        const deviceKey = savedDeviceKey[1] || await generateDeviceKey();
         
         logger.info('[AppNavigator] Verificando status no servidor...', { deviceKey: deviceKey.substring(0, 30) });
         
@@ -556,15 +557,37 @@ export function AppNavigator() {
     );
   }
   
-  // Mostrar erro se houver
+  // Mostrar erro se houver — com opções de retry e logout
   if (checkError && isAuthenticated && !isSignout) {
     return (
       <NavigationContainer theme={theme}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background, padding: 20 }}>
           <Ionicons name="alert-circle" size={48} color="#EF4444" />
-          <Text style={{ marginTop: 16, color: '#EF4444', fontSize: 16, textAlign: 'center' }}>
+          <Text style={{ marginTop: 16, color: '#EF4444', fontSize: 18, fontWeight: '600', textAlign: 'center' }}>
+            Erro ao verificar dispositivo
+          </Text>
+          <Text style={{ marginTop: 8, color: theme.colors.text, fontSize: 14, textAlign: 'center', opacity: 0.7 }}>
             {checkError}
           </Text>
+          <View style={{ marginTop: 24, gap: 12, width: '100%', maxWidth: 280 }}>
+            <TouchableOpacity
+              onPress={() => {
+                setCheckError(null);
+                setCheckingDevice(true);
+              }}
+              style={{ backgroundColor: theme.colors.primary, borderRadius: 8, padding: 14, alignItems: 'center' }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>Tentar novamente</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={async () => {
+                await logout();
+              }}
+              style={{ borderWidth: 1, borderColor: '#EF4444', borderRadius: 8, padding: 14, alignItems: 'center' }}
+            >
+              <Text style={{ color: '#EF4444', fontWeight: '600', fontSize: 15 }}>Sair da conta</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </NavigationContainer>
     );

@@ -4,6 +4,7 @@
  * Integração: API Web + Fallback Local (Offline-first)
  */
 
+import bcrypt from 'bcryptjs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CONFIG } from '../config/config';
 import { ENV } from '../config/env';
@@ -37,7 +38,6 @@ interface RegisterResponse {
   };
 }
 
-// Permissões padrão por tipo
 const PERMISSOES_PADRAO: Record<TipoPermissaoUsuario, PermissoesUsuario> = {
   Administrador: {
     web: { todosCadastros: true, locacaoRelocacaoEstoque: true, relatorios: true },
@@ -53,41 +53,33 @@ const PERMISSOES_PADRAO: Record<TipoPermissaoUsuario, PermissoesUsuario> = {
   },
 };
 
+const BCRYPT_ROUNDS = 10;
+
+async function hashSenha(plaintext: string): Promise<string> {
+  return bcrypt.hash(plaintext, BCRYPT_ROUNDS);
+}
+
 class AuthService {
-  /**
-   * Login com email e senha
-   * Estratégia: API primeiro (se USE_MOCK=false), depois local (offline-first)
-   */
   async login(email: string, password: string): Promise<LoginResponse> {
     try {
       logger.info('Tentando login', { email, useMock: ENV.USE_MOCK });
 
-      // 1. Se não está em modo mock, tentar API primeiro
       if (!ENV.USE_MOCK) {
         try {
           const apiResponse = await apiService.login(email, password);
-          
           if (apiResponse.success && apiResponse.data) {
             const { token, user } = apiResponse.data;
-            
-            // Salvar token no ApiService para requisições futuras
             apiService.setToken(token);
-            
-            // Salvar usuário localmente para offline
             await this.salvarUsuarioLocal(user, password);
-            
             logger.info('Login via API bem-sucedido', { email });
             return { token, user };
           }
         } catch (apiError) {
           logger.warn('Login via API falhou, tentando local', { error: String(apiError) });
-          // Continua para tentar autenticação local
         }
       }
 
-      // 2. Tentar autenticação local (fallback ou modo mock)
       const usuarioLocal = await usuarioRepository.autenticar(email, password);
-      
       if (usuarioLocal) {
         const response: LoginResponse = {
           token: 'local_jwt_token_' + Date.now(),
@@ -102,12 +94,10 @@ class AuthService {
             status: usuarioLocal.status,
           },
         };
-
         logger.info('Login local bem-sucedido', { email });
         return response;
       }
 
-      // 3. Nenhum método funcionou
       throw new Error('Email e/ou senha incorretos');
     } catch (error) {
       logger.error('Erro ao fazer login', error);
@@ -116,18 +106,29 @@ class AuthService {
   }
 
   /**
-   * Salva usuário localmente após login via API
+   * Salva usuário localmente após login via API.
+   * A senha é sempre armazenada como hash bcrypt — NUNCA em texto plano.
    */
   private async salvarUsuarioLocal(user: LoginResponse['user'], password: string): Promise<void> {
     try {
       const usuarioExistente = await databaseService.getUsuarioByEmail(user.email);
-      
+
+      // Reutilizar hash existente se ainda bate; caso contrário gerar novo hash.
+      let senhaHash: string;
+      const hashExistente: string | undefined = (usuarioExistente as any)?.senha;
+      if (hashExistente && hashExistente.startsWith('$2')) {
+        const bate = await bcrypt.compare(password, hashExistente);
+        senhaHash = bate ? hashExistente : await hashSenha(password);
+      } else {
+        senhaHash = await hashSenha(password);
+      }
+
       const dadosUsuario = {
         id: user.id,
         tipo: 'usuario',
         nome: user.nome,
         email: user.email,
-        senha: password, // Em produção, usar hash
+        senha: senhaHash,
         cpf: (usuarioExistente as any)?.cpf || '',
         telefone: (usuarioExistente as any)?.telefone || '',
         tipoPermissao: user.tipoPermissao,
@@ -143,28 +144,26 @@ class AuthService {
         createdAt: (usuarioExistente as any)?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      
+
       await databaseService.saveUsuario(dadosUsuario);
-      logger.info('Usuário salvo localmente', { email: user.email });
+      logger.info('Usuário salvo localmente (bcrypt)', { email: user.email });
     } catch (error) {
       logger.error('Erro ao salvar usuário local', error);
     }
   }
 
-  /**
-   * Criar usuário padrão para desenvolvimento
-   */
   private async criarUsuarioPadrao(email: string, password: string) {
     const nome = email.split('@')[0];
     const isAdmin = email.toLowerCase().includes('admin');
     const tipoPermissao: TipoPermissaoUsuario = isAdmin ? 'Administrador' : 'AcessoControlado';
-    
-    const usuario = await usuarioRepository.save({
+    const senhaHash = await hashSenha(password);
+
+    return usuarioRepository.save({
       id: `usr_${Date.now()}`,
       tipo: 'usuario',
       nome,
       email,
-      senha: password, // Em produção, hash com bcrypt
+      senha: senhaHash,
       cpf: '',
       telefone: '',
       tipoPermissao,
@@ -177,13 +176,8 @@ class AuthService {
       version: 1,
       deviceId: '',
     });
-
-    return usuario;
   }
 
-  /**
-   * Registrar novo usuário
-   */
   async register(
     nome: string,
     email: string,
@@ -193,19 +187,17 @@ class AuthService {
     try {
       logger.info('Tentando registrar', { email });
 
-      // Verificar se email já existe
       const existe = await usuarioRepository.emailExiste(email);
-      if (existe) {
-        throw new Error('Este email já está cadastrado');
-      }
+      if (existe) throw new Error('Este email já está cadastrado');
 
-      // Criar usuário local
+      const senhaHash = await hashSenha(password);
+
       const usuario = await usuarioRepository.save({
         id: `usr_${Date.now()}`,
         tipo: 'usuario',
         nome,
         email,
-        senha: password, // Em produção, hash com bcrypt
+        senha: senhaHash,
         cpf: '',
         telefone: '',
         tipoPermissao,
@@ -219,18 +211,11 @@ class AuthService {
         deviceId: '',
       });
 
-      const response: RegisterResponse = {
-        token: 'local_jwt_token_' + Date.now(),
-        user: {
-          id: usuario.id,
-          email: usuario.email,
-          nome: usuario.nome,
-          role: usuario.tipoPermissao,
-        },
-      };
-
       logger.info('Registro bem-sucedido', { email });
-      return response;
+      return {
+        token: 'local_jwt_token_' + Date.now(),
+        user: { id: usuario.id, email: usuario.email, nome: usuario.nome, role: usuario.tipoPermissao },
+      };
     } catch (error) {
       logger.error('Erro ao registrar', error);
       throw error;
@@ -238,28 +223,28 @@ class AuthService {
   }
 
   /**
-   * Validar token JWT
+   * Valida token:
+   * - Token real (Bearer): confirma com /api/auth/me; offline → fallback AsyncStorage.
+   * - Token local (local_*): válido apenas se houver usuário no AsyncStorage.
    */
   async validateToken(token: string): Promise<boolean> {
     try {
       logger.info('Validando token');
 
-      // Verificar se há usuário logado no AsyncStorage
-      const userStr = await AsyncStorage.getItem(CONFIG.userStorageKey);
-      if (userStr) {
-        return true;
-      }
-
-      // Token local é sempre válido se o usuário existe
       if (token && token.startsWith('local_')) {
-        return true;
+        const userStr = await AsyncStorage.getItem(CONFIG.userStorageKey);
+        return !!userStr;
       }
 
-      // TODO: Validar token com API real
-      // const response = await ApiService.post('/auth/validate', { token });
-      // return response.data.valid;
-
-      return false;
+      try {
+        const response = await apiService.getUsuarioAtual();
+        return !!(response.success && response.data);
+      } catch {
+        // Sem conectividade — fallback offline
+        logger.warn('Sem conexão ao validar token, usando fallback local');
+        const userStr = await AsyncStorage.getItem(CONFIG.userStorageKey);
+        return !!userStr;
+      }
     } catch (error) {
       logger.error('Erro ao validar token', error);
       return false;
@@ -267,37 +252,24 @@ class AuthService {
   }
 
   /**
-   * Refresh token (quando expira)
+   * Refresh de token.
+   * O servidor não possui endpoint de refresh (tokens reais têm 30 dias de validade).
+   * Token expirado → lança erro para forçar re-login.
+   * Token local → renova localmente (modo offline).
    */
   async refreshToken(token: string): Promise<string> {
-    try {
-      logger.info('Tentando renovar token');
-
-      // TODO: Integrar com API real
-      // const response = await ApiService.post('/auth/refresh', { token });
-      // return response.data.token;
-
-      // Token local renovado
-      const newToken = 'local_jwt_token_refreshed_' + Date.now();
-      logger.info('Token renovado');
-      return newToken;
-    } catch (error) {
-      logger.error('Erro ao renovar token', error);
-      throw error;
+    if (token && token.startsWith('local_')) {
+      return 'local_jwt_token_refreshed_' + Date.now();
     }
+    throw new Error('Token expirado. Por favor, faça login novamente.');
   }
 
-  /**
-   * Logout (limpar dados locais)
-   */
   async logout(): Promise<void> {
     try {
       logger.info('Fazendo logout');
-
-      // Limpar AsyncStorage
       await AsyncStorage.removeItem(CONFIG.tokenStorageKey);
       await AsyncStorage.removeItem(CONFIG.userStorageKey);
-
+      try { await apiService.logout(); } catch { /* best-effort */ }
       logger.info('Logout bem-sucedido');
     } catch (error) {
       logger.error('Erro ao fazer logout', error);
@@ -305,45 +277,35 @@ class AuthService {
     }
   }
 
-  /**
-   * Verificar se há usuário logado
-   */
   async getUsuarioLogado(): Promise<LoginResponse['user'] | null> {
     try {
       const userStr = await AsyncStorage.getItem(CONFIG.userStorageKey);
-      if (userStr) {
-        return JSON.parse(userStr);
-      }
-      return null;
+      return userStr ? JSON.parse(userStr) : null;
     } catch (error) {
       logger.error('Erro ao buscar usuário logado', error);
       return null;
     }
   }
 
-  /**
-   * Inicializar dados de autenticação
-   * Quando USE_MOCK=false, não cria usuário mockado - dados devem vir do servidor via sync
-   */
   async inicializar(): Promise<void> {
     try {
-      // Garantir que o banco está inicializado
       await databaseService.initialize();
-      
-      // Se USE_MOCK for true, criar usuário admin padrão para desenvolvimento
+
       if (ENV.USE_MOCK) {
         logger.info('Modo desenvolvimento: Verificando usuário admin mockado...');
-        
         const adminExistente = await databaseService.getUsuarioByEmail('admin@locacao.com');
-        
+
         if (!adminExistente) {
           logger.info('Criando usuário admin padrão para desenvolvimento...');
+          const mockPassword = ENV.MOCK_PASSWORD || 'admin123';
+          const senhaHash = await hashSenha(mockPassword);
+
           await databaseService.saveUsuario({
             id: 'usr_admin',
             tipo: 'usuario',
             nome: 'Administrador',
             email: 'admin@locacao.com',
-            senha: ENV.MOCK_PASSWORD || 'admin123',
+            senha: senhaHash,
             cpf: '',
             telefone: '',
             tipoPermissao: 'Administrador',
@@ -359,12 +321,11 @@ class AuthService {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           });
-          logger.info('Usuário admin de desenvolvimento criado');
+          logger.info('Usuário admin de desenvolvimento criado (bcrypt)');
         }
       } else {
         logger.info('Modo produção: Usuários serão sincronizados do servidor');
       }
-      
     } catch (error) {
       logger.error('Erro ao inicializar autenticação:', error);
     }

@@ -5,6 +5,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { HistoricoCobranca, CobrancaFilters } from '../types';
+import { NovaCobrancaData } from '../repositories/CobrancaRepository';
 import { cobrancaRepository } from '../repositories/CobrancaRepository';
 import { useDatabase } from './DatabaseContext';
 
@@ -26,7 +27,7 @@ export interface CobrancaContextData extends CobrancaState {
   carregarCobranca: (id: string) => Promise<void>;
   selecionarCobranca: (id: string) => Promise<void>;
   limparSelecao: () => void;
-  registrarCobranca: (dados: any) => Promise<HistoricoCobranca | null>;
+  registrarCobranca: (dados: NovaCobrancaData) => Promise<HistoricoCobranca | null>;
   atualizarCobranca: (dados: Partial<HistoricoCobranca> & { id: string }) => Promise<boolean>;
   refresh: () => Promise<void>;
   // Propriedades adicionais para compatibilidade
@@ -101,7 +102,7 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
     setCobrancaSelecionada(null);
   }, []);
 
-  const registrarCobranca = useCallback(async (dados: any): Promise<HistoricoCobranca | null> => {
+  const registrarCobranca = useCallback(async (dados: NovaCobrancaData): Promise<HistoricoCobranca | null> => {
     setCarregando(true);
     try {
       const cobranca = await cobrancaRepository.registrarCobranca(dados);

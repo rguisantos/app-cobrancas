@@ -22,6 +22,7 @@ import { useNavigation , useFocusEffect} from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { usuarioRepository, UsuarioLogin } from '../repositories/UsuarioRepository';
 import { TipoPermissaoUsuario, PermissoesUsuario } from '../types';
+import bcrypt from 'bcryptjs';
 
 // Permissões padrão por tipo
 const PERMISSOES_PADRAO: Record<TipoPermissaoUsuario, PermissoesUsuario> = {
@@ -172,7 +173,8 @@ export default function UsuariosGerenciarScreen() {
       };
 
       if (formData.senha.trim()) {
-        dadosUsuario.senha = formData.senha;
+        // Hashear senha antes de armazenar — nunca salvar em plaintext
+        dadosUsuario.senha = await bcrypt.hash(formData.senha.trim(), 10);
       }
 
       if (editandoUsuario) {

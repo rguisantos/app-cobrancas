@@ -18,10 +18,15 @@ export interface Cidade {
 class LocalizacaoService {
   private baseUrl = 'https://servicodados.ibge.gov.br/api/v1/localidades';
 
+  // Cache em memória — estados são imutáveis, cidades por UF mudam raramente
+  private _estadosCache: Estado[] | null = null;
+  private _cidadesCache: Map<string, Cidade[]> = new Map();
+
   /**
-   * Busca todos os estados brasileiros
+   * Busca todos os estados brasileiros (com cache em memória)
    */
   async getEstados(): Promise<Estado[]> {
+    if (this._estadosCache) return this._estadosCache;
     try {
       const response = await fetch(`${this.baseUrl}/estados`, {
         method: 'GET',
@@ -37,16 +42,20 @@ class LocalizacaoService {
       const data = await response.json();
       
       // Ordenar por sigla
-      return data
+      const estados = data
         .map((estado: any) => ({
           id: estado.id,
           sigla: estado.sigla,
           nome: estado.nome,
         }))
         .sort((a: Estado, b: Estado) => a.sigla.localeCompare(b.sigla));
+      this._estadosCache = estados;
+      return estados;
     } catch (error) {
       console.error('[LocalizacaoService] Erro ao buscar estados:', error);
-      return this.getEstadosFallback();
+      const fallback = this.getEstadosFallback();
+      this._estadosCache = fallback; // cachear fallback também
+      return fallback;
     }
   }
 
@@ -54,6 +63,7 @@ class LocalizacaoService {
    * Busca cidades por estado (UF)
    */
   async getCidadesPorEstado(uf: string): Promise<Cidade[]> {
+    if (this._cidadesCache.has(uf)) return this._cidadesCache.get(uf)!;
     try {
       const response = await fetch(`${this.baseUrl}/estados/${uf}/municipios`, {
         method: 'GET',
@@ -69,12 +79,14 @@ class LocalizacaoService {
       const data = await response.json();
       
       // Ordenar por nome
-      return data
+      const cidades = data
         .map((cidade: any) => ({
           id: cidade.id,
           nome: cidade.nome,
         }))
         .sort((a: Cidade, b: Cidade) => a.nome.localeCompare(b.nome));
+      this._cidadesCache.set(uf, cidades);
+      return cidades;
     } catch (error) {
       console.error('[LocalizacaoService] Erro ao buscar cidades:', error);
       return [];

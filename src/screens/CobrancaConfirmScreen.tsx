@@ -60,6 +60,7 @@ export default function CobrancaConfirmScreen() {
   const [observacao,      setObservacao]      = useState('');
   const [calculo,         setCalculo]         = useState<any>(null);
   const [validacao,       setValidacao]       = useState<any>(null);
+  const [isSubmitting,    setIsSubmitting]    = useState(false); // guarda local contra double-submit
 
   // ── carregar locação ──────────────────────────────────────────────────────
   useFocusEffect(useCallback(() => {
@@ -123,10 +124,18 @@ export default function CobrancaConfirmScreen() {
 
   // ── confirmar cobrança ────────────────────────────────────────────────────
   const handleConfirmar = useCallback(async () => {
-    if (!calculo || !locacaoSelecionada) return;
+    if (!calculo || !locacaoSelecionada || isSubmitting) return;
+    setIsSubmitting(true);
 
     try {
       const relogioAtualNum = parseInt(relogioAtual.replace(/\D/g, ''), 10);
+
+      // Buscar saldo devedor pendente desta locação para acumulá-lo corretamente
+      const { cobrancaRepository } = await import('../repositories/CobrancaRepository');
+      const saldoAnterior = await cobrancaRepository.getSaldoPendenteByLocacao(
+        String(locacaoSelecionada.id)
+      );
+
       const cobranca = await registrarCobranca({
         locacaoId:             String(locacaoSelecionada.id),
         clienteId:             String(locacaoSelecionada.clienteId),
@@ -147,6 +156,8 @@ export default function CobrancaConfirmScreen() {
         valorPercentual:       calculo.valorPercentual,
         totalClientePaga:      calculo.totalClientePaga,
         valorRecebido:         valorRecebidoNum,
+        saldoAnterior,                               // Saldo devedor pendente acumulado
+        formaPagamento:        locacaoSelecionada.formaPagamento, // Para cálculo correto
         observacao,
       });
 
@@ -183,8 +194,10 @@ export default function CobrancaConfirmScreen() {
       }
     } catch (e) {
       Alert.alert('Erro', e instanceof Error ? e.message : 'Erro ao registrar cobrança');
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [calculo, locacaoSelecionada, relogioAtual, relogioAnterior, descontoPartidas,
+  }, [calculo, locacaoSelecionada, relogioAtual, relogioAnterior, descontoPartidas, isSubmitting,
       valorRecebidoNum, observacao, saldoDevedor, troco, registrarCobranca, atualizarLocacao, navigation]);
 
   // ── loading ───────────────────────────────────────────────────────────────
@@ -313,7 +326,7 @@ export default function CobrancaConfirmScreen() {
               <TouchableOpacity
                 style={[s.btnVoltar]}
                 onPress={() => setPasso(1)}
-                disabled={carregando}
+                disabled={carregando || isSubmitting}
               >
                 <Ionicons name="arrow-back" size={20} color="#64748B" />
                 <Text style={s.btnVoltarText}>Voltar</Text>
@@ -322,7 +335,7 @@ export default function CobrancaConfirmScreen() {
               <TouchableOpacity
                 style={[s.btnConfirmar, carregando && s.btnDisabled]}
                 onPress={handleConfirmar}
-                disabled={carregando}
+                disabled={carregando || isSubmitting}
               >
                 {carregando
                   ? <ActivityIndicator color="#FFFFFF" />

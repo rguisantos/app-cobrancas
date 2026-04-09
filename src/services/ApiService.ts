@@ -94,6 +94,11 @@ class ApiService {
   private baseURL: string;
   private token: string | null = null;
   private abortController: AbortController | null = null;
+  /**
+   * Callback chamado quando o servidor retorna 401 (token expirado/inválido).
+   * Registrado pelo AuthContext para forçar logout automático.
+   */
+  private onUnauthenticated: (() => void) | null = null;
 
   constructor() {
     this.baseURL = API_CONFIG.baseURL;
@@ -119,6 +124,13 @@ class ApiService {
     this.baseURL = url;
 
   }
+  /**
+   * Registra callback para logout automático quando token expirar (401).
+   */
+  setOnUnauthenticated(callback: () => void): void {
+    this.onUnauthenticated = callback;
+  }
+
   /**
    * Cancela requisição em andamento
    */
@@ -206,6 +218,13 @@ class ApiService {
         console.error(`[API:${requestId}] ❌ ERRO HTTP ${response.status}`);
         console.error(`[API:${requestId}] Error details:`, data);
         console.log(`[API:${requestId}] ========== REQUEST END (ERROR) ==========\n`);
+
+        // 401 = token inválido ou expirado → disparar logout automático
+        if (response.status === 401 && this.onUnauthenticated && this.token) {
+          console.warn(`[API:${requestId}] 401 recebido — disparando logout automático`);
+          this.onUnauthenticated();
+        }
+
         return {
           success: false,
           error: data.message || data.error || `Erro HTTP ${response.status}`,

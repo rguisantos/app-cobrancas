@@ -243,14 +243,47 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
 
   const refreshUser = useCallback(async () => {
     if (!user) return;
-    
+
     try {
-      // Recarregar dados do usuário do banco local
-      const usuarioAtualizado = await authService.getUsuarioLogado();
-      if (usuarioAtualizado) {
-        setUser(toUsuario(usuarioAtualizado));
+      // Tentar buscar dados atualizados do servidor (permissões, bloqueio, etc.)
+      let usuarioServidor: any = null;
+      try {
+        const response = await apiService.getUsuarioAtual();
+        if (response.success && response.data) {
+          usuarioServidor = response.data;
+          logger.info('[Auth] Dados do usuário atualizados do servidor');
+        }
+      } catch {
+        logger.warn('[Auth] Sem conexão ao atualizar usuário — usando dados locais');
+      }
+
+      if (usuarioServidor) {
+        // Dados do servidor: atualizar AsyncStorage e estado
+        const usuarioAtualizado = toUsuario({
+          id: usuarioServidor.id,
+          email: usuarioServidor.email,
+          nome: usuarioServidor.nome,
+          tipoPermissao: usuarioServidor.tipoPermissao,
+          permissoes: usuarioServidor.permissoes,
+          rotasPermitidas: usuarioServidor.rotasPermitidas,
+          status: usuarioServidor.status,
+        });
+        setUser(usuarioAtualizado);
         await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(usuarioAtualizado));
-        logger.info('[Auth] Usuário atualizado');
+
+        // Se usuário foi bloqueado ou inativado, forçar logout
+        if (usuarioServidor.status !== 'Ativo' || usuarioServidor.bloqueado) {
+          logger.warn('[Auth] Usuário bloqueado/inativo no servidor — forçando logout');
+          setTimeout(() => logoutRef.current(), 0);
+          return;
+        }
+      } else {
+        // Fallback offline: recarregar do AsyncStorage local
+        const usuarioLocal = await authService.getUsuarioLogado();
+        if (usuarioLocal) {
+          setUser(toUsuario(usuarioLocal));
+          logger.info('[Auth] Usuário atualizado do cache local');
+        }
       }
     } catch (error) {
       logger.error('[Auth] Erro ao atualizar usuário', error);

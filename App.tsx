@@ -81,8 +81,15 @@ class ErrorBoundary extends React.Component<
     logger.error('ErrorBoundary caught error', { error, errorInfo }, 'App');
   }
 
-  handleRetry = () => {
-    this.setState({ hasError: false, error: null });
+  handleRetry = async () => {
+    // Primeiro tenta apenas limpar o estado — se o erro voltar imediatamente,
+    // o ErrorBoundary capturará novamente. Para erros graves, força reload completo.
+    try {
+      await Updates.reloadAsync();
+    } catch {
+      // Se não for possível recarregar (ex: desenvolvimento), apenas limpa o estado
+      this.setState({ hasError: false, error: null });
+    }
   };
 
   render() {

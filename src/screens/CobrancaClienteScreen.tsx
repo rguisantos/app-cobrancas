@@ -79,13 +79,28 @@ export default function CobrancaClienteScreen() {
     try {
       const lista = await locacaoRepository.getAtivasByCliente(clienteId);
       setLocacoes(lista);
+      // Batch query: buscar saldo pendente de todas as locações de uma vez
+      // Evita N+1 paralelo que sobrecarrega o SQLite
       const saldos: Record<string, number> = {};
-      await Promise.all(lista.map(async loc => {
-        const saldo = await cobrancaRepository.getSaldoPendenteByLocacao(String(loc.id));
-        console.log(`[CobrancaClienteScreen] Locação ${loc.id}: saldo = ${saldo}`);
-        if (saldo > 0) saldos[String(loc.id)] = saldo;
-      }));
-      console.log('[CobrancaClienteScreen] Saldos carregados:', saldos);
+      if (lista.length > 0) {
+        const ids = lista.map(l => String(l.id));
+        const placeholders = ids.map(() => '?').join(', ');
+        const rows = await databaseService.getAllAsync<{ locacaoId: string; saldo: number }>(
+          `SELECT locacaoId,
+                  saldoDevedorGerado AS saldo,
+                  ROW_NUMBER() OVER (PARTITION BY locacaoId ORDER BY updatedAt DESC, createdAt DESC) AS rn
+           FROM cobrancas
+           WHERE deletedAt IS NULL
+             AND locacaoId IN (${placeholders})
+             AND status != 'Pago'
+             AND saldoDevedorGerado > 0`,
+          ids
+        );
+        for (const row of rows.filter(r => r.rn === 1)) {
+          saldos[row.locacaoId] = row.saldo;
+        }
+      }
+      console.log('[CobrancaClienteScreen] Saldos carregados (batch):', saldos);
       setSaldosPendentes(saldos);
       const finalizados = await cobrancaRepository.getSaldosPendentesFinalizados(clienteId);
       setSaldosFinalizados(finalizados);

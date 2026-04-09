@@ -5,6 +5,7 @@
  */
 
 import { databaseService } from './DatabaseService';
+import { apiService } from './ApiService';
 
 // Tipos
 export type TipoAtributo = 'tipo' | 'descricao' | 'tamanho';
@@ -73,13 +74,37 @@ class AtributosProdutoService {
    */
   async adicionar(tipo: TipoAtributo, nome: string): Promise<AtributoItem> {
     try {
-      const novoId = `novo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      const novoItem: AtributoItem = {
-        id: novoId,
-        nome: nome.trim(),
+      // Tentar criar no servidor primeiro (online) → obter UUID real.
+      // Sem UUID real, o produto criado com este tipoId ficaria com FK inválida após sync.
+      // O applyRemoteChanges.reconciliarAtributosTemporarios() corrige o fallback offline.
+      const endpointMap: Record<string, string> = {
+        tipo:           '/api/tipos-produto',
+        descricao:      '/api/descricoes-produto',
+        tamanho:        '/api/tamanhos-produto',
+        estabelecimento: '/api/estabelecimentos',
       };
-      
+
+      let finalId: string | null = null;
+      const endpoint = endpointMap[tipo];
+      if (endpoint) {
+        try {
+          const res = await apiService.post<{ id: string; nome: string }>(
+            endpoint, { nome: nome.trim() }
+          );
+          if (res.success && res.data?.id) {
+            finalId = res.data.id;
+            console.log(`[AtributosService] UUID real obtido do servidor: ${finalId}`);
+          }
+        } catch {
+          // Offline — fallback para ID temporário (reconciliado no próximo pull)
+          console.warn(`[AtributosService] Offline ao criar ${tipo} — usando ID temporário`);
+        }
+      }
+
+      // Fallback: prefixo 'tmp_' é reconhecido por reconciliarAtributosTemporarios()
+      const novoId = finalId ?? `tmp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const novoItem: AtributoItem = { id: novoId, nome: nome.trim() };
+
       switch (tipo) {
         case 'tipo':
           await databaseService.saveTipoProduto(novoId, nome);
@@ -91,8 +116,8 @@ class AtributosProdutoService {
           await databaseService.saveTamanhoProduto(novoId, nome);
           break;
       }
-      
-      console.log(`[AtributosService] Item adicionado em ${tipo}:`, nome);
+
+      console.log(`[AtributosService] Item adicionado: ${tipo} | nome: "${nome}" | id: ${novoId}`);
       return novoItem;
     } catch (error) {
       console.error(`[AtributosService] Erro ao adicionar ${tipo}:`, error);

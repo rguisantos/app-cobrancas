@@ -262,7 +262,7 @@ class LocacaoRepository {
         syncStatus: 'pending',
         lastSyncedAt: undefined,
         needsSync: true,
-        version: 0,
+        version: 1,  // Iniciar em 1 — servidor começa em 1, evita falso conflito no primeiro push
         deviceId: await databaseService.getDeviceId(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),      
@@ -613,14 +613,21 @@ class LocacaoRepository {
    */
   async count(filters?: LocacaoFilters): Promise<number> {
     try {
-      const locacoes = await this.getAll(filters);
-      return locacoes.length;
+      const clauses: string[] = ['deletedAt IS NULL'];
+      const params: any[] = [];
+      if (filters?.clienteId)     { clauses.push('clienteId = ?');     params.push(String(filters.clienteId)); }
+      if (filters?.produtoId)     { clauses.push('produtoId = ?');     params.push(String(filters.produtoId)); }
+      if (filters?.status)        { clauses.push('status = ?');        params.push(filters.status); }
+      if (filters?.formaPagamento){ clauses.push('formaPagamento = ?');params.push(filters.formaPagamento); }
+      const where = clauses.join(' AND ');
+      const rows = await databaseService.getAllAsync<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM locacoes WHERE ${where}`, params
+      );
+      return rows[0]?.cnt ?? 0;
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao contar locações:', error);
       return 0;
-  
-  }
-
+    }
   }
 
   /**

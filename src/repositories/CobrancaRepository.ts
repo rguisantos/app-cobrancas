@@ -184,7 +184,7 @@ class CobrancaRepository {
         syncStatus: 'pending',
         lastSyncedAt: undefined,
         needsSync: true,
-        version: 0,
+        version: 1,  // Iniciar em 1 — servidor começa em 1, evita falso conflito no primeiro push
         deviceId: await databaseService.getDeviceId(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -354,8 +354,8 @@ class CobrancaRepository {
     
   }
 
-      // Calcular novo saldo
-      const saldoDevedor = cobranca.totalClientePaga - valorRecebido;
+      // Calcular novo saldo (nunca negativo — excesso é troco, não saldo)
+      const saldoDevedor = Math.max(0, cobranca.totalClientePaga - valorRecebido);
 
       // Determinar novo status
       let status: StatusPagamento = 'Pendente';
@@ -512,14 +512,21 @@ class CobrancaRepository {
    */
   async count(filters?: CobrancaFilters): Promise<number> {
     try {
-      const cobranças = await this.getAll(filters);
-      return cobranças.length;
+      // COUNT direto no banco — evita carregar todos os registros em memória
+      const clauses: string[] = ['deletedAt IS NULL'];
+      const params: any[] = [];
+      if (filters?.locacaoId)  { clauses.push('locacaoId = ?');  params.push(String(filters.locacaoId)); }
+      if (filters?.clienteId)  { clauses.push('clienteId = ?');  params.push(String(filters.clienteId)); }
+      if (filters?.status)     { clauses.push('status = ?');     params.push(filters.status); }
+      const where = clauses.join(' AND ');
+      const rows = await databaseService.getAllAsync<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM cobrancas WHERE ${where}`, params
+      );
+      return rows[0]?.cnt ?? 0;
     } catch (error) {
       console.error('[CobrancaRepository] Erro ao contar cobranças:', error);
       return 0;
-  
-  }
-
+    }
   }
 
   /**
@@ -671,12 +678,17 @@ class CobrancaRepository {
       const locacaoIds = [...new Set(todas.map(c => String(c.locacaoId)))];
       const locacoesFinalizadas = new Set<string>();
 
-      // Verificar status de cada locação
-      for (const locacaoId of locacaoIds) {
-        const locacao = await databaseService.getById<any>('locacao', locacaoId);
-        if (locacao && (locacao.status === 'Finalizada' || locacao.status === 'Cancelada')) {
-          locacoesFinalizadas.add(locacaoId);
-          console.log('[CobrancaRepository] Locação finalizada:', locacaoId, 'status:', locacao.status);
+      // Batch query para verificar status de todas as locações de uma vez (evita N+1)
+      if (locacaoIds.length > 0) {
+        const placeholders = locacaoIds.map(() => '?').join(', ');
+        const locacoesRows = await databaseService.getAllAsync<{ id: string; status: string }>(
+          `SELECT id, status FROM locacoes WHERE id IN (${placeholders}) AND deletedAt IS NULL`,
+          locacaoIds
+        );
+        for (const loc of locacoesRows) {
+          if (loc.status === 'Finalizada' || loc.status === 'Cancelada') {
+            locacoesFinalizadas.add(loc.id);
+          }
         }
       }
 
