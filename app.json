@@ -55,7 +55,6 @@
       ]
     ],
     "updates": {
-      "url": "https://u.expo.dev/ef139a63-e4f9-4f43-be0a-cc763c0d3855",
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 30000
     },
@@ -72,9 +71,9 @@
       "MAX_RECORDS_PER_SYNC": "100",
       "TIMEOUT": "30000",
       "eas": {
-        "projectId": "ef139a63-e4f9-4f43-be0a-cc763c0d3855"
+        "projectId": "591a2817-9aed-4a61-81a0-588489597cb6"
       }
     },
-    "owner": "bilharesbrasil"
+    "owner": "rguisantoss"
   }
 }
