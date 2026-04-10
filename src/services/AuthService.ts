@@ -4,7 +4,6 @@
  * Integração: API Web + Fallback Local (Offline-first)
  */
 
-import bcrypt from 'bcryptjs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CONFIG } from '../config/config';
 import { ENV } from '../config/env';

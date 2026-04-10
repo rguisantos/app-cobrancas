@@ -34,6 +34,12 @@
         "ACCESS_COARSE_LOCATION",
         "BLUETOOTH",
         "BLUETOOTH_CONNECT",
+        "BLUETOOTH_SCAN",
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "BLUETOOTH",
+        "BLUETOOTH_CONNECT",
         "BLUETOOTH_SCAN"
       ]
     },
@@ -55,7 +61,8 @@
     ],
     "updates": {
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 30000
+      "fallbackToCacheTimeout": 30000,
+      "url": "https://u.expo.dev/591a2817-9aed-4a61-81a0-588489597cb6"
     },
     "runtimeVersion": {
       "policy": "appVersion"
