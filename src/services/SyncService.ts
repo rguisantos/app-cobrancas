@@ -18,6 +18,9 @@ import { apiService } from './ApiService';
 import { ENV } from '../config/env';
 import logger from '../utils/logger';
 
+// Chave do token no AsyncStorage (mesma do AuthContext)
+const TOKEN_KEY = '@cobrancas:token';
+
 // ============================================================================
 // TIPOS E INTERFACES
 // ============================================================================
@@ -126,6 +129,20 @@ class SyncService {
 
     try {
       logger.info('[Sync] Iniciando sincronização...');
+
+      // IMPORTANTE: Sincronizar token do AsyncStorage com ApiService
+      // Isso garante que o token de autenticação esteja disponível para as requisições
+      try {
+        const savedToken = await AsyncStorage.getItem(TOKEN_KEY);
+        if (savedToken) {
+          apiService.setToken(savedToken);
+          logger.info('[Sync] Token sincronizado com ApiService');
+        } else {
+          logger.warn('[Sync] ⚠️ Nenhum token encontrado no AsyncStorage');
+        }
+      } catch (tokenError) {
+        logger.error('[Sync] Erro ao sincronizar token:', tokenError);
+      }
 
       // Verificar se o dispositivo está registrado
       const isRegistered = await this.ensureDeviceRegistered();

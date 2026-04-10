@@ -208,22 +208,22 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       setIsLoading(true);
       logger.info('[Auth] Realizando logout');
 
-      // Limpar AsyncStorage
+      // Limpar apenas dados do usuário, MANTER dados do dispositivo
+      // O dispositivo deve permanecer ativado mesmo após logout
       await AsyncStorage.multiRemove([
         STORAGE_KEYS.TOKEN,
         STORAGE_KEYS.USER,
-        '@device:id',
-        '@device:key',
-        '@device:name',
-        '@device:activated',
       ]);
 
-      // Limpar estado
+      // Limpar token do ApiService
+      apiService.setToken(null);
+
+      // Limpar estado do usuário
       setToken(null);
       setUser(null);
       setIsSignout(true);
 
-      logger.info('[Auth] Logout realizado');
+      logger.info('[Auth] Logout realizado (dispositivo permanece ativado)');
       
       onAuthChange?.(null);
 

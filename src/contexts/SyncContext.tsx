@@ -6,6 +6,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   SyncMetadata, 
   SyncStatus, 
@@ -20,6 +21,9 @@ import { databaseService } from '../services/DatabaseService';
 import { apiService } from '../services/ApiService';
 import { syncService } from '../services/SyncService';
 import logger from '../utils/logger';
+
+// Chave do token no AsyncStorage (mesma do AuthContext)
+const TOKEN_KEY = '@cobrancas:token';
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -260,6 +264,16 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     setLastSyncMessage('Iniciando sincronização...');
 
     try {
+      // IMPORTANTE: Sincronizar token do AsyncStorage com ApiService
+      // Isso garante que o token de autenticação esteja disponível para as requisições
+      const savedToken = await AsyncStorage.getItem(TOKEN_KEY);
+      if (savedToken) {
+        apiService.setToken(savedToken);
+        console.log('[SyncContext] Token sincronizado com ApiService');
+      } else {
+        console.warn('[SyncContext] ⚠️ Nenhum token encontrado no AsyncStorage');
+      }
+
       // Verificar/registrar dispositivo automaticamente
       let deviceId = dispositivo?.id;
       let deviceKey = dispositivo?.chave;
