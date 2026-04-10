@@ -113,8 +113,12 @@ class ApiService {
    * Define o token de autenticação
    */
   setToken(token: string | null): void {
+    const previousToken = this.token;
     this.token = token;
-
+    console.log(`[ApiService] setToken chamado:`);
+    console.log(`[ApiService]   - Token anterior: ${previousToken ? previousToken.substring(0, 20) + '...' : 'null'}`);
+    console.log(`[ApiService]   - Novo token: ${token ? token.substring(0, 20) + '...' : 'null'}`);
+    console.log(`[ApiService]   - Token definido com sucesso: ${!!this.token}`);
   }
 
   /**

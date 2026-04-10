@@ -30,10 +30,10 @@ export const CONFIG = {
   // URL da API backend
   API_URL: getApiUrl(),
   
-  // Chaves de armazenamento
-  tokenStorageKey: '@app_cobrancas:token',
-  userStorageKey: '@app_cobrancas:user',
-  deviceKeyStorageKey: '@app_cobrancas:device',
+  // Chaves de armazenamento (DEVEM ser iguais às do AuthContext!)
+  tokenStorageKey: '@cobrancas:token',
+  userStorageKey: '@cobrancas:user',
+  deviceKeyStorageKey: '@cobrancas:device',
   
   // Configurações de sincronização
   syncIntervalMs: 15 * 60 * 1000, // 15 minutos

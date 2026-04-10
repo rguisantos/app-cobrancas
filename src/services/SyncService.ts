@@ -240,6 +240,15 @@ class SyncService {
     let conflicts: SyncConflict[] = [];
 
     try {
+      // IMPORTANTE: Sincronizar token antes de cada requisição
+      const savedToken = await AsyncStorage.getItem(TOKEN_KEY);
+      if (savedToken) {
+        apiService.setToken(savedToken);
+        logger.info('[Sync/Push] Token sincronizado com ApiService');
+      } else {
+        logger.error('[Sync/Push] ❌ Token NÃO encontrado no AsyncStorage!');
+      }
+
       // Buscar mudanças pendentes
       const pendingChanges = await databaseService.getPendingChanges();
       
@@ -325,6 +334,15 @@ class SyncService {
     let pulled = 0;
 
     try {
+      // IMPORTANTE: Sincronizar token antes de cada requisição
+      const savedToken = await AsyncStorage.getItem(TOKEN_KEY);
+      if (savedToken) {
+        apiService.setToken(savedToken);
+        logger.info('[Sync/Pull] Token sincronizado com ApiService');
+      } else {
+        logger.error('[Sync/Pull] ❌ Token NÃO encontrado no AsyncStorage!');
+      }
+
       const metadata = await databaseService.getSyncMetadata();
       
       const payload = {
