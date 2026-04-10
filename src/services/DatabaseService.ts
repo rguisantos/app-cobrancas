@@ -1022,7 +1022,7 @@ class DatabaseService {
           );
 
           console.log(
-            \`[Database] Reconciliado atributo temporário: \${tmp.id} → \${server.id} (nome: "\${tmp.nome}")\`
+            `[Database] Reconciliado atributo temporário: ${tmp.id} → ${server.id} (nome: "${tmp.nome}")`
           );
         }
       }
