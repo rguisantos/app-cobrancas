@@ -274,7 +274,7 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
         // Se usuário foi bloqueado ou inativado, forçar logout
         if (usuarioServidor.status !== 'Ativo' || usuarioServidor.bloqueado) {
           logger.warn('[Auth] Usuário bloqueado/inativo no servidor — forçando logout');
-          setTimeout(() => logoutRef.current(), 0);
+          await logout();
           return;
         }
       } else {

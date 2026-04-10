@@ -7,6 +7,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import { Rota } from '../types';
 import { rotaRepository } from '../repositories/RotaRepository';
 import { useDatabase } from './DatabaseContext';
+import { useAuth } from './AuthContext';
 
 // ============================================================================
 // INTERFACES
