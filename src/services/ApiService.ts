@@ -14,6 +14,10 @@ import {
   DeviceActivationRequest,
   DeviceActivationResponse
 } from '../types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Chave do token no AsyncStorage (mesma do AuthContext)
+const TOKEN_KEY = '@cobrancas:token';
 
 // ============================================================================
 // CONFIGURAÇÃO DA API
@@ -153,6 +157,7 @@ class ApiService {
 
   /**
    * Faz requisição HTTP genérica
+   * SEMPRE lê o token do AsyncStorage antes de cada requisição para garantir sincronização
    */
   private async request<T>(
     endpoint: string,
@@ -164,6 +169,23 @@ class ApiService {
     console.log(`\n[API:${requestId}] ========== REQUEST START ==========`);
     console.log(`[API:${requestId}] URL: ${url}`);
     console.log(`[API:${requestId}] Method: ${options.method || 'GET'}`);
+    
+    // CRÍTICO: Sempre ler token do AsyncStorage antes de cada requisição
+    // Isso garante que o token esteja sempre sincronizado entre AuthContext e ApiService
+    let tokenFromStorage: string | null = null;
+    try {
+      tokenFromStorage = await AsyncStorage.getItem(TOKEN_KEY);
+      if (tokenFromStorage) {
+        // Sincronizar token local com AsyncStorage
+        this.token = tokenFromStorage;
+        console.log(`[API:${requestId}] Token lido do AsyncStorage: ${tokenFromStorage.substring(0, 30)}...`);
+      } else {
+        console.warn(`[API:${requestId}] ⚠️ Nenhum token encontrado no AsyncStorage`);
+      }
+    } catch (storageError) {
+      console.error(`[API:${requestId}] Erro ao ler token do AsyncStorage:`, storageError);
+    }
+    
     console.log(`[API:${requestId}] Has Token: ${!!this.token}`);
     
     // Configurar headers
@@ -175,7 +197,7 @@ class ApiService {
     // Adicionar token se existir
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
-      console.log(`[API:${requestId}] Token preview: ${this.token.substring(0, 30)}...`);
+      console.log(`[API:${requestId}] Authorization header adicionado: Bearer ${this.token.substring(0, 30)}...`);
     } else {
       console.warn(`[API:${requestId}] ⚠️ ATENÇÃO: Requisição sem token! Endpoint: ${endpoint}`);
     }
@@ -391,12 +413,12 @@ class ApiService {
   }
 
   // ==========================================================================
-  // SINCRONIZAÇÃO (usa deviceKey, não token JWT)
+  // SINCRONIZAÇÃO (requer token JWT para autenticação)
   // ==========================================================================
 
   /**
    * Envia mudanças locais para o servidor (PUSH)
-   * Autenticação via deviceKey, não requer token JWT
+   * Requer token JWT para autenticação
    */
   async pushChanges(payload: PushChangesRequest): Promise<SyncResponse> {
     console.log(`\n[SYNC:PUSH] ========== INICIANDO PUSH ==========`);
@@ -404,6 +426,7 @@ class ApiService {
     console.log(`[SYNC:PUSH] DeviceKey: ${payload.deviceKey?.substring(0, 20)}...`);
     console.log(`[SYNC:PUSH] LastSyncAt: ${payload.lastSyncAt}`);
     console.log(`[SYNC:PUSH] Changes count: ${payload.changes?.length || 0}`);
+    console.log(`[SYNC:PUSH] Token disponível: ${!!this.token}`);
     
     if (payload.changes && payload.changes.length > 0) {
       console.log(`[SYNC:PUSH] Changes summary:`);
@@ -412,7 +435,8 @@ class ApiService {
       });
     }
     
-    const response = await this.postWithoutAuth<SyncResponse>('/api/sync/push', payload);
+    // Usa post() que inclui o token JWT no header
+    const response = await this.post<SyncResponse>('/api/sync/push', payload);
 
     if (!response.success) {
       console.error(`[SYNC:PUSH] ❌ FALHA: ${response.error}`);
@@ -441,15 +465,17 @@ class ApiService {
 
   /**
    * Busca mudanças do servidor (PULL)
-   * Autenticação via deviceKey, não requer token JWT
+   * Requer token JWT para autenticação
    */
   async pullChanges(payload: PullChangesRequest): Promise<SyncResponse> {
     console.log(`\n[SYNC:PULL] ========== INICIANDO PULL ==========`);
     console.log(`[SYNC:PULL] DeviceId: ${payload.deviceId}`);
     console.log(`[SYNC:PULL] DeviceKey: ${payload.deviceKey?.substring(0, 20)}...`);
     console.log(`[SYNC:PULL] LastSyncAt: ${payload.lastSyncAt}`);
+    console.log(`[SYNC:PULL] Token disponível: ${!!this.token}`);
     
-    const response = await this.postWithoutAuth<SyncResponse>('/api/sync/pull', payload);
+    // Usa post() que inclui o token JWT no header
+    const response = await this.post<SyncResponse>('/api/sync/pull', payload);
 
     if (!response.success) {
       console.error(`[SYNC:PULL] ❌ FALHA: ${response.error}`);
