@@ -10,7 +10,7 @@
  */
 
 import React, { useCallback, useState, useEffect, useRef } from 'react';
-import { View, ActivityIndicator, useColorScheme, Text, AppState, AppStateStatus } from 'react-native';
+import { View, ActivityIndicator, useColorScheme, Text, AppState, AppStateStatus, TouchableOpacity } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { createBottomTabNavigator, BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -475,13 +475,42 @@ export function AppNavigator() {
           deviceKey: savedDeviceKey[1]?.substring(0, 20) + '...'
         });
         
-        // Sempre verificar com o servidor se temos uma chave salva
-        // (não confiar apenas no AsyncStorage — admin pode ter desativado o dispositivo)
+        // BUG FIX: Se já tem marcação de ativação E deviceKey, confiar no estado local
+        // Só verificar servidor para detectar desativação pelo admin
+        if (activated[1] === 'true' && savedDeviceKey[1]) {
+          logger.info('[AppNavigator] Dispositivo já ativado localmente — verificando servidor...');
+          
+          // Tentar verificar no servidor (para detectar desativação pelo admin)
+          try {
+            const response = await apiService.verificarStatusDispositivo(savedDeviceKey[1]);
+            
+            if (response.success && response.data?.needsActivation === true) {
+              // Admin desativou o dispositivo
+              logger.warn('[AppNavigator] Dispositivo foi desativado pelo admin');
+              await AsyncStorage.removeItem('@device:activated');
+              setDeviceActivated(false);
+            } else {
+              // Dispositivo continua ativo
+              logger.info('[AppNavigator] Dispositivo confirmado ativo no servidor');
+              setDeviceActivated(true);
+            }
+          } catch (networkError) {
+            // BUG FIX: Erro de rede — assumir que dispositivo está ativo (offline-first)
+            logger.warn('[AppNavigator] Erro de rede ao verificar dispositivo — assumindo ativo (offline-first)');
+            setDeviceActivated(true);
+          }
+          
+          setCheckingDevice(false);
+          return;
+        }
+        
+        // Não tem marcação local — precisa verificar com o servidor
         const deviceKey = savedDeviceKey[1] || await generateDeviceKey();
         
-        // Se não tem marcação local E não tem chave, definitivamente precisa ativar
-        if (!deviceKey && activated[1] !== 'true') {
+        // Se não tem deviceKey, definitivamente precisa ativar
+        if (!savedDeviceKey[1]) {
           logger.info('[AppNavigator] Sem deviceKey — precisa ativação');
+          await AsyncStorage.setItem('@device:key', deviceKey);
           setDeviceActivated(false);
           setCheckingDevice(false);
           return;
@@ -498,24 +527,25 @@ export function AppNavigator() {
           // Dispositivo já está ativo no servidor
           logger.info('[AppNavigator] Dispositivo ativo no servidor');
           await AsyncStorage.setItem('@device:activated', 'true');
-          if (!savedDeviceKey[1]) {
-            await AsyncStorage.setItem('@device:key', deviceKey);
-          }
           setDeviceActivated(true);
         } else {
           // Dispositivo precisa de ativação
           logger.info('[AppNavigator] Dispositivo precisa de ativação');
           setDeviceActivated(false);
-          
-          // Salvar o deviceKey gerado para uso na tela de ativação
-          if (!savedDeviceKey[1]) {
-            await AsyncStorage.setItem('@device:key', deviceKey);
-          }
         }
       } catch (error) {
         logger.error('[AppNavigator] Erro ao verificar ativação:', error);
-        setCheckError(error instanceof Error ? error.message : 'Erro ao verificar dispositivo');
-        setDeviceActivated(false);
+        // BUG FIX: Em caso de erro, NÃO bloquear o usuário
+        // Verificar se tem marcação local de ativação
+        const activated = await AsyncStorage.getItem('@device:activated');
+        if (activated === 'true') {
+          logger.info('[AppNavigator] Erro de rede mas dispositivo marcado como ativo localmente — permitindo acesso');
+          setDeviceActivated(true);
+        } else {
+          // Sem marcação local e sem conexão — mostrar erro com opção de retry
+          setCheckError(error instanceof Error ? error.message : 'Erro ao verificar dispositivo');
+          setDeviceActivated(false);
+        }
       } finally {
         setCheckingDevice(false);
       }

@@ -5,6 +5,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import bcrypt from 'bcryptjs';
 import { CONFIG } from '../config/config';
 import { ENV } from '../config/env';
 import logger from '../utils/logger';

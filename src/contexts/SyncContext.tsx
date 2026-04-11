@@ -231,12 +231,18 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
 
     const appStateRef = { current: AppState.currentState };
 
-    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+    const subscription = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
       const prev = appStateRef.current;
       appStateRef.current = nextState;
 
       // Só sincroniza quando voltar para foreground (background/inactive → active)
       if ((prev === 'background' || prev === 'inactive') && nextState === 'active') {
+        // BUG FIX: Verificar se há token antes de sincronizar
+        const token = await AsyncStorage.getItem(TOKEN_KEY);
+        if (!token) {
+          logger.info('[SyncContext] App voltou ao foreground mas sem token — ignorando sync');
+          return;
+        }
         logger.info('[SyncContext] App voltou ao foreground — iniciando sync');
         sincronizar();
       }
@@ -271,7 +277,11 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
         apiService.setToken(savedToken);
         console.log('[SyncContext] Token sincronizado com ApiService');
       } else {
-        console.warn('[SyncContext] ⚠️ Nenhum token encontrado no AsyncStorage');
+        // BUG FIX: Abortar imediatamente se não houver token
+        console.warn('[SyncContext] ⚠️ Nenhum token encontrado no AsyncStorage — abortando sync');
+        setIsSyncing(false);
+        setStatus('idle');
+        return;
       }
 
       // Verificar/registrar dispositivo automaticamente
@@ -578,6 +588,14 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
         deviceName,
         deviceKey
       );
+      
+      // BUG FIX: Persistir @device:activated e @device:key no AsyncStorage
+      // Isso garante que a ativação persista entre logins
+      await AsyncStorage.multiSet([
+        ['@device:activated', 'true'],
+        ['@device:id', dispositivoId],
+        ['@device:key', deviceKey]
+      ]);
       
       // Atualizar estado
       setDispositivo({
