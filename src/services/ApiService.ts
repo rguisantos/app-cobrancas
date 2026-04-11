@@ -725,9 +725,10 @@ class ApiService {
 
   /**
    * Login do usuário
+   * NOTA: Usa /api/mobile/auth/login para evitar interceptação pelo NextAuth
    */
   async login(email: string, senha: string): Promise<ApiResponse<{ token: string; user: any }>> {
-    return this.post('/api/auth/login', { email, password: senha });
+    return this.post('/api/mobile/auth/login', { email, password: senha });
   }
 
   /**
