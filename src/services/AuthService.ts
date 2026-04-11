@@ -59,26 +59,66 @@ async function hashSenha(plaintext: string): Promise<string> {
 }
 
 class AuthService {
+  /**
+   * Login com email e senha
+   * Estratégia: API primeiro (se USE_MOCK=false), depois local (offline-first)
+   * IMPORTANTE: Só usa fallback local se houver erro de CONEXÃO, não erro de autenticação
+   */
   async login(email: string, password: string): Promise<LoginResponse> {
     try {
       logger.info('Tentando login', { email, useMock: ENV.USE_MOCK });
 
+      // 1. Se não está em modo mock, tentar API primeiro
       if (!ENV.USE_MOCK) {
-        try {
-          const apiResponse = await apiService.login(email, password);
-          if (apiResponse.success && apiResponse.data) {
-            const { token, user } = apiResponse.data;
-            apiService.setToken(token);
-            await this.salvarUsuarioLocal(user, password);
-            logger.info('Login via API bem-sucedido', { email });
-            return { token, user };
-          }
-        } catch (apiError) {
-          logger.warn('Login via API falhou, tentando local', { error: String(apiError) });
+        logger.info('[Auth] Modo produção - tentando login via API...');
+        
+        const apiResponse = await apiService.login(email, password);
+        
+        logger.info('[Auth] Resposta da API:', { 
+          success: apiResponse.success, 
+          statusCode: apiResponse.statusCode,
+          error: apiResponse.error 
+        });
+        
+        if (apiResponse.success && apiResponse.data) {
+          const { token, user } = apiResponse.data;
+          
+          // Salvar token no ApiService para requisições futuras
+          apiService.setToken(token);
+          
+          // Salvar usuário localmente para offline
+          await this.salvarUsuarioLocal(user, password);
+          
+          logger.info('[Auth] Login via API bem-sucedido', { email, userId: user.id });
+          return { token, user };
+        }
+        
+        // Se a API retornou erro de autenticação (401) ou bad request (400),
+        // NÃO tentar fallback local - a senha está errada
+        if (apiResponse.statusCode === 401 || apiResponse.statusCode === 400) {
+          logger.warn('[Auth] Credenciais inválidas na API - não tentando fallback local');
+          throw new Error('Email e/ou senha incorretos');
+        }
+        
+        // Se a API retornou outro erro (500, etc), logar e tentar fallback
+        if (apiResponse.statusCode && apiResponse.statusCode >= 500) {
+          logger.warn('[Auth] Erro no servidor API, tentando fallback local...', { 
+            statusCode: apiResponse.statusCode 
+          });
+        }
+        
+        // Se não tem statusCode (erro de rede), tentar fallback local
+        if (!apiResponse.statusCode) {
+          logger.warn('[Auth] Erro de conexão com API, tentando fallback local...', { 
+            error: apiResponse.error 
+          });
         }
       }
 
+      // 2. Tentar autenticação local (fallback ou modo mock)
+      logger.info('[Auth] Tentando autenticação local...');
       const usuarioLocal = await usuarioRepository.autenticar(email, password);
+      
       if (usuarioLocal) {
         const response: LoginResponse = {
           token: 'local_jwt_token_' + Date.now(),
@@ -93,13 +133,16 @@ class AuthService {
             status: usuarioLocal.status,
           },
         };
-        logger.info('Login local bem-sucedido', { email });
+
+        logger.info('[Auth] Login local bem-sucedido', { email });
         return response;
       }
 
+      // 3. Nenhum método funcionou
+      logger.warn('[Auth] Login falhou - nenhum método funcionou', { email });
       throw new Error('Email e/ou senha incorretos');
     } catch (error) {
-      logger.error('Erro ao fazer login', error);
+      logger.error('[Auth] Erro ao fazer login', error);
       throw error;
     }
   }
