@@ -122,6 +122,9 @@ class DatabaseService {
       // Criar tabelas
       await this.createTables();
       
+      // Executar migrations (adicionar colunas faltantes em bancos existentes)
+      await this.runMigrations();
+      
       // Inicializar metadata de sync
       await this.initializeSyncMetadata();
       
@@ -261,6 +264,7 @@ class DatabaseService {
         locacaoId TEXT,
         clienteId TEXT,
         clienteNome TEXT,
+        produtoId TEXT,
         produtoIdentificador TEXT,
         dataInicio TEXT,
         dataFim TEXT,
@@ -447,6 +451,7 @@ class DatabaseService {
       
       `CREATE INDEX IF NOT EXISTS idx_cobrancas_locacao ON ${TABLES.COBRANCAS}(locacaoId)`,
       `CREATE INDEX IF NOT EXISTS idx_cobrancas_cliente ON ${TABLES.COBRANCAS}(clienteId)`,
+      `CREATE INDEX IF NOT EXISTS idx_cobrancas_produto ON ${TABLES.COBRANCAS}(produtoId)`,
       `CREATE INDEX IF NOT EXISTS idx_cobrancas_status ON ${TABLES.COBRANCAS}(status)`,
       
       `CREATE INDEX IF NOT EXISTS idx_change_log_sync ON ${TABLES.CHANGE_LOG}(synced, timestamp)`,
@@ -469,6 +474,69 @@ class DatabaseService {
     console.log('[Database] Tabelas criadas com sucesso');
 
   }
+
+  /**
+   * Executa migrations para adicionar colunas faltantes em bancos existentes
+   * Isso garante compatibilidade com versões anteriores do app
+   */
+  private async runMigrations(): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+    
+    console.log('[Database] Verificando migrations...');
+    
+    // Lista de migrations a executar
+    const migrations = [
+      // Migration 1: Adicionar coluna produtoId na tabela cobrancas
+      {
+        name: 'add_produtoId_to_cobrancas',
+        sql: `ALTER TABLE ${TABLES.COBRANCAS} ADD COLUMN produtoId TEXT`,
+      },
+    ];
+    
+    // Verificar e executar cada migration
+    for (const migration of migrations) {
+      try {
+        // Verificar se a migration já foi executada
+        const metaKey = `migration_${migration.name}`;
+        const existing = await this.db.getFirstAsync<any>(
+          `SELECT value FROM ${TABLES.SYNC_METADATA} WHERE key = ?`,
+          [metaKey]
+        );
+        
+        if (existing?.value === 'done') {
+          console.log(`[Database] Migration ${migration.name} já executada`);
+          continue;
+        }
+        
+        // Executar migration
+        console.log(`[Database] Executando migration: ${migration.name}`);
+        await this.db.execAsync(migration.sql);
+        
+        // Marcar como executada
+        await this.db.runAsync(
+          `INSERT OR REPLACE INTO ${TABLES.SYNC_METADATA} (key, value) VALUES (?, 'done')`,
+          [metaKey]
+        );
+        
+        console.log(`[Database] Migration ${migration.name} concluída`);
+      } catch (error: any) {
+        // Ignorar erro se a coluna já existir
+        if (error?.message?.includes('duplicate column') || error?.message?.includes('already exists')) {
+          console.log(`[Database] Migration ${migration.name}: coluna já existe`);
+          // Marcar como executada mesmo assim
+          await this.db.runAsync(
+            `INSERT OR REPLACE INTO ${TABLES.SYNC_METADATA} (key, value) VALUES (?, 'done')`,
+            [`migration_${migration.name}`]
+          );
+        } else {
+          console.error(`[Database] Erro na migration ${migration.name}:`, error);
+        }
+      }
+    }
+    
+    console.log('[Database] Migrations verificadas');
+  }
+
   /**
    * Inicializa metadata de sincronização
    */
