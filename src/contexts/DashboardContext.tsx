@@ -4,8 +4,9 @@
  * Integração: Repositórios + Services + Tipos
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import { useDatabase } from './DatabaseContext';
+import { useSync } from './SyncContext';
 import { 
   DashboardMobileData, 
   DashboardMobileMetricas,
@@ -78,6 +79,10 @@ interface DashboardProviderProps {
 export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioTipo = 'Administrador' }: DashboardProviderProps) {
   // Estado
   const { isReady } = useDatabase();
+  const { isSyncing, status: syncStatus } = useSync();
+  
+  // Ref para rastrear quando a sincronização termina
+  const wasSyncingRef = useRef(false);
 
     const [mobile, setMobile] = useState<DashboardMobileData | null>(null);
   const [web, setWeb] = useState<DashboardWebData | null>(null);
@@ -230,7 +235,7 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
             clienteId: cliente.id,
             clienteNome: cliente.nomeExibicao,
             ultimaDataPagamento: cobranca.dataPagamento || cobranca.dataInicio,
-            rotaId: cliente.rotaId,
+            rotaId: cliente.rotaId || '',
             rotaNome: cliente.rotaNome || '',
             diasAtraso: dias,
           });
@@ -275,39 +280,20 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
 
   /**
    * Carrega dashboard mobile
+   * IMPORTANTE: Sempre usa dados do SQLite local (offline-first)
    */
   const carregarDashboardMobile = useCallback(async () => {
     setCarregando(true);
     setErro(null);
 
     try {
-      // Tentar buscar da API primeiro
-      const response = await apiService.getDashboardMobile();
+      console.log('[DashboardContext] Carregando métricas do SQLite local...');
       
-      if (response.success && response.data) {
-        setMobile(response.data);        setMetricas(response.data.metricas);
-      } else {
-        // Fallback: calcular localmente
-        const metricasCalculadas = await calcularMetricasMobile();
-        
-        const dashboardMobile: DashboardMobileData = {
-          usuarioNome,
-          usuarioTipo,
-          saudacao: getSaudacao(),
-          metricas: metricasCalculadas,
-          dataAtualizacao: new Date().toISOString(),
-        };
-
-        setMobile(dashboardMobile);
-        setMetricas(metricasCalculadas);
-    
-  }
-
-      setUltimaAtualizacao(new Date().toISOString());
-      console.log('[DashboardContext] Dashboard mobile carregado');
-    } catch (error) {
-      // Fallback para cálculo local em caso de erro
+      // SEMPRE calcular métricas localmente do SQLite
+      // O dashboard deve refletir os dados que estão no dispositivo
       const metricasCalculadas = await calcularMetricasMobile();
+      
+      console.log('[DashboardContext] Métricas calculadas:', metricasCalculadas);
       
       const dashboardMobile: DashboardMobileData = {
         usuarioNome,
@@ -319,14 +305,31 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
 
       setMobile(dashboardMobile);
       setMetricas(metricasCalculadas);
+
+      setUltimaAtualizacao(new Date().toISOString());
+      console.log('[DashboardContext] Dashboard mobile carregado com dados locais');
+    } catch (error) {
+      console.error('[DashboardContext] Erro ao carregar dashboard mobile:', error);
+      
+      // Em caso de erro, definir métricas vazias
+      const metricasVazias: DashboardMobileMetricas = {
+        totalClientes: 0,
+        cobrancasPendentes: 0,
+        totalProdutos: 0,
+        totalRecebidoHoje: 0,
+        totalRecebidoMes: 0,
+        totalAReceber: 0,
+        saldoDevedor: 0,
+        cobrancasHoje: 0,
+      };
+      
+      setMetricas(metricasVazias);
       
       const mensagem = error instanceof Error ? error.message : 'Erro ao carregar dashboard';
       setErro(mensagem);
-      console.error('[DashboardContext] Erro ao carregar dashboard mobile:', error);
     } finally {
       setCarregando(false);
-  
-  }
+    }
   }, [usuarioNome, usuarioTipo, calcularMetricasMobile]);
 
   /**
@@ -460,6 +463,21 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
   useEffect(() => {
     if (isReady) carregarDashboardMobile();
   }, [isReady, carregarDashboardMobile]);
+
+  // Recarregar métricas quando a sincronização terminar
+  useEffect(() => {
+    // Atualizar ref com estado atual de sync
+    if (isSyncing) {
+      wasSyncingRef.current = true;
+    }
+    
+    // Se estava sincronizando e agora não está mais, recarregar métricas
+    if (wasSyncingRef.current && !isSyncing && syncStatus === 'synced') {
+      console.log('[DashboardContext] Sincronização terminou - recarregando métricas...');
+      wasSyncingRef.current = false;
+      carregarDashboardMobile();
+    }
+  }, [isSyncing, syncStatus, carregarDashboardMobile]);
 
   // ==========================================================================
   // ESTADO DO CONTEXT

@@ -876,9 +876,21 @@ class DatabaseService {
   async applyRemoteChanges(response: SyncResponse): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
 
+    const changes = response.changes || {};
+    
+    // LOG: Mostrar quantos registros estão sendo recebidos
+    console.log('[Database] ========================================');
+    console.log('[Database] APLICANDO MUDANÇAS REMOTAS:');
+    console.log(`[Database] - Clientes: ${(changes.clientes || []).length}`);
+    console.log(`[Database] - Produtos: ${(changes.produtos || []).length}`);
+    console.log(`[Database] - Locações: ${(changes.locacoes || []).length}`);
+    console.log(`[Database] - Cobranças: ${(changes.cobrancas || []).length}`);
+    console.log(`[Database] - Rotas: ${(changes.rotas || []).length}`);
+    console.log(`[Database] - Usuários: ${((changes as any).usuarios || []).length}`);
+    console.log('[Database] ========================================');
+
     await this.runTransaction(async () => {
       // Aplicar mudanças de cada entidade usando upsert direto
-      const changes = response.changes || {};
       
       // Clientes
       for (const cliente of changes.clientes || []) {
@@ -940,6 +952,24 @@ class DatabaseService {
       });
     });
 
+    // VERIFICAÇÃO: Contar registros após aplicar mudanças
+    const clientesCount = await this.getFirstAsync<{ cnt: number }>(
+      `SELECT COUNT(*) as cnt FROM clientes WHERE deletedAt IS NULL`, []
+    );
+    const produtosCount = await this.getFirstAsync<{ cnt: number }>(
+      `SELECT COUNT(*) as cnt FROM produtos WHERE deletedAt IS NULL`, []
+    );
+    const locacoesCount = await this.getFirstAsync<{ cnt: number }>(
+      `SELECT COUNT(*) as cnt FROM locacoes WHERE deletedAt IS NULL`, []
+    );
+
+    console.log('[Database] ========================================');
+    console.log('[Database] VERIFICAÇÃO APÓS APLICAR MUDANÇAS:');
+    console.log(`[Database] - Clientes no SQLite: ${clientesCount?.cnt || 0}`);
+    console.log(`[Database] - Produtos no SQLite: ${produtosCount?.cnt || 0}`);
+    console.log(`[Database] - Locações no SQLite: ${locacoesCount?.cnt || 0}`);
+    console.log('[Database] ========================================');
+
     console.log('[Database] Mudanças remotas aplicadas com sucesso');
   }
 
@@ -966,44 +996,51 @@ class DatabaseService {
     // Verificar se existe
     const existing = await this.getById<any>(entityType, entity.id);
 
-    if (existing) {
-      // UPDATE - não incrementar version se veio do servidor
-      const fields = Object.keys(data).filter(
-        (key) => !CAMPOS_EXCLUIDOS.has(key) && data[key] !== undefined
-      );
-      const setClause = fields.map((field) => `${field} = ?`).join(', ');
-      
-      const values = fields.map((field) => {
-        const val = data[field];
-        if (val !== null && val !== undefined && typeof val === 'object') {
-          return JSON.stringify(val);
-        }
-        return val;
-      });
+    try {
+      if (existing) {
+        // UPDATE - não incrementar version se veio do servidor
+        const fields = Object.keys(data).filter(
+          (key) => !CAMPOS_EXCLUIDOS.has(key) && data[key] !== undefined
+        );
+        const setClause = fields.map((field) => `${field} = ?`).join(', ');
+        
+        const values = fields.map((field) => {
+          const val = data[field];
+          if (val !== null && val !== undefined && typeof val === 'object') {
+            return JSON.stringify(val);
+          }
+          return val;
+        });
 
-      await this.db.runAsync(
-        `UPDATE ${tableName} SET ${setClause} WHERE id = ?`,
-        [...values, entity.id]
-      );
-    } else {
-      // INSERT
-      const fields = Object.keys(data).filter(
-        (key) => !CAMPOS_EXCLUIDOS.has(key) && data[key] !== undefined
-      );
-      const placeholders = fields.map(() => '?').join(', ');
+        await this.db.runAsync(
+          `UPDATE ${tableName} SET ${setClause} WHERE id = ?`,
+          [...values, entity.id]
+        );
+        console.log(`[Database] UPDATE ${entityType}:${entity.id} realizado`);
+      } else {
+        // INSERT
+        const fields = Object.keys(data).filter(
+          (key) => !CAMPOS_EXCLUIDOS.has(key) && data[key] !== undefined
+        );
+        const placeholders = fields.map(() => '?').join(', ');
 
-      const values = fields.map((field) => {
-        const val = data[field];
-        if (val !== null && val !== undefined && typeof val === 'object') {
-          return JSON.stringify(val);
-        }
-        return val;
-      });
+        const values = fields.map((field) => {
+          const val = data[field];
+          if (val !== null && val !== undefined && typeof val === 'object') {
+            return JSON.stringify(val);
+          }
+          return val;
+        });
 
-      await this.db.runAsync(
-        `INSERT INTO ${tableName} (id, ${fields.join(', ')}) VALUES (?, ${placeholders})`,
-        [entity.id, ...values]
-      );
+        await this.db.runAsync(
+          `INSERT INTO ${tableName} (id, ${fields.join(', ')}) VALUES (?, ${placeholders})`,
+          [entity.id, ...values]
+        );
+        console.log(`[Database] INSERT ${entityType}:${entity.id} realizado`);
+      }
+    } catch (error) {
+      console.error(`[Database] ❌ ERRO ao salvar ${entityType}:${entity.id}:`, error);
+      throw error;
     }
   }
 
