@@ -212,9 +212,25 @@ class ClienteRepository {
       const { cpfCnpj: _ea, rgIe: _eb, ...existingSemVirtuais } = existing as any;
       const { cpfCnpj, rgIe, ...clienteSemCamposVirtuais } = cliente as any;
 
+      // IMPORTANTE: Mapear cpfCnpj e rgIe para os campos corretos
+      // Se o formulário enviou cpfCnpj, mapear para cpf ou cnpj baseado no tipoPessoa
+      const tipoPessoa = clienteSemCamposVirtuais.tipoPessoa || existing.tipoPessoa;
+      const cpfAtualizado = cpfCnpj && tipoPessoa === 'Fisica' ? cpfCnpj : (clienteSemCamposVirtuais.cpf || existingSemVirtuais.cpf);
+      const cnpjAtualizado = cpfCnpj && tipoPessoa === 'Juridica' ? cpfCnpj : (clienteSemCamposVirtuais.cnpj || existingSemVirtuais.cnpj);
+      const rgAtualizado = rgIe && tipoPessoa === 'Fisica' ? rgIe : (clienteSemCamposVirtuais.rg || existingSemVirtuais.rg);
+      const inscricaoEstadualAtualizada = rgIe && tipoPessoa === 'Juridica' ? rgIe : (clienteSemCamposVirtuais.inscricaoEstadual || existingSemVirtuais.inscricaoEstadual);
+
       const clienteAtualizado: any = {
         ...existingSemVirtuais,
         ...clienteSemCamposVirtuais,
+        cpf: cpfAtualizado,
+        cnpj: cnpjAtualizado,
+        rg: rgAtualizado,
+        inscricaoEstadual: inscricaoEstadualAtualizada,
+        identificador: tipoPessoa === 'Fisica' ? cpfAtualizado : cnpjAtualizado,
+        // Sincronizar nomeExibicao com nomeCompleto (PF) ou razaoSocial (PJ)
+        nomeCompleto: tipoPessoa === 'Fisica' ? (clienteSemCamposVirtuais.nomeExibicao || existingSemVirtuais.nomeExibicao) : '',
+        razaoSocial: tipoPessoa === 'Juridica' ? (clienteSemCamposVirtuais.nomeExibicao || existingSemVirtuais.nomeExibicao) : '',
         updatedAt: new Date().toISOString(),
         version: (existing.version || 0) + 1,
       };
@@ -226,7 +242,10 @@ class ClienteRepository {
 
       await databaseService.update(this.entityType, clienteAtualizado);
       
-      console.log('[ClienteRepository] Cliente atualizado:', cliente.id);
+      console.log('[ClienteRepository] Cliente atualizado:', cliente.id, {
+        cpf: clienteAtualizado.cpf,
+        rg: clienteAtualizado.rg
+      });
       return this.parseCliente(clienteAtualizado);
     } catch (error) {
       console.error('[ClienteRepository] Erro ao atualizar cliente:', error);
