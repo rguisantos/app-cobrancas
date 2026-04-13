@@ -193,8 +193,19 @@ export default function DeviceActivationScreen() {
         // O SyncService usa databaseService.getSyncMetadata() para obter a deviceKey
         await databaseService.setDeviceId(dispositivoId.trim(), deviceName, finalDeviceKey);
         
-        console.log('[DeviceActivation] Dispositivo ativado com sucesso!');
-        console.log('[DeviceActivation] DeviceKey salva no SyncMetadata:', finalDeviceKey.substring(0, 20) + '...');
+        console.log('[DeviceActivation] ========================================');
+        console.log('[DeviceActivation] DISPOSITIVO ATIVADO COM SUCESSO!');
+        console.log('[DeviceActivation] dispositivoId:', dispositivoId.trim());
+        console.log('[DeviceActivation] deviceKey:', finalDeviceKey);
+        console.log('[DeviceActivation] deviceName:', deviceName);
+        console.log('[DeviceActivation] ========================================');
+        
+        // Verificar se foi salvo corretamente
+        const verifyActivated = await AsyncStorage.getItem('@device:activated');
+        const verifyKey = await AsyncStorage.getItem('@device:key');
+        console.log('[DeviceActivation] Verificação AsyncStorage:');
+        console.log('[DeviceActivation]   @device:activated =', verifyActivated);
+        console.log('[DeviceActivation]   @device:key =', verifyKey);
         
         Alert.alert(
           'Sucesso!',

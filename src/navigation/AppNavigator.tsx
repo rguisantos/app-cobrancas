@@ -479,10 +479,13 @@ export function AppNavigator() {
         // Só verificar servidor para detectar desativação pelo admin
         if (activated[1] === 'true' && savedDeviceKey[1]) {
           logger.info('[AppNavigator] Dispositivo já ativado localmente — verificando servidor...');
+          logger.info('[AppNavigator] DeviceKey sendo enviado:', savedDeviceKey[1]);
           
           // Tentar verificar no servidor (para detectar desativação pelo admin)
           try {
             const response = await apiService.verificarStatusDispositivo(savedDeviceKey[1]);
+            
+            logger.info('[AppNavigator] Resposta do servidor:', JSON.stringify(response.data));
             
             if (response.success && response.data?.needsActivation === true) {
               // Admin desativou o dispositivo
