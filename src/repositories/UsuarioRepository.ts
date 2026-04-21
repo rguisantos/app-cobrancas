@@ -266,19 +266,17 @@ class UsuarioRepository {
 
       const senhaArmazenada = (result as any).senha;
 
-      // Comparar senha com bcrypt (suporta tanto hash bcrypt quanto plaintext legado)
+      // Comparar senha com bcrypt — apenas hash bcrypt é aceito
+      // Senhas em plaintext são recusadas por segurança
       let senhaOk = false;
       if (senhaArmazenada) {
         if (senhaArmazenada.startsWith('$2')) {
           senhaOk = await bcrypt.compare(senha, senhaArmazenada);
         } else {
-          // Fallback para senhas antigas em plaintext — migrar para hash após login
-          senhaOk = senhaArmazenada === senha;
-          if (senhaOk) {
-            const novoHash = await bcrypt.hash(senha, 10);
-            await this.definirSenha((result as any).id, novoHash);
-            logger.info('[UsuarioRepository] Senha migrada para bcrypt');
-          }
+          // Senha não está em formato bcrypt — recusar login
+          // O usuário deve redefinir a senha via fluxo de recuperação
+          logger.warn('[UsuarioRepository] Senha armazenada não está em formato bcrypt. Login recusado por segurança.');
+          return null;
         }
       }
 
