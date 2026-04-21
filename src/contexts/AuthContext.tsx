@@ -165,21 +165,12 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       // Passar token para o ApiService (para requisições autenticadas)
       apiService.setToken(newToken);
       logger.info('[Auth] Token configurado no ApiService');
-      
-      // Verificar se foi configurado
-      const tokenVerificado = apiService['token'];
-      logger.info('[Auth] Verificação do token no ApiService:', { hasToken: !!tokenVerificado, tokenPreview: tokenVerificado ? tokenVerificado.substring(0, 20) + '...' : 'nulo' });
 
       // Salvar no AsyncStorage
-      logger.info('[Auth] Salvando token no AsyncStorage...', { key: STORAGE_KEYS.TOKEN, tokenPreview: newToken.substring(0, 30) + '...' });
       await AsyncStorage.multiSet([
         [STORAGE_KEYS.TOKEN, newToken],
         [STORAGE_KEYS.USER, JSON.stringify(usuarioLogado)],
       ]);
-      
-      // Verificar se foi salvo corretamente
-      const verifyToken = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
-      logger.info('[Auth] Verificação AsyncStorage:', { saved: !!verifyToken, tokenMatch: verifyToken === newToken });
 
       // Atualizar estado
       setToken(newToken);

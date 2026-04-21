@@ -541,7 +541,7 @@ class ProdutoRepository {
 
   /**
    * Busca locação atual do produto
-   * (Será implementado quando LocacaoRepository for criado)
+   * Usa LocacaoRepository para consultar a locação ativa
    */
   private async getLocacaoAtual(produtoId: string): Promise<{
     locacaoId: string;
@@ -550,9 +550,35 @@ class ProdutoRepository {
     dataInicio: string;
     rotaNome?: string;
   } | undefined> {
-    // TODO: Implementar quando LocacaoRepository for criado
-    // Por enquanto retorna undefined
-    return undefined;
+    try {
+      const { locacaoRepository } = await import('./LocacaoRepository');
+      const locacao = await locacaoRepository.getAtivaByProduto(produtoId);
+      
+      if (!locacao) return undefined;
+      
+      // Buscar nome da rota do cliente, se disponível
+      let rotaNome: string | undefined;
+      try {
+        const { clienteRepository } = await import('./ClienteRepository');
+        const cliente = await clienteRepository.getById(String(locacao.clienteId));
+        if (cliente) {
+          rotaNome = (cliente as any).rotaNome || undefined;
+        }
+      } catch {
+        // Rota não é crítica — continuar sem ela
+      }
+      
+      return {
+        locacaoId: String(locacao.id),
+        clienteId: String(locacao.clienteId),
+        clienteNome: locacao.clienteNome || '',
+        dataInicio: locacao.dataLocacao,
+        rotaNome,
+      };
+    } catch (error) {
+      console.error('[ProdutoRepository] Erro ao buscar locação atual:', error);
+      return undefined;
+    }
   }}
 
 // ============================================================================

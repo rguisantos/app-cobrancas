@@ -50,6 +50,7 @@ type SyncEventListener = (progress: SyncProgress) => void;
 
 class SyncService {
   private syncInProgress = false;
+  private syncPromise: Promise<SyncResult> | null = null;
   private listeners: SyncEventListener[] = [];
   private autoSyncInterval: NodeJS.Timeout | null = null;
 
@@ -108,19 +109,26 @@ class SyncService {
    * Executa sincronização completa (push + pull)
    */
   async sync(): Promise<SyncResult> {
-    // Evitar sync simultâneo
-    if (this.syncInProgress) {
-      logger.warn('[Sync] Sincronização já em andamento');
-      return {
-        success: false,
-        pushed: 0,
-        pulled: 0,
-        conflicts: [],
-        errors: ['Sincronização já em andamento'],
-        lastSyncAt: new Date().toISOString(),
-      };
+    // CORREÇÃO: Mutex baseado em Promise — se já existe sync em andamento,
+    // aguardar a mesma Promise em vez de rejeitar. Evita race condition
+    // entre auto-sync, sync manual e sync on resume.
+    if (this.syncPromise) {
+      logger.warn('[Sync] Sincronização já em andamento — aguardando conclusão');
+      return this.syncPromise;
     }
 
+    this.syncPromise = this._doSync();
+    try {
+      return await this.syncPromise;
+    } finally {
+      this.syncPromise = null;
+    }
+  }
+
+  /**
+   * Implementação interna da sincronização (chamada via mutex)
+   */
+  private async _doSync(): Promise<SyncResult> {
     this.syncInProgress = true;
     const errors: string[] = [];
     let pushed = 0;
@@ -230,6 +238,7 @@ class SyncService {
       this.syncInProgress = false;
     }
   }
+  // FIM _doSync
 
   /**
    * Envia mudanças locais para o servidor (PUSH)
@@ -306,6 +315,21 @@ class SyncService {
       // Processar resposta
       conflicts = response.conflicts || [];
       
+      // CORREÇÃO: Atualizar versões locais com base no updatedVersions retornado pelo servidor
+      // Isso evita que o próximo push do mesmo registro seja visto como conflito
+      const updatedVersions = (response as any).updatedVersions || [];
+      for (const uv of updatedVersions) {
+        try {
+          const tableName = this.getTableName(uv.entityType as EntityType);
+          await databaseService.runAsync(
+            `UPDATE ${tableName} SET version = ? WHERE id = ?`,
+            [uv.newVersion, uv.entityId]
+          );
+        } catch (err) {
+          logger.error(`[Sync/Push] Erro ao atualizar versão de ${uv.entityType}:${uv.entityId}:`, err);
+        }
+      }
+
       // Marcar mudanças como sincronizadas
       for (const change of pendingChanges) {
         await databaseService.markAsSynced(change.id);
@@ -374,15 +398,21 @@ class SyncService {
       if ((response as any).isStale) {
         logger.warn(
           '[Sync/Pull] AVISO: dispositivo sem sync há mais de 30 dias. ' +
-          'Dados podem estar incompletos — considere forçar um resync completo.'
+          'Dados podem estar incompletos — usando snapshot para resync completo.'
         );
         this.notify({
           phase: 'pull',
           total: pulled,
           current: pulled,
-          message: '⚠️ Dispositivo desatualizado — alguns dados podem estar incompletos. Sincronize com frequência.',
+          message: 'Dispositivo desatualizado — sincronizando snapshot completo...',
           errors: [],
         });
+        // CORREÇÃO: Buscar snapshot completo para device estale
+        const snapshotResult = await this.syncFromSnapshot();
+        if (snapshotResult) {
+          pulled += snapshotResult;
+          logger.info('[Sync/Pull] Snapshot aplicado com sucesso');
+        }
       }
 
       if (pulled > 0) {
@@ -598,6 +628,59 @@ class SyncService {
       usuario: 'usuarios',
     };
     return tableMap[entityType];
+  }
+
+  /**
+   * CORREÇÃO: Sincroniza a partir de snapshot completo (para device estale)
+   * Busca todos os dados ativos do servidor e aplica localmente
+   */
+  async syncFromSnapshot(): Promise<number> {
+    try {
+      const metadata = await databaseService.getSyncMetadata();
+      if (!metadata.deviceId || !metadata.deviceKey) {
+        logger.error('[Sync/Snapshot] Dispositivo não registrado');
+        return 0;
+      }
+
+      logger.info('[Sync/Snapshot] Buscando snapshot completo...');
+      const response = await apiService.getSnapshot(metadata.deviceId, metadata.deviceKey);
+
+      if (!response.success || !response.data?.snapshot) {
+        logger.error('[Sync/Snapshot] Falha ao buscar snapshot:', response.error);
+        return 0;
+      }
+
+      const snapshot = response.data.snapshot;
+      const total = 
+        (snapshot.clientes?.length || 0) +
+        (snapshot.produtos?.length || 0) +
+        (snapshot.locacoes?.length || 0) +
+        (snapshot.cobrancas?.length || 0) +
+        (snapshot.rotas?.length || 0);
+
+      // Aplicar como mudanças remotas
+      await databaseService.applyRemoteChanges({
+        success: true,
+        lastSyncAt: response.data.lastSyncAt,
+        changes: {
+          clientes: snapshot.clientes || [],
+          produtos: snapshot.produtos || [],
+          locacoes: snapshot.locacoes || [],
+          cobrancas: snapshot.cobrancas || [],
+          rotas: snapshot.rotas || [],
+          usuarios: snapshot.usuarios || [],
+        },
+        tiposProduto: snapshot.tiposProduto || [],
+        descricoesProduto: snapshot.descricoesProduto || [],
+        tamanhosProduto: snapshot.tamanhosProduto || [],
+      });
+
+      logger.info('[Sync/Snapshot] Snapshot aplicado', { total });
+      return total;
+    } catch (error) {
+      logger.error('[Sync/Snapshot] Erro:', error);
+      return 0;
+    }
   }
 
   /**

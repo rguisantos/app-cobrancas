@@ -28,7 +28,7 @@ const envSchema = z.object({
   APP_VERSION: z.string().default('1.0.0'),
   APP_NAME: z.string().default('App Cobranças'),
   
-  // Debug
+  // Debug — SEMPRE false em produção (build release), true apenas em dev
   DEBUG: z.boolean().default(false),
   
   // Sync
@@ -102,6 +102,12 @@ const parseEnvConfig = (): EnvConfig => {
 
   try {
     const config = envSchema.parse(rawConfig);
+    
+    // CORREÇÃO: Em produção (__DEV__ === false), forçar DEBUG=false
+    // independentemente do que está configurado no app.json ou .env
+    if (!(global as any).__DEV__) {
+      (config as any).DEBUG = false;
+    }
     
     // AVISO CRÍTICO: Se USE_MOCK está true mas sem credenciais mock
     if (config.USE_MOCK && !config.MOCK_EMAIL) {

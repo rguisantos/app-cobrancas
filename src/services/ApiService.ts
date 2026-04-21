@@ -118,13 +118,9 @@ class ApiService {
    * Define o token de autenticação
    */
   setToken(token: string | null): void {
-    const previousToken = this.token;
     this.token = token;
     if (ENV.DEBUG) {
-      console.log(`[ApiService] setToken chamado:`);
-      console.log(`[ApiService]   - Token anterior: ${previousToken ? previousToken.substring(0, 20) + '...' : 'null'}`);
-      console.log(`[ApiService]   - Novo token: ${token ? token.substring(0, 20) + '...' : 'null'}`);
-      console.log(`[ApiService]   - Token definido com sucesso: ${!!this.token}`);
+      console.log(`[ApiService] setToken: token ${token ? 'definido' : 'removido'}`);
     }
   }
 
@@ -184,7 +180,7 @@ class ApiService {
         // Sincronizar token local com AsyncStorage
         this.token = tokenFromStorage;
         if (ENV.DEBUG) {
-          console.log(`[API:${requestId}] Token lido do AsyncStorage: ${tokenFromStorage.substring(0, 30)}...`);
+          console.log(`[API:${requestId}] Token lido do AsyncStorage`);
         }
       } else if (ENV.DEBUG) {
         console.warn(`[API:${requestId}] ⚠️ Nenhum token encontrado no AsyncStorage`);
@@ -209,7 +205,7 @@ class ApiService {
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
       if (ENV.DEBUG) {
-        console.log(`[API:${requestId}] Authorization header adicionado: Bearer ${this.token.substring(0, 30)}...`);
+        console.log(`[API:${requestId}] Authorization header adicionado`);
       }
     } else if (ENV.DEBUG) {
       console.warn(`[API:${requestId}] ⚠️ ATENÇÃO: Requisição sem token! Endpoint: ${endpoint}`);
@@ -517,6 +513,7 @@ class ApiService {
   /**
    * Busca mudanças do servidor (PULL)
    * Requer token JWT para autenticação
+   * CORREÇÃO: Suporta paginação via hasMore — faz pull em loop até receber todos os dados
    */
   async pullChanges(payload: PullChangesRequest): Promise<SyncResponse> {
     if (ENV.DEBUG) {
@@ -527,32 +524,90 @@ class ApiService {
       console.log(`[SYNC:PULL] Token disponível: ${!!this.token}`);
     }
     
-    // Usa post() que inclui o token JWT no header
-    const response = await this.post<SyncResponse>('/api/sync/pull', payload);
+    // CORREÇÃO: Fazer pull em loop para suportar paginação
+    let allChanges: SyncResponse = {
+      success: true,
+      lastSyncAt: new Date().toISOString(),
+      changes: {
+        clientes: [],
+        produtos: [],
+        locacoes: [],
+        cobrancas: [],
+        rotas: [],
+      },
+      conflicts: [],
+      errors: [],
+    };
 
-    if (!response.success) {
+    let currentLastSyncAt = payload.lastSyncAt;
+    let hasMore = true;
+    let pullRound = 0;
+
+    while (hasMore) {
+      pullRound++;
       if (ENV.DEBUG) {
-        console.error(`[SYNC:PULL] ❌ FALHA: ${response.error}`);
-        console.log(`[SYNC:PULL] ========== PULL END (ERROR) ==========\n`);
+        console.log(`[SYNC:PULL] Round ${pullRound} — lastSyncAt: ${currentLastSyncAt}`);
       }
-      return {
-        success: false,
-        lastSyncAt: new Date().toISOString(),
-        changes: {
-          clientes: [],
-          produtos: [],
-          locacoes: [],
-          cobrancas: [],
-          rotas: [],
-        },
-        conflicts: [],
-        errors: [response.error || 'Falha ao buscar mudanças'],
-      };
+
+      const response = await this.post<SyncResponse>('/api/sync/pull', {
+        ...payload,
+        lastSyncAt: currentLastSyncAt,
+      });
+
+      if (!response.success) {
+        if (ENV.DEBUG) {
+          console.error(`[SYNC:PULL] ❌ FALHA: ${response.error}`);
+          console.log(`[SYNC:PULL] ========== PULL END (ERROR) ==========\n`);
+        }
+        // Se já temos dados de rounds anteriores, retornar o que temos
+        if (pullRound > 1) {
+          allChanges.errors = [...(allChanges.errors || []), response.error || 'Falha em round de pull'];
+          break;
+        }
+        return {
+          success: false,
+          lastSyncAt: new Date().toISOString(),
+          changes: {
+            clientes: [],
+            produtos: [],
+            locacoes: [],
+            cobrancas: [],
+            rotas: [],
+          },
+          conflicts: [],
+          errors: [response.error || 'Falha ao buscar mudanças'],
+        };
+      }
+
+      const data = response.data!;
+      const changes = data.changes || {};
+
+      // Acumular resultados
+      const allCh = allChanges.changes || {};
+      allCh.clientes = [...(allCh.clientes || []), ...(changes.clientes || [])];
+      allCh.produtos = [...(allCh.produtos || []), ...(changes.produtos || [])];
+      allCh.locacoes = [...(allCh.locacoes || []), ...(changes.locacoes || [])];
+      allCh.cobrancas = [...(allCh.cobrancas || []), ...(changes.cobrancas || [])];
+      allCh.rotas = [...(allCh.rotas || []), ...(changes.rotas || [])];
+      allCh.usuarios = [...((allCh as any).usuarios || []), ...((changes as any).usuarios || [])];
+      allChanges.changes = allCh;
+      allChanges.lastSyncAt = data.lastSyncAt;
+      allChanges.conflicts = [...(allChanges.conflicts || []), ...(data.conflicts || [])];
+      allChanges.errors = [...(allChanges.errors || []), ...(data.errors || [])];
+      allChanges.isStale = data.isStale;
+
+      // Verificar paginação
+      hasMore = !!data.hasMore;
+      currentLastSyncAt = data.lastSyncAt;
+
+      if (ENV.DEBUG) {
+        console.log(`[SYNC:PULL] Round ${pullRound} — hasMore: ${hasMore}, lastSyncAt: ${data.lastSyncAt}`);
+      }
     }
 
-    const changes = response.data?.changes || {};
     if (ENV.DEBUG) {
-      console.log(`[SYNC:PULL] ✅ SUCESSO`);
+      const changes = allChanges.changes || {};
+      console.log(`[SYNC:PULL] ✅ SUCESSO (${pullRound} rounds)`);
       console.log(`[SYNC:PULL] Clientes: ${changes.clientes?.length || 0}`);
       console.log(`[SYNC:PULL] Produtos: ${changes.produtos?.length || 0}`);
       console.log(`[SYNC:PULL] Locações: ${changes.locacoes?.length || 0}`);
@@ -560,7 +615,7 @@ class ApiService {
       console.log(`[SYNC:PULL] Rotas: ${changes.rotas?.length || 0}`);
       console.log(`[SYNC:PULL] ========== PULL END (OK) ==========\n`);
     }
-    return response.data!;
+    return allChanges;
   }
 
   /**
@@ -792,6 +847,22 @@ class ApiService {
    */
   async login(email: string, senha: string): Promise<ApiResponse<{ token: string; user: any }>> {
     return this.post('/api/mobile/auth/login', { email, password: senha });
+  }
+
+  /**
+   * CORREÇÃO: Renova token JWT via /api/mobile/auth/refresh
+   * Deve ser chamado quando o token está próximo de expirar ou ao receber 401
+   */
+  async refreshToken(): Promise<ApiResponse<{ token: string; user: any }>> {
+    return this.post('/api/mobile/auth/refresh', {});
+  }
+
+  /**
+   * CORREÇÃO: Busca snapshot completo para device estale
+   * Usado quando o dispositivo fica >30 dias sem sync
+   */
+  async getSnapshot(deviceId: string, deviceKey: string): Promise<ApiResponse<any>> {
+    return this.post('/api/sync/snapshot', { deviceId, deviceKey });
   }
 
   /**
