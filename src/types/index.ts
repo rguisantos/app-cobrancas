@@ -156,7 +156,11 @@ export interface Cliente extends SyncableEntity {
   bairro: string;
   cidade: string;
   estado: string; // Sigla: "MS"
-    // Vínculo com Rota
+    // Coordenadas geográficas
+  latitude?: number;
+  longitude?: number;
+
+  // Vínculo com Rota
   rotaId: string | number;
   rotaNome?: string; // Para exibição fácil
   

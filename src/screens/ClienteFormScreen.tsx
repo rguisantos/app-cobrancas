@@ -30,6 +30,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 
 // Contexts
 import { useCliente } from '../contexts/ClienteContext';
@@ -98,6 +99,8 @@ export default function ClienteFormScreen() {
   const [carregandoCidades, setCarregandoCidades] = useState(false);
   const [modalEstadoVisible, setModalEstadoVisible] = useState(false);
   const [modalCidadeVisible, setModalCidadeVisible] = useState(false);
+  const [capturandoLocalizacao, setCapturandoLocalizacao] = useState(false);
+  const [localizacaoCapturada, setLocalizacaoCapturada] = useState(false);
 
   // ==========================================================================
   // CARREGAMENTO INICIAL
@@ -114,6 +117,9 @@ export default function ClienteFormScreen() {
         contatos: clienteSelecionado.contatos || [],
       });
       setTipoPessoa(clienteSelecionado.tipoPessoa || 'Fisica');
+      if (clienteSelecionado.latitude && clienteSelecionado.longitude) {
+        setLocalizacaoCapturada(true);
+      }
       
       // Carregar cidades se tiver estado
       if (clienteSelecionado.estado) {
@@ -305,6 +311,37 @@ export default function ClienteFormScreen() {
         i === index ? { ...c, [field]: value } : c
       ),
     }));
+  }, []);
+
+  const handleCapturarLocalizacao = useCallback(async () => {
+    try {
+      setCapturandoLocalizacao(true);
+      
+      // Pedir permissão
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissão negada', 'Habilite o acesso à localização nas configurações do aparelho para capturar as coordenadas.');
+        setCapturandoLocalizacao(false);
+        return;
+      }
+      
+      // Buscar localização
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      
+      setFormData(prev => ({
+        ...prev,
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      }));
+      setLocalizacaoCapturada(true);
+    } catch (error) {
+      console.error('Erro ao capturar localização:', error);
+      Alert.alert('Erro', 'Não foi possível obter sua localização. Verifique se o GPS está ativo.');
+    } finally {
+      setCapturandoLocalizacao(false);
+    }
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -653,7 +690,34 @@ export default function ClienteFormScreen() {
 
           {/* Endereço */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Endereço</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Endereço</Text>
+              <TouchableOpacity
+                style={[
+                  styles.gpsButton,
+                  localizacaoCapturada && styles.gpsButtonCaptured,
+                ]}
+                onPress={handleCapturarLocalizacao}
+                disabled={capturandoLocalizacao}
+              >
+                {capturandoLocalizacao ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Ionicons
+                    name={localizacaoCapturada ? 'checkmark-circle' : 'navigate'}
+                    size={18}
+                    color="#FFFFFF"
+                  />
+                )}
+                <Text style={styles.gpsButtonText}>
+                  {capturandoLocalizacao
+                    ? 'Obtendo...'
+                    : localizacaoCapturada
+                    ? 'Localização capturada!'
+                    : 'Usar GPS'}
+                </Text>
+              </TouchableOpacity>
+            </View>
             
             {/* CEP com busca */}
             <View style={styles.inputGroup}>
@@ -845,11 +909,36 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 24,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: '#1E293B',
-    marginBottom: 12,
+    marginBottom: 0,
+  },
+
+  // GPS Button
+  gpsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#059669',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  gpsButtonCaptured: {
+    backgroundColor: '#16A34A',
+  },
+  gpsButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 
   // Tipo de Pessoa

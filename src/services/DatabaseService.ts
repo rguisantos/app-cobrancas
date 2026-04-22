@@ -167,6 +167,8 @@ class DatabaseService {
         bairro TEXT,
         cidade TEXT,
         estado TEXT,
+        latitude REAL,
+        longitude REAL,
         rotaId TEXT,
         rotaNome TEXT,
         status TEXT,
