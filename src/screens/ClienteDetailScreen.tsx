@@ -91,8 +91,14 @@ export default function ClienteDetailScreen() {
   }, []);
 
   const handleMapa = useCallback((cliente: Cliente) => {
-    const endereco = `${cliente.logradouro},${cliente.numero},${cliente.bairro},${cliente.cidade}-${cliente.estado}`;
-    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(endereco)}`);
+    // Se tem coordenadas GPS, usa a localização precisa
+    if (cliente.latitude && cliente.longitude) {
+      Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${cliente.latitude},${cliente.longitude}`);
+    } else {
+      // Fallback: busca pelo endereço
+      const endereco = `${cliente.logradouro},${cliente.numero},${cliente.bairro},${cliente.cidade}-${cliente.estado}`;
+      Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(endereco)}`);
+    }
   }, []);
 
   const handleEditar = useCallback(() => {
@@ -410,6 +416,18 @@ export default function ClienteDetailScreen() {
                 <View style={styles.infoContent}>
                   <Text style={styles.infoLabel}>CEP</Text>
                   <Text style={styles.infoValue}>{clienteSelecionado.cep}</Text>
+                </View>
+              </View>
+            )}
+
+            {clienteSelecionado.latitude && clienteSelecionado.longitude && (
+              <View style={styles.infoRow}>
+                <Ionicons name="pin" size={20} color="#059669" />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>Coordenadas GPS</Text>
+                  <Text style={[styles.infoValue, { color: '#059669' }]}>
+                    {clienteSelecionado.latitude.toFixed(6)}, {clienteSelecionado.longitude.toFixed(6)}
+                  </Text>
                 </View>
               </View>
             )}
