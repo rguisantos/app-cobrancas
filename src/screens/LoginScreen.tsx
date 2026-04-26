@@ -4,13 +4,15 @@
  * 
  * Funcionalidades:
  * - Login com email/senha
- * - Validação de campos
- * - Loading state
+ * - Validação com Zod (espelha schemas do servidor)
+ * - Feedback de conta bloqueada e rate limiting
+ * - Opção de login biométrico
+ * - Loading states
  * - Navegação para recuperação de senha
  * - Logo e branding
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,11 +24,11 @@ import {
   Platform,
   ScrollView,
   Alert,
-  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { z } from 'zod';
 
 // Contexts
 import { useAuth } from '../contexts/AuthContext';
@@ -35,100 +37,116 @@ import { useAuth } from '../contexts/AuthContext';
 import { AuthStackNavigationProp } from '../navigation/AppNavigator';
 
 // ============================================================================
-// INTERFACES
+// VALIDAÇÃO ZOD (espelha o schema do servidor)
 // ============================================================================
 
-interface LoginFormData {
-  email: string;
-  password: string;
-}
+const loginFormSchema = z.object({
+  email: z.string().email('E-mail inválido'),
+  senha: z.string().min(1, 'Senha é obrigatória'),
+});
+
+type LoginForm = z.infer<typeof loginFormSchema>;
 
 interface FormErrors {
   email?: string;
-  password?: string;
+  senha?: string;
 }
+
 // ============================================================================
 // COMPONENTE PRINCIPAL
 // ============================================================================
 
 export default function LoginScreen() {
   const navigation = useNavigation<AuthStackNavigationProp>();
-  const { login, isLoading } = useAuth();
+  const { login, isLoading, lockoutInfo, biometricLogin, isBiometricAvailable } = useAuth();
 
   // Estado do formulário
-  const [formData, setFormData] = useState<LoginFormData>({
+  const [formData, setFormData] = useState<LoginForm>({
     email: '',
-    password: '',
+    senha: '',
   });
 
   const [errors, setErrors] = useState<FormErrors>({});
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+
+  // Verificar biometria disponível
+  useEffect(() => {
+    isBiometricAvailable().then(({ available }) => {
+      setBiometricAvailable(available);
+    });
+  }, []);
 
   // ==========================================================================
   // VALIDAÇÕES
   // ==========================================================================
 
-  const validateEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
-
   const validateForm = (): boolean => {
-    const newErrors: FormErrors = {};
-
-    // Validar email
-    if (!formData.email.trim()) {
-      newErrors.email = 'E-mail é obrigatório';
-    } else if (!validateEmail(formData.email)) {
-      newErrors.email = 'E-mail inválido';
-  
-  }
-
-    // Validar senha
-    if (!formData.password) {
-      newErrors.password = 'Senha é obrigatória';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Senha deve ter no mínimo 6 caracteres';
-  
-  }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const result = loginFormSchema.safeParse(formData);
+    if (!result.success) {
+      const fieldErrors: FormErrors = {};
+      result.error.errors.forEach(err => {
+        const field = err.path[0] as keyof FormErrors;
+        if (!fieldErrors[field]) {
+          fieldErrors[field] = err.message;
+        }
+      });
+      setErrors(fieldErrors);
+      return false;
+    }
+    setErrors({});
+    return true;
   };
 
   // ==========================================================================
-  // HANDLERS  // ==========================================================================
+  // HANDLERS
+  // ==========================================================================
 
-  const handleInputChange = useCallback((field: keyof LoginFormData, value: string) => {
+  const handleInputChange = useCallback((field: keyof LoginForm, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     
-    // Limpar erro do campo ao digitar
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: undefined }));
-  
-  }
+    }
   }, [errors]);
 
   const handleLogin = useCallback(async () => {
     if (!validateForm()) {
       return;
-  
-  }
+    }
 
     setIsSubmitting(true);
 
     try {
-      await login(formData.email, formData.password);
+      await login(formData.email, formData.senha);
       // Navegação é tratada pelo AuthContext
-    } catch (error) {
+    } catch (error: any) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao fazer login';
+      
+      // Verificar se é erro de lockout (informação já está no context)
+      if (lockoutInfo?.locked) {
+        // O feedback já é mostrado via lockoutInfo do context
+        return;
+      }
+      
       Alert.alert('Erro', mensagem, [{ text: 'OK' }]);
     } finally {
       setIsSubmitting(false);
-  
-  }
-  }, [formData, login]);
+    }
+  }, [formData, login, lockoutInfo]);
+
+  const handleBiometricLogin = useCallback(async () => {
+    try {
+      const success = await biometricLogin();
+      if (!success) {
+        // Biometria falhou ou foi cancelada — não mostrar erro
+        // O usuário pode tentar novamente ou usar senha
+      }
+    } catch {
+      // Falha na biometria — usuário volta para login com senha
+    }
+  }, [biometricLogin]);
 
   const handleRecoverPassword = useCallback(() => {
     navigation.navigate('RecoverPassword');
@@ -157,6 +175,41 @@ export default function LoginScreen() {
               <Text style={styles.appSubtitle}>Gestão de Locações</Text>
             </View>
           </View>
+
+          {/* Alerta de Conta Bloqueada */}
+          {lockoutInfo?.locked && (
+            <View style={styles.lockoutBanner}>
+              <Ionicons name="lock-closed" size={20} color="#D97706" />
+              <View style={styles.lockoutText}>
+                <Text style={styles.lockoutTitle}>Conta temporariamente bloqueada</Text>
+                <Text style={styles.lockoutDesc}>
+                  Por segurança, aguarde {lockoutInfo.minutosRestantes} minutos antes de tentar novamente.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Botão Biométrico */}
+          {biometricAvailable && (
+            <TouchableOpacity
+              style={styles.biometricButton}
+              onPress={handleBiometricLogin}
+              disabled={isSubmitting || isLoading}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="finger-print-outline" size={28} color="#2563EB" />
+              <Text style={styles.biometricText}>Entrar com biometria</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Divisor biométrico */}
+          {biometricAvailable && (
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>ou use sua senha</Text>
+              <View style={styles.dividerLine} />
+            </View>
+          )}
 
           {/* Formulário */}
           <View style={styles.form}>
@@ -187,20 +240,21 @@ export default function LoginScreen() {
             {/* Campo Senha */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Senha</Text>
-              <View style={[styles.inputContainer, errors.password && styles.inputError]}>
+              <View style={[styles.inputContainer, errors.senha && styles.inputError]}>
                 <Ionicons 
                   name="lock-closed-outline" 
                   size={20} 
-                  color={errors.password ? '#DC2626' : '#64748B'} 
+                  color={errors.senha ? '#DC2626' : '#64748B'} 
                 />
                 <TextInput
                   style={styles.input}
                   placeholder="••••••••"
                   placeholderTextColor="#94A3B8"
-                  value={formData.password}
-                  onChangeText={(value) => handleInputChange('password', value)}
+                  value={formData.senha}
+                  onChangeText={(value) => handleInputChange('senha', value)}
                   secureTextEntry={!showPassword}
-                  editable={!isSubmitting}                />
+                  editable={!isSubmitting}
+                />
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
                   disabled={isSubmitting}
@@ -212,7 +266,7 @@ export default function LoginScreen() {
                   />
                 </TouchableOpacity>
               </View>
-              {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+              {errors.senha && <Text style={styles.errorText}>{errors.senha}</Text>}
             </View>
 
             {/* Link Recuperar Senha */}
@@ -226,9 +280,12 @@ export default function LoginScreen() {
 
             {/* Botão Entrar */}
             <TouchableOpacity
-              style={[styles.button, isSubmitting && styles.buttonDisabled]}
+              style={[
+                styles.button,
+                (isSubmitting || isLoading || lockoutInfo?.locked) && styles.buttonDisabled,
+              ]}
               onPress={handleLogin}
-              disabled={isSubmitting || isLoading}
+              disabled={isSubmitting || isLoading || !!lockoutInfo?.locked}
               activeOpacity={0.8}
             >
               {isSubmitting || isLoading ? (
@@ -275,7 +332,7 @@ const styles = StyleSheet.create({
 
   // Header
   header: {
-    marginBottom: 40,
+    marginBottom: 32,
     alignItems: 'center',
   },
   logoContainer: {
@@ -293,10 +350,73 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
+  // Lockout Banner
+  lockoutBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    gap: 12,
+  },
+  lockoutText: {
+    flex: 1,
+  },
+  lockoutTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#92400E',
+    marginBottom: 4,
+  },
+  lockoutDesc: {
+    fontSize: 13,
+    color: '#B45309',
+  },
+
+  // Biometric
+  biometricButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+    marginBottom: 16,
+  },
+  biometricText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+
+  // Divider
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  dividerText: {
+    paddingHorizontal: 12,
+    fontSize: 13,
+    color: '#94A3B8',
+  },
+
   // Form
   form: {
     gap: 20,
-  },  inputGroup: {
+  },
+  inputGroup: {
     gap: 8,
   },
   label: {
@@ -345,7 +465,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2563EB',    height: 52,
+    backgroundColor: '#2563EB',
+    height: 52,
     borderRadius: 12,
     gap: 12,
     marginTop: 8,
@@ -371,11 +492,6 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
     paddingTop: 40,
     alignItems: 'center',
-    gap: 8,
-  },
-  footerText: {
-    fontSize: 12,
-    color: '#94A3B8',
   },
   footerVersion: {
     fontSize: 11,

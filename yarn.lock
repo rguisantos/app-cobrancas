@@ -3168,6 +3168,13 @@ expo-linking@~55.0.12:
     expo-constants "~55.0.13"
     invariant "^2.2.4"
 
+expo-local-authentication@^55.0.13:
+  version "55.0.13"
+  resolved "https://registry.npmjs.org/expo-local-authentication/-/expo-local-authentication-55.0.13.tgz"
+  integrity sha512-7m1+Roub/6xxjHtVKe0vVtsC5g0MXp1Nf0dxK0YfJ1i5314hvi/Glhl5/2loAgnplw8Nx4UVbf6L0/rDjhljsQ==
+  dependencies:
+    invariant "^2.2.4"
+
 expo-location@^55.1.8:
   version "55.1.8"
   resolved "https://registry.npmjs.org/expo-location/-/expo-location-55.1.8.tgz"
@@ -3199,6 +3206,11 @@ expo-modules-core@55.0.22:
   integrity sha512-NC5GyvCHvnOvi5MtgLv68oUSrRP/0UORGzU/MX+7BIA8ctgBPxKSjPXPSfhwk3gMzj7eHBhYwlu0HJsIEnVd9A==
   dependencies:
     invariant "^2.2.4"
+
+expo-secure-store@^55.0.13:
+  version "55.0.13"
+  resolved "https://registry.npmjs.org/expo-secure-store/-/expo-secure-store-55.0.13.tgz"
+  integrity sha512-I6r0JNO1Fd4o0Gu7Ixiic7s89lqgdUHq17uBH9y1f/AntoyKn71TdtYJH82RgfsBbu5qNVzrwImmvlANyOlITQ==
 
 expo-server@^55.0.7:
   version "55.0.7"

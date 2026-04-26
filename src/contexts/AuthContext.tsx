@@ -1,7 +1,13 @@
 /**
  * AuthContext.tsx
- * Contexto de Autenticação com persistência SQLite local
+ * Contexto de Autenticação com persistência segura
  * Offline-first com sincronização
+ * 
+ * Refatorado para:
+ * - Usar SecureStore para tokens
+ * - Usar endpoint de refresh token
+ * - Suportar autenticação biométrica
+ * - Feedback de lockout e rate limiting
  */
 
 import React, { createContext, useState, useCallback, useEffect, useContext, ReactNode } from 'react';
@@ -13,6 +19,7 @@ import { databaseService } from '../services/DatabaseService';
 import authService from '../services/AuthService';
 import { apiService } from '../services/ApiService';
 import { syncService } from '../services/SyncService';
+import { secureStorage } from '../services/SecureStorage';
 import logger from '../utils/logger';
 
 // ============================================================================
@@ -20,14 +27,22 @@ import logger from '../utils/logger';
 // ============================================================================
 
 const STORAGE_KEYS = {
-  TOKEN: '@cobrancas:token',
+  TOKEN: '@cobrancas:token',         // Compatibilidade com versão anterior
   USER: '@cobrancas:user',
   DEVICE: '@cobrancas:device',
 };
 
+// Intervalo de refresh proativo (antes do token expirar)
+const REFRESH_INTERVAL_MS = 12 * 60 * 1000; // 12 minutos (token expira em 15min)
+
 // ============================================================================
 // INTERFACES
 // ============================================================================
+
+export interface LockoutInfo {
+  locked: boolean;
+  minutosRestantes?: number;
+}
 
 export interface AuthContextType {
   // Estado
@@ -36,11 +51,15 @@ export interface AuthContextType {
   isLoading: boolean;
   isSignout: boolean;
   isAuthenticated: boolean;
+  lockoutInfo: LockoutInfo | null;
   
   // Ações
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  biometricLogin: () => Promise<boolean>;
+  setBiometricEnabled: (enabled: boolean) => Promise<void>;
+  isBiometricAvailable: () => Promise<{ available: boolean; enabled: boolean }>;
   
   // Utilitários
   hasPermission: (module: keyof PermissoesUsuario['web'] | keyof PermissoesUsuario['mobile'], platform: 'web' | 'mobile') => boolean;
@@ -98,6 +117,7 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSignout, setIsSignout] = useState(false);
+  const [lockoutInfo, setLockoutInfo] = useState<LockoutInfo | null>(null);
 
   // ==========================================================================
   // BOOTSTRAP - Restaurar sessão ao iniciar
@@ -111,23 +131,22 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       // Inicializar o banco de dados e authService
       await authService.inicializar();
 
-      const [savedToken, savedUserJson] = await AsyncStorage.multiGet([
-        STORAGE_KEYS.TOKEN,
-        STORAGE_KEYS.USER,
-      ]);
+      // Restaurar sessão do SecureStore
+      const savedToken = await secureStorage.getAccessToken();
+      const savedUserJson = await secureStorage.getUser();
 
-      if (savedToken[1] && savedUserJson[1]) {
-        const parsedUser = JSON.parse(savedUserJson[1]) as Usuario;
+      if (savedToken && savedUserJson) {
+        const parsedUser = JSON.parse(savedUserJson) as Usuario;
         
-        // IMPORTANTE: Sincronizar token com ApiService
-        apiService.setToken(savedToken[1]);
+        // Sincronizar token com ApiService
+        apiService.setToken(savedToken);
         logger.info('[Auth] Token sincronizado com ApiService no bootstrap');
         
-        setToken(savedToken[1]);
+        setToken(savedToken);
         setUser(parsedUser);
         setIsSignout(false);
         
-        logger.info('[Auth] Sessao restaurada', { user: parsedUser.nome, role: parsedUser.tipoPermissao });
+        logger.info('[Auth] Sessão restaurada', { user: parsedUser.nome, role: parsedUser.tipoPermissao });
         
         onAuthChange?.(parsedUser);
       } else {
@@ -147,30 +166,49 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   }, [bootstrap]);
 
   // ==========================================================================
+  // REFRESH TOKEN PROATIVO
+  // ==========================================================================
+
+  useEffect(() => {
+    if (!token || token.startsWith('loc_')) return; // Não refresh tokens locais
+
+    const interval = setInterval(async () => {
+      try {
+        logger.info('[Auth] Refresh proativo do token...');
+        const newToken = await authService.refreshToken();
+        setToken(newToken);
+      } catch (error) {
+        logger.warn('[Auth] Falha no refresh proativo:', error);
+        // Se o refresh falhar, a sessão pode estar expirada
+        // O interceptor do ApiService vai lidar com isso na próxima requisição
+      }
+    }, REFRESH_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [token]);
+
+  // ==========================================================================
   // LOGIN
   // ==========================================================================
 
   const login = useCallback(async (email: string, password: string) => {
     try {
       setIsLoading(true);
+      setLockoutInfo(null);
       logger.info('[Auth] ====== INICIANDO LOGIN ======', { email });
 
-      // Usar o AuthService que autentica com API ou SQLite local
       const response = await authService.login(email, password);
 
       const { token: newToken, user: usuarioLogado } = response;
 
       logger.info('[Auth] Login bem-sucedido', { token: newToken ? 'recebido' : 'nulo', userId: usuarioLogado.id });
 
-      // Passar token para o ApiService (para requisições autenticadas)
+      // Passar token para o ApiService
       apiService.setToken(newToken);
-      logger.info('[Auth] Token configurado no ApiService');
 
-      // Salvar no AsyncStorage
-      await AsyncStorage.multiSet([
-        [STORAGE_KEYS.TOKEN, newToken],
-        [STORAGE_KEYS.USER, JSON.stringify(usuarioLogado)],
-      ]);
+      // Salvar dados do usuário no SecureStorage
+      await secureStorage.saveAccessToken(newToken);
+      await secureStorage.saveUser(JSON.stringify(usuarioLogado));
 
       // Atualizar estado
       setToken(newToken);
@@ -180,13 +218,13 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
 
       logger.info('[Auth] Login completo', { email, role: usuarioLogado.tipoPermissao });
       
-      // NÃO registrar dispositivo automaticamente - o AppNavigator vai verificar
-      // se o dispositivo está ativado e mostrar a tela de ativação se necessário
-      logger.info('[Auth] Verificação de dispositivo será feita no AppNavigator');
-      
       onAuthChange?.(usuarioContexto);
 
-    } catch (error) {
+    } catch (error: any) {
+      // Verificar se é erro de lockout
+      if (error?.lockoutInfo) {
+        setLockoutInfo(error.lockoutInfo);
+      }
       const mensagem = error instanceof Error ? error.message : 'Erro ao fazer login';
       logger.error('[Auth] Erro no login', error);
       throw new Error(mensagem);
@@ -194,6 +232,47 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       setIsLoading(false);
     }
   }, [onAuthChange]);
+
+  // ==========================================================================
+  // BIOMETRIC LOGIN
+  // ==========================================================================
+
+  const biometricLogin = useCallback(async (): Promise<boolean> => {
+    try {
+      setIsLoading(true);
+      const success = await authService.authenticateWithBiometrics();
+      
+      if (success) {
+        const savedToken = await secureStorage.getAccessToken();
+        const savedUserJson = await secureStorage.getUser();
+        
+        if (savedToken && savedUserJson) {
+          const parsedUser = JSON.parse(savedUserJson) as Usuario;
+          apiService.setToken(savedToken);
+          setToken(savedToken);
+          setUser(parsedUser);
+          setIsSignout(false);
+          onAuthChange?.(parsedUser);
+          logger.info('[Auth] Login biométrico bem-sucedido');
+        }
+      }
+      
+      return success;
+    } catch (error) {
+      logger.error('[Auth] Erro no login biométrico', error);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [onAuthChange]);
+
+  const handleSetBiometricEnabled = useCallback(async (enabled: boolean) => {
+    await authService.setBiometricEnabled(enabled);
+  }, []);
+
+  const handleIsBiometricAvailable = useCallback(async () => {
+    return authService.isBiometricAvailable();
+  }, []);
 
   // ==========================================================================
   // LOGOUT
@@ -204,20 +283,13 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       setIsLoading(true);
       logger.info('[Auth] Realizando logout');
 
-      // Limpar apenas dados do usuário, MANTER dados do dispositivo
-      // O dispositivo deve permanecer ativado mesmo após logout
-      await AsyncStorage.multiRemove([
-        STORAGE_KEYS.TOKEN,
-        STORAGE_KEYS.USER,
-      ]);
+      await authService.logout();
 
-      // Limpar token do ApiService
-      apiService.setToken(null);
-
-      // Limpar estado do usuário
+      // Limpar estado
       setToken(null);
       setUser(null);
       setIsSignout(true);
+      setLockoutInfo(null);
 
       logger.info('[Auth] Logout realizado (dispositivo permanece ativado)');
       
@@ -241,7 +313,6 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
     if (!user) return;
 
     try {
-      // Tentar buscar dados atualizados do servidor (permissões, bloqueio, etc.)
       let usuarioServidor: any = null;
       try {
         const response = await apiService.getUsuarioAtual();
@@ -254,7 +325,6 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       }
 
       if (usuarioServidor) {
-        // Dados do servidor: atualizar AsyncStorage e estado
         const usuarioAtualizado = toUsuario({
           id: usuarioServidor.id,
           email: usuarioServidor.email,
@@ -265,16 +335,14 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
           status: usuarioServidor.status,
         });
         setUser(usuarioAtualizado);
-        await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(usuarioAtualizado));
+        await secureStorage.saveUser(JSON.stringify(usuarioAtualizado));
 
-        // Se usuário foi bloqueado ou inativado, forçar logout
         if (usuarioServidor.status !== 'Ativo' || usuarioServidor.bloqueado) {
           logger.warn('[Auth] Usuário bloqueado/inativo no servidor — forçando logout');
           await logout();
           return;
         }
       } else {
-        // Fallback offline: recarregar do AsyncStorage local
         const usuarioLocal = await authService.getUsuarioLogado();
         if (usuarioLocal) {
           setUser(toUsuario(usuarioLocal));
@@ -296,10 +364,8 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   ): boolean => {
     if (!user) return false;
     
-    // Admin tem tudo
     if (user.tipoPermissao === 'Administrador') return true;
     
-    // Verificar permissão específica
     const perms = user.permissoes?.[platform];
     return perms ? (perms as any)[module] ?? false : false;
   }, [user]);
@@ -307,10 +373,8 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   const canAccessRota = useCallback((rotaId: string | number): boolean => {
     if (!user) return false;
     
-    // Admin vê todas as rotas
     if (user.tipoPermissao === 'Administrador') return true;
     
-    // Usuário controlado: verificar se rota está na lista permitida
     return user.rotasPermitidas?.includes(rotaId) ?? false;
   }, [user]);
 
@@ -334,9 +398,13 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
     isLoading,
     isSignout,
     isAuthenticated,
+    lockoutInfo,
     login,
     logout,
     refreshUser,
+    biometricLogin,
+    setBiometricEnabled: handleSetBiometricEnabled,
+    isBiometricAvailable: handleIsBiometricAvailable,
     hasPermission,
     canAccessRota,
     isAdmin,
