@@ -432,16 +432,40 @@ export interface CobrancaView {
 export type TipoPermissaoUsuario = 'Administrador' | 'Secretario' | 'AcessoControlado';
 
 export interface PermissoesWeb {
-  todosCadastros: boolean;
+  // Cadastros
+  clientes: boolean;
+  produtos: boolean;
+  rotas: boolean;
+  // Operações
   locacaoRelocacaoEstoque: boolean;
-  relatorios?: boolean;
+  cobrancas: boolean;
+  manutencoes: boolean;
+  relogios: boolean;
+  // Visualização
+  relatorios: boolean;
+  dashboard: boolean;
+  agenda: boolean;
+  mapa: boolean;
+  // Admin
+  adminCadastros: boolean;
+  adminUsuarios: boolean;
+  adminDispositivos: boolean;
+  adminSincronizacao: boolean;
+  adminAuditoria: boolean;
 }
 
 export interface PermissoesMobile {
-  todosCadastros: boolean;
+  // Cadastros
+  clientes: boolean;
+  produtos: boolean;
+  // Operações
   alteracaoRelogio: boolean;
   locacaoRelocacaoEstoque: boolean;
   cobrancasFaturas: boolean;
+  manutencoes: boolean;
+  // Visualização
+  relatorios: boolean;
+  sincronizacao: boolean;
 }
 
 export interface PermissoesUsuario {

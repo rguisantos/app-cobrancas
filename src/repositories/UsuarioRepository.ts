@@ -293,15 +293,15 @@ class UsuarioRepository {
           tipoPermissao: (result as any).tipoPermissao,
           permissoes: {
             web: this.parseJSON((result as any).permissoesWeb, {
-              todosCadastros: false,
-              locacaoRelocacaoEstoque: false,
-              relatorios: false,
+              clientes: false, produtos: false, rotas: false,
+              locacaoRelocacaoEstoque: false, cobrancas: false, manutencoes: false, relogios: false,
+              relatorios: false, dashboard: true, agenda: false, mapa: false,
+              adminCadastros: false, adminUsuarios: false, adminDispositivos: false, adminSincronizacao: false, adminAuditoria: false,
             }),
             mobile: this.parseJSON((result as any).permissoesMobile, {
-              todosCadastros: false,
-              alteracaoRelogio: false,
-              locacaoRelocacaoEstoque: false,
-              cobrancasFaturas: true,
+              clientes: false, produtos: false,
+              alteracaoRelogio: false, locacaoRelocacaoEstoque: false, cobrancasFaturas: true, manutencoes: false,
+              relatorios: false, sincronizacao: true,
             }),
           },
           rotasPermitidas: this.parseJSON((result as any).rotasPermitidas, []),

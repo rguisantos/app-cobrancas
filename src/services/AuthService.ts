@@ -54,16 +54,43 @@ interface LockoutInfo {
 
 const PERMISSOES_PADRAO: Record<TipoPermissaoUsuario, PermissoesUsuario> = {
   Administrador: {
-    web: { todosCadastros: true, locacaoRelocacaoEstoque: true, relatorios: true },
-    mobile: { todosCadastros: true, alteracaoRelogio: true, locacaoRelocacaoEstoque: true, cobrancasFaturas: true },
+    web: {
+      clientes: true, produtos: true, rotas: true,
+      locacaoRelocacaoEstoque: true, cobrancas: true, manutencoes: true, relogios: true,
+      relatorios: true, dashboard: true, agenda: true, mapa: true,
+      adminCadastros: true, adminUsuarios: true, adminDispositivos: true, adminSincronizacao: true, adminAuditoria: true,
+    },
+    mobile: {
+      clientes: true, produtos: true,
+      alteracaoRelogio: true, locacaoRelocacaoEstoque: true, cobrancasFaturas: true, manutencoes: true,
+      relatorios: true, sincronizacao: true,
+    },
   },
   Secretario: {
-    web: { todosCadastros: true, locacaoRelocacaoEstoque: true, relatorios: true },
-    mobile: { todosCadastros: true, alteracaoRelogio: false, locacaoRelocacaoEstoque: true, cobrancasFaturas: true },
+    web: {
+      clientes: true, produtos: true, rotas: true,
+      locacaoRelocacaoEstoque: true, cobrancas: true, manutencoes: true, relogios: true,
+      relatorios: true, dashboard: true, agenda: true, mapa: true,
+      adminCadastros: false, adminUsuarios: false, adminDispositivos: false, adminSincronizacao: false, adminAuditoria: false,
+    },
+    mobile: {
+      clientes: true, produtos: true,
+      alteracaoRelogio: false, locacaoRelocacaoEstoque: true, cobrancasFaturas: true, manutencoes: true,
+      relatorios: true, sincronizacao: true,
+    },
   },
   'AcessoControlado': {
-    web: { todosCadastros: false, locacaoRelocacaoEstoque: false, relatorios: false },
-    mobile: { todosCadastros: false, alteracaoRelogio: false, locacaoRelocacaoEstoque: false, cobrancasFaturas: true },
+    web: {
+      clientes: false, produtos: false, rotas: false,
+      locacaoRelocacaoEstoque: false, cobrancas: false, manutencoes: false, relogios: false,
+      relatorios: false, dashboard: true, agenda: false, mapa: false,
+      adminCadastros: false, adminUsuarios: false, adminDispositivos: false, adminSincronizacao: false, adminAuditoria: false,
+    },
+    mobile: {
+      clientes: false, produtos: false,
+      alteracaoRelogio: false, locacaoRelocacaoEstoque: false, cobrancasFaturas: true, manutencoes: false,
+      relatorios: false, sincronizacao: true,
+    },
   },
 };
 
