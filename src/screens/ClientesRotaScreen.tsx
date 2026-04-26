@@ -5,6 +5,8 @@
  * Mostra clientes com:
  * - Produtos ativos (locados)
  * - Saldo devedor de locações finalizadas
+ * 
+ * Otimizado: usa queries agregadas em lote ao invés de N+1
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -18,7 +20,6 @@ import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navig
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useCliente }        from '../contexts/ClienteContext';
-import { useAuth }           from '../contexts/AuthContext';
 import { locacaoRepository } from '../repositories/LocacaoRepository';
 import { cobrancaRepository } from '../repositories/CobrancaRepository';
 import { ClienteListItem }   from '../types';
@@ -40,7 +41,6 @@ export default function ClientesRotaScreen() {
   const { rotaId, rotaNome } = route.params;
 
   const { clientes, carregarClientes, carregando } = useCliente();
-  const { user } = useAuth();
 
   const [clientesComStatus, setClientesComStatus] = useState<ClienteComStatus[]>([]);
   const [carregandoStatus,  setCarregandoStatus]  = useState(false);
@@ -54,8 +54,6 @@ export default function ClientesRotaScreen() {
   useFocusEffect(useCallback(() => { carregar(); }, [carregar]));
 
   useEffect(() => {
-    // carregarClientes already filtered by rotaId at DB level
-    // Secondary filter ensures consistency if other tabs share the clientes state
     const filtrados = clientes.filter(c =>
       !c.rotaId || String(c.rotaId) === String(rotaId)
     );
@@ -63,18 +61,18 @@ export default function ClientesRotaScreen() {
 
     setCarregandoStatus(true);
     
-    // Carregar produtos ativos E saldos devedores de locações finalizadas
+    // Queries em lote — 2 queries ao invés de 2*N
+    const clienteIds = filtrados.map(c => String(c.id));
+
     Promise.all([
-      // Contagem de produtos ativos
-      Promise.all(filtrados.map(c => locacaoRepository.countAtivasByCliente(String(c.id)))),
-      // Verificar saldos devedores de locações finalizadas
-      Promise.all(filtrados.map(c => cobrancaRepository.hasSaldoPendenteFinalizado(String(c.id))))
+      locacaoRepository.countAtivasByClientes(clienteIds),
+      cobrancaRepository.hasSaldoPendenteFinalizadoBatch(clienteIds),
     ])
-      .then(([counts, saldos]) => 
-        setClientesComStatus(filtrados.map((c, i) => ({ 
+      .then(([locacoesMap, saldosSet]) => 
+        setClientesComStatus(filtrados.map(c => ({ 
           ...c, 
-          totalProdutos: counts[i],
-          temSaldoDevedor: saldos[i]
+          totalProdutos: locacoesMap.get(String(c.id)) ?? 0,
+          temSaldoDevedor: saldosSet.has(String(c.id))
         })))
       )
       .catch(()    => setClientesComStatus(filtrados.map(c => ({ ...c, totalProdutos: 0, temSaldoDevedor: false }))))

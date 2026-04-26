@@ -375,7 +375,9 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
     
     if (user.tipoPermissao === 'Administrador') return true;
     
-    return user.rotasPermitidas?.includes(rotaId) ?? false;
+    // Normalizar tipos para comparação consistente (string vs number)
+    const rotaIdStr = String(rotaId);
+    return user.rotasPermitidas?.some(r => String(r) === rotaIdStr) ?? false;
   }, [user]);
 
   const isAdmin = useCallback((): boolean => {

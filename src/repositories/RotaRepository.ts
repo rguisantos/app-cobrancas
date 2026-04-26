@@ -62,13 +62,17 @@ class RotaRepository {
   }
 
   /**
-   * Busca rota por ID
+   * Busca rota por ID — usa WHERE clause ao invés de carregar todas
    */
   async getById(id: string | number): Promise<Rota | null> {
     try {
-      const rotas = await databaseService.getRotas();
-      const rota = rotas.find(r => String(r.id) === String(id));
-      return rota ? this.mapToRota(rota) : null;
+      const rows = await databaseService.getAllAsync<any>(
+        `SELECT id, descricao, status, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt
+         FROM rotas WHERE id = ? AND deletedAt IS NULL`,
+        [String(id)]
+      );
+      if (rows.length === 0) return null;
+      return this.mapToRota(rows[0]);
     } catch (error) {
       console.error('[RotaRepository] Erro ao buscar rota por ID:', error);
       return null;
@@ -76,7 +80,24 @@ class RotaRepository {
   }
 
   /**
-   * Salva rota (cria ou atualiza)
+   * Verifica se já existe uma rota com a descrição (case-insensitive)
+   */
+  async existeComDescricao(descricao: string, excludeId?: string | number): Promise<boolean> {
+    try {
+      const query = excludeId
+        ? `SELECT COUNT(*) as cnt FROM rotas WHERE descricao = ? AND id != ? AND deletedAt IS NULL`
+        : `SELECT COUNT(*) as cnt FROM rotas WHERE descricao = ? AND deletedAt IS NULL`;
+      const params = excludeId ? [descricao.trim(), String(excludeId)] : [descricao.trim()];
+      const rows = await databaseService.getAllAsync<{ cnt: number }>(query, params);
+      return (rows[0]?.cnt ?? 0) > 0;
+    } catch (error) {
+      console.error('[RotaRepository] Erro ao verificar descrição:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Cria uma nova rota
    */
   async save(rota: Partial<Rota>): Promise<Rota> {
     try {
@@ -84,9 +105,14 @@ class RotaRepository {
       const descricao = rota.descricao || '';
       const status = rota.status || 'Ativo';
 
+      // Verificar unicidade
+      if (await this.existeComDescricao(descricao, rota.id)) {
+        throw new Error('Já existe uma rota com esta descrição');
+      }
+
       await databaseService.saveRota(id, descricao, status);
       
-      console.log('[RotaRepository] Rota salva:', id, descricao);
+      console.log('[RotaRepository] Rota criada:', id, descricao);
       
       return {
         id,
@@ -100,13 +126,13 @@ class RotaRepository {
         updatedAt: new Date().toISOString(),
       };
     } catch (error) {
-      console.error('[RotaRepository] Erro ao salvar rota:', error);
+      console.error('[RotaRepository] Erro ao criar rota:', error);
       throw error;
     }
   }
 
   /**
-   * Atualiza rota existente
+   * Atualiza rota existente — preserva campos de sync e createdAt
    */
   async update(rota: Partial<Rota> & { id: string | number }): Promise<Rota | null> {
     try {
@@ -119,7 +145,16 @@ class RotaRepository {
       const descricao = rota.descricao || existing.descricao;
       const status = rota.status || existing.status;
 
-      await databaseService.saveRota(String(rota.id), descricao, status);
+      // Verificar unicidade se a descrição foi alterada
+      if (descricao !== existing.descricao && await this.existeComDescricao(descricao, rota.id)) {
+        throw new Error('Já existe uma rota com esta descrição');
+      }
+
+      // Usar UPDATE ao invés de INSERT OR REPLACE para preservar campos de sync
+      await databaseService.runAsync(
+        `UPDATE rotas SET descricao = ?, status = ?, updatedAt = ?, needsSync = 1, syncStatus = 'pending' WHERE id = ?`,
+        [descricao.trim(), status, new Date().toISOString(), String(rota.id)]
+      );
       
       console.log('[RotaRepository] Rota atualizada:', rota.id);
       
@@ -128,6 +163,8 @@ class RotaRepository {
         descricao,
         status: status as 'Ativo' | 'Inativo',
         updatedAt: new Date().toISOString(),
+        syncStatus: 'pending',
+        needsSync: true,
       };
     } catch (error) {
       console.error('[RotaRepository] Erro ao atualizar rota:', error);
@@ -136,20 +173,63 @@ class RotaRepository {
   }
 
   /**
-   * Remove rota (soft delete)
+   * Remove rota (soft delete) e desvincula clientes
    */
   async delete(id: string | number): Promise<boolean> {
     try {
-      // Soft delete - marcar como deletado
       const existing = await this.getById(id);
-      if (existing) {
-        await databaseService.delete('rota', String(id));
-        console.log('[RotaRepository] Rota removida:', id);
+      if (!existing) {
+        console.warn('[RotaRepository] Rota não encontrada para exclusão:', id);
+        return false;
       }
+
+      const now = new Date().toISOString();
+
+      // Soft delete da rota
+      await databaseService.runAsync(
+        `UPDATE rotas SET deletedAt = ?, updatedAt = ?, needsSync = 1, syncStatus = 'pending' WHERE id = ?`,
+        [now, now, String(id)]
+      );
+
+      // Desvincular clientes desta rota (nullify rotaId e rotaNome)
+      await databaseService.runAsync(
+        `UPDATE clientes SET rotaId = NULL, rotaNome = NULL, updatedAt = ?, needsSync = 1 WHERE rotaId = ? AND deletedAt IS NULL`,
+        [now, String(id)]
+      );
+
+      console.log('[RotaRepository] Rota removida e clientes desvinculados:', id);
       return true;
     } catch (error) {
       console.error('[RotaRepository] Erro ao remover rota:', error);
       return false;
+    }
+  }
+
+  /**
+   * Busca rotas com filtros
+   */
+  async getFiltered(filters: RotaFilters): Promise<Rota[]> {
+    try {
+      let query = `SELECT id, descricao, status, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt FROM rotas WHERE deletedAt IS NULL`;
+      const params: any[] = [];
+
+      if (filters.status) {
+        query += ` AND status = ?`;
+        params.push(filters.status);
+      }
+
+      if (filters.termoBusca) {
+        query += ` AND descricao LIKE ?`;
+        params.push(`%${filters.termoBusca}%`);
+      }
+
+      query += ` ORDER BY descricao ASC`;
+
+      const rows = await databaseService.getAllAsync<any>(query, params);
+      return rows.map(r => this.mapToRota(r));
+    } catch (error) {
+      console.error('[RotaRepository] Erro ao buscar rotas filtradas:', error);
+      return [];
     }
   }
 
@@ -182,6 +262,21 @@ class RotaRepository {
       const rows = await databaseService.getAllAsync<{ cnt: number }>(
         `SELECT COUNT(*) as cnt FROM rotas WHERE deletedAt IS NULL AND status = 'Ativo'`,
         []
+      );
+      return rows[0]?.cnt ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Conta total de clientes vinculados a uma rota
+   */
+  async countClientesByRota(rotaId: string | number): Promise<number> {
+    try {
+      const rows = await databaseService.getAllAsync<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM clientes WHERE rotaId = ? AND deletedAt IS NULL`,
+        [String(rotaId)]
       );
       return rows[0]?.cnt ?? 0;
     } catch {

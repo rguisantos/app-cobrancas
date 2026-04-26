@@ -563,14 +563,46 @@ class LocacaoRepository {
    */
   async countAtivasByCliente(clienteId: string): Promise<number> {
     try {
-      const locacoes = await this.getAll({ clienteId, status: 'Ativa' });
-      return locacoes.length;
+      const rows = await databaseService.getAllAsync<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM locacoes WHERE clienteId = ? AND status = 'Ativa' AND deletedAt IS NULL`,
+        [String(clienteId)]
+      );
+      return rows[0]?.cnt ?? 0;
     } catch (error) {
       console.error('[LocacaoRepository] Erro ao contar locações:', error);
       return 0;
-  
+    }
   }
 
+  /**
+   * Conta locações ativas para múltiplos clientes de uma vez (evita N+1)
+   * Retorna um Map<clienteId, count>
+   */
+  async countAtivasByClientes(clienteIds: string[]): Promise<Map<string, number>> {
+    try {
+      if (clienteIds.length === 0) return new Map();
+
+      const placeholders = clienteIds.map(() => '?').join(',');
+      const rows = await databaseService.getAllAsync<{ clienteId: string; cnt: number }>(
+        `SELECT clienteId, COUNT(*) as cnt FROM locacoes WHERE clienteId IN (${placeholders}) AND status = 'Ativa' AND deletedAt IS NULL GROUP BY clienteId`,
+        clienteIds
+      );
+
+      const result = new Map<string, number>();
+      for (const row of rows) {
+        result.set(String(row.clienteId), row.cnt);
+      }
+      // Garantir que todos os clientes estejam no mapa, mesmo com 0 locações
+      for (const id of clienteIds) {
+        if (!result.has(id)) result.set(id, 0);
+      }
+      return result;
+    } catch (error) {
+      console.error('[LocacaoRepository] Erro ao contar locações em lote:', error);
+      const result = new Map<string, number>();
+      for (const id of clienteIds) result.set(id, 0);
+      return result;
+    }
   }
 
   /**

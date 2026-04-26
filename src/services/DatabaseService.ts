@@ -1960,14 +1960,14 @@ class DatabaseService {
   /**
    * Busca todas as rotas ativas
    */
-  async getRotas(): Promise<Array<{id: string, descricao: string, status: string}>> {
+  async getRotas(): Promise<Array<{id: string, descricao: string, status: string, syncStatus?: string, needsSync?: number, version?: number, deviceId?: string, lastSyncedAt?: string | null, createdAt?: string, updatedAt?: string}>> {
     if (!this.isReady()) {
       await this.waitForReady();
     }
     if (!this.db) throw new Error('Database não inicializado');
     try {
-      const results = await this.db.getAllAsync<{id: string, descricao: string, status: string}>(
-        `SELECT id, descricao, status FROM ${TABLES.ROTAS} WHERE deletedAt IS NULL ORDER BY descricao`
+      const results = await this.db.getAllAsync<any>(
+        `SELECT id, descricao, status, syncStatus, needsSync, version, deviceId, lastSyncedAt, createdAt, updatedAt FROM ${TABLES.ROTAS} WHERE deletedAt IS NULL ORDER BY descricao`
       );
       return results || [];
     } catch (error) {
@@ -1977,15 +1977,33 @@ class DatabaseService {
   }
 
   /**
-   * Salva rota
+   * Salva rota — apenas para CRIAÇÃO de novas rotas
+   * Preserva createdAt e campos de sync
    */
   async saveRota(id: string, descricao: string, status: string = 'Ativo'): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
     const now = new Date().toISOString();
-    await this.db.runAsync(
-      `INSERT OR REPLACE INTO ${TABLES.ROTAS} (id, descricao, status, updatedAt, needsSync) VALUES (?, ?, ?, ?, 1)`,
-      [id, descricao.trim(), status, now]
+
+    // Verificar se já existe uma rota com este ID
+    const existing = await this.getAllAsync<{ id: string }>(
+      `SELECT id FROM ${TABLES.ROTAS} WHERE id = ? AND deletedAt IS NULL`,
+      [id]
     );
+
+    if (existing.length > 0) {
+      // Atualização — preserva createdAt, syncStatus, version, deviceId
+      await this.db.runAsync(
+        `UPDATE ${TABLES.ROTAS} SET descricao = ?, status = ?, updatedAt = ?, needsSync = 1, syncStatus = 'pending' WHERE id = ?`,
+        [descricao.trim(), status, now, id]
+      );
+    } else {
+      // Criação — define campos iniciais
+      await this.db.runAsync(
+        `INSERT INTO ${TABLES.ROTAS} (id, descricao, status, createdAt, updatedAt, needsSync, syncStatus, version, deviceId)
+         VALUES (?, ?, ?, ?, ?, 1, 'pending', 1, '')`,
+        [id, descricao.trim(), status, now, now]
+      );
+    }
     console.log('[Database] Rota salva:', descricao);
   }
 

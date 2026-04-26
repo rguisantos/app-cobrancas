@@ -746,10 +746,42 @@ class CobrancaRepository {
    */
   async hasSaldoPendenteFinalizado(clienteId: string): Promise<boolean> {
     try {
-      const saldos = await this.getSaldosPendentesFinalizados(clienteId);
-      return saldos.length > 0 && saldos.some(s => s.saldoPendente > 0);
+      const rows = await databaseService.getAllAsync<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM cobrancas cb
+         JOIN locacoes l ON cb.locacaoId = l.id
+         WHERE cb.clienteId = ? AND l.status = 'Finalizada' AND cb.deletedAt IS NULL AND l.deletedAt IS NULL
+           AND cb.saldoDevedorGerado > 0 AND cb.status IN ('Parcial', 'Pendente', 'Atrasado')
+         LIMIT 1`,
+        [String(clienteId)]
+      );
+      return (rows[0]?.cnt ?? 0) > 0;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Verifica saldo devedor pendente para múltiplos clientes de uma vez (evita N+1)
+   * Retorna um Set de clienteIds que possuem saldo pendente
+   */
+  async hasSaldoPendenteFinalizadoBatch(clienteIds: string[]): Promise<Set<string>> {
+    try {
+      if (clienteIds.length === 0) return new Set();
+
+      const placeholders = clienteIds.map(() => '?').join(',');
+      const rows = await databaseService.getAllAsync<{ clienteId: string }>(
+        `SELECT DISTINCT cb.clienteId FROM cobrancas cb
+         JOIN locacoes l ON cb.locacaoId = l.id
+         WHERE cb.clienteId IN (${placeholders}) AND l.status = 'Finalizada' 
+           AND cb.deletedAt IS NULL AND l.deletedAt IS NULL
+           AND cb.saldoDevedorGerado > 0 AND cb.status IN ('Parcial', 'Pendente', 'Atrasado')`,
+        clienteIds
+      );
+
+      return new Set(rows.map(r => String(r.clienteId)));
+    } catch (error) {
+      console.error('[CobrancaRepository] Erro ao verificar saldos em lote:', error);
+      return new Set();
     }
   }
 

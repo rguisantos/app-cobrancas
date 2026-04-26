@@ -5,7 +5,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Rota } from '../types';
-import { rotaRepository } from '../repositories/RotaRepository';
+import { rotaRepository, RotaFilters } from '../repositories/RotaRepository';
 import { useDatabase } from './DatabaseContext';
 import { useAuth } from './AuthContext';
 
@@ -21,7 +21,7 @@ export interface RotaState {
 }
 
 export interface RotaContextData extends RotaState {
-  carregarRotas: () => Promise<void>;
+  carregarRotas: (filters?: RotaFilters) => Promise<void>;
   selecionarRota: (id: string | number) => Promise<void>;
   limparSelecao: () => void;
   salvarRota: (dados: Partial<Rota>) => Promise<Rota | null>;
@@ -45,7 +45,6 @@ interface RotaProviderProps {
 
 export function RotaProvider({ children }: RotaProviderProps) {
   const { isAdmin } = useAuth();
-  // Verificar se o banco está pronto
   const { isReady } = useDatabase();
   
   const [rotas, setRotas] = useState<Rota[]>([]);
@@ -53,17 +52,19 @@ export function RotaProvider({ children }: RotaProviderProps) {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const carregarRotas = useCallback(async () => {
-    setCarregando(true);    setErro(null);
+  const carregarRotas = useCallback(async (filters?: RotaFilters) => {
+    setCarregando(true);
+    setErro(null);
     try {
-      const lista = await rotaRepository.getAtivas();
+      const lista = filters
+        ? await rotaRepository.getFiltered(filters)
+        : await rotaRepository.getAtivas();
       setRotas(lista);
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar rotas');
     } finally {
       setCarregando(false);
-  
-  }
+    }
   }, []);
 
   const selecionarRota = useCallback(async (id: string | number) => {
@@ -75,8 +76,7 @@ export function RotaProvider({ children }: RotaProviderProps) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar rota');
     } finally {
       setCarregando(false);
-  
-  }
+    }
   }, []);
 
   const limparSelecao = useCallback(() => {
@@ -90,27 +90,26 @@ export function RotaProvider({ children }: RotaProviderProps) {
     }
     setCarregando(true);
     try {
-      const rota = await rotaRepository.save(dados as Rota);
+      let rota: Rota | null;
+
+      if (dados.id) {
+        // Atualizar rota existente
+        rota = await rotaRepository.update(dados as Partial<Rota> & { id: string | number });
+      } else {
+        // Criar nova rota
+        rota = await rotaRepository.save(dados);
+      }
+
       await carregarRotas();
       return rota;
     } catch (error) {
-      setErro(error instanceof Error ? error.message : 'Erro ao salvar rota');
+      const msg = error instanceof Error ? error.message : 'Erro ao salvar rota';
+      setErro(msg);
       return null;
     } finally {
       setCarregando(false);
     }
   }, [carregarRotas, isAdmin]);
-
-  const refresh = useCallback(async () => {
-    await carregarRotas();
-  }, [carregarRotas]);
-
-  useEffect(() => {
-    // Só carregar dados quando o banco estiver pronto
-    if (isReady) {
-      carregarRotas();
-    }
-  }, [carregarRotas, isReady]);
 
   const excluirRota = useCallback(async (id: string | number): Promise<boolean> => {
     if (!isAdmin()) {
@@ -119,15 +118,33 @@ export function RotaProvider({ children }: RotaProviderProps) {
     }
     try {
       const ok = await rotaRepository.delete(id);
-      if (ok) await carregarRotas();
+      if (ok) {
+        await carregarRotas();
+        // Limpar seleção se a rota excluída estava selecionada
+        if (rotaSelecionada && String(rotaSelecionada.id) === String(id)) {
+          setRotaSelecionada(null);
+        }
+      }
       return ok;
     } catch (error) {
-      console.error('[RotaContext] Erro ao excluir rota:', error);
+      const msg = error instanceof Error ? error.message : 'Erro ao excluir rota';
+      setErro(msg);
       return false;
     }
-  }, [carregarRotas, isAdmin]);
+  }, [carregarRotas, isAdmin, rotaSelecionada]);
 
-  const contextValue: RotaContextData = {    rotas,
+  const refresh = useCallback(async () => {
+    await carregarRotas();
+  }, [carregarRotas]);
+
+  useEffect(() => {
+    if (isReady) {
+      carregarRotas();
+    }
+  }, [carregarRotas, isReady]);
+
+  const contextValue: RotaContextData = {
+    rotas,
     rotaSelecionada,
     carregando,
     erro,
@@ -146,7 +163,6 @@ export function useRota(): RotaContextData {
   const context = useContext(RotaContext);
   if (context === undefined) {
     throw new Error('useRota deve ser usado dentro de um RotaProvider');
-
   }
   return context;
 }
