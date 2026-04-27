@@ -1,6 +1,7 @@
 /**
  * RotasCobrancaScreen.tsx
  * Passo 1 do fluxo de cobrança — selecionar a rota
+ * Mostra cor da rota e região para identificação visual rápida
  */
 
 import React, { useCallback } from 'react';
@@ -46,7 +47,16 @@ export default function RotasCobrancaScreen() {
             onPress={() => navigate.toClientesRota(item.id, item.descricao)}
             activeOpacity={0.6}
           >
-            <Text style={s.itemText}>{item.descricao}</Text>
+            <View style={s.itemLeft}>
+              {/* Indicador de cor da rota */}
+              <View style={[s.colorDot, { backgroundColor: item.cor || '#2563EB' }]} />
+              <View style={s.itemInfo}>
+                <Text style={s.itemText}>{item.descricao}</Text>
+                {item.regiao && (
+                  <Text style={s.itemRegiao}>{item.regiao}</Text>
+                )}
+              </View>
+            </View>
             <Ionicons name="chevron-forward" size={20} color="#BDBDBD" />
           </TouchableOpacity>
         )}
@@ -60,9 +70,13 @@ const s = StyleSheet.create({
   center:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
   item: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 18,
+    backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 16,
   },
-  itemText: { fontSize: 16, color: '#212121' },
+  itemLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  colorDot: { width: 12, height: 12, borderRadius: 6, marginRight: 14 },
+  itemInfo: { flex: 1 },
+  itemText: { fontSize: 16, color: '#212121', fontWeight: '500' },
+  itemRegiao: { fontSize: 12, color: '#757575', marginTop: 2 },
   sep:      { height: 1, backgroundColor: '#E0E0E0' },
   empty:    { flex: 1, padding: 40, alignItems: 'center' },
   emptyText:{ fontSize: 15, color: '#9E9E9E' },

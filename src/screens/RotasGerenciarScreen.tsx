@@ -1,7 +1,7 @@
 /**
  * RotasGerenciarScreen.tsx
  * Gerenciar rotas de cobrança — criar, editar, excluir
- * Refatorado: melhor UX, validação de unicidade, confirmação de exclusão com info
+ * Suporta novos campos: cor, região, ordem, observação
  */
 
 import React, { useState, useCallback } from 'react';
@@ -17,6 +17,11 @@ import { useRota }  from '../contexts/RotaContext';
 import { useAuth }  from '../contexts/AuthContext';
 import { Rota }     from '../types';
 
+const CORES_PREDEFINIDAS = [
+  '#2563EB', '#16A34A', '#7C3AED', '#DC2626',
+  '#EA580C', '#DB2777', '#0891B2', '#CA8A04',
+];
+
 export default function RotasGerenciarScreen() {
   const { rotas, carregarRotas, salvarRota, excluirRota, carregando } = useRota();
   const { user, isAdmin } = useAuth();
@@ -25,6 +30,10 @@ export default function RotasGerenciarScreen() {
   const [editando,    setEditando]    = useState<Rota | null>(null);
   const [descricao,   setDescricao]   = useState('');
   const [status,      setStatus]      = useState<'Ativo' | 'Inativo'>('Ativo');
+  const [cor,         setCor]         = useState('#2563EB');
+  const [regiao,      setRegiao]      = useState('');
+  const [ordem,       setOrdem]       = useState('0');
+  const [observacao,  setObservacao]  = useState('');
   const [salvando,    setSalvando]    = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
   const [erroForm,    setErroForm]    = useState<string | null>(null);
@@ -43,6 +52,10 @@ export default function RotasGerenciarScreen() {
     setEditando(rota ?? null);
     setDescricao(rota?.descricao ?? '');
     setStatus(rota?.status ?? 'Ativo');
+    setCor(rota?.cor ?? '#2563EB');
+    setRegiao(rota?.regiao ?? '');
+    setOrdem(String(rota?.ordem ?? 0));
+    setObservacao(rota?.observacao ?? '');
     setErroForm(null);
     setMostrarForm(true);
   };
@@ -52,6 +65,10 @@ export default function RotasGerenciarScreen() {
     setEditando(null);
     setDescricao('');
     setStatus('Ativo');
+    setCor('#2563EB');
+    setRegiao('');
+    setOrdem('0');
+    setObservacao('');
     setErroForm(null);
   };
 
@@ -72,12 +89,15 @@ export default function RotasGerenciarScreen() {
         id: editando?.id,
         descricao: descricao.trim(),
         status,
+        cor,
+        regiao: regiao.trim() || undefined,
+        ordem: parseInt(ordem) || 0,
+        observacao: observacao.trim() || undefined,
       });
       if (resultado) {
         Alert.alert('Sucesso', editando ? 'Rota atualizada' : 'Rota criada');
         fecharForm();
       } else {
-        // O erro já foi setado no context
         setErroForm('Não foi possível salvar. Verifique se já não existe uma rota com este nome.');
       }
     } catch (error: any) {
@@ -107,14 +127,25 @@ export default function RotasGerenciarScreen() {
   const renderItem = ({ item }: { item: Rota }) => (
     <View style={s.card}>
       <View style={s.cardLeft}>
-        <View style={[s.iconBox, item.status === 'Inativo' && s.iconBoxInactive]}>
-          <Ionicons name="map" size={20} color={item.status === 'Ativo' ? '#2563EB' : '#94A3B8'} />
+        <View style={[s.iconBox, { backgroundColor: (item.cor || '#2563EB') + '20' }, item.status === 'Inativo' && s.iconBoxInactive]}>
+          <Ionicons name="map" size={20} color={item.status === 'Ativo' ? (item.cor || '#2563EB') : '#94A3B8'} />
         </View>
         <View style={s.cardText}>
-          <Text style={s.cardDescricao}>{item.descricao}</Text>
-          <Text style={[s.cardStatus, { color: item.status === 'Ativo' ? '#16A34A' : '#94A3B8' }]}>
-            {item.status}
-          </Text>
+          <View style={s.cardTitleRow}>
+            <Text style={s.cardDescricao}>{item.descricao}</Text>
+            <View style={[s.colorDot, { backgroundColor: item.cor || '#2563EB' }]} />
+          </View>
+          <View style={s.cardMeta}>
+            <Text style={[s.cardStatus, { color: item.status === 'Ativo' ? '#16A34A' : '#94A3B8' }]}>
+              {item.status}
+            </Text>
+            {item.regiao ? (
+              <Text style={s.cardRegiao}> · {item.regiao}</Text>
+            ) : null}
+            {(item.ordem ?? 0) > 0 ? (
+              <Text style={s.cardOrdem}> · Ordem: {item.ordem}</Text>
+            ) : null}
+          </View>
         </View>
       </View>
       {podeGerenciar && (
@@ -147,6 +178,8 @@ export default function RotasGerenciarScreen() {
       {mostrarForm && (
         <View style={s.form}>
           <Text style={s.formTitle}>{editando ? 'Editar Rota' : 'Nova Rota'}</Text>
+
+          {/* Descrição */}
           <TextInput
             style={[s.input, erroForm && s.inputError]}
             placeholder="Ex: Linha Aquidauana"
@@ -156,9 +189,40 @@ export default function RotasGerenciarScreen() {
             autoFocus
             returnKeyType="done"
             maxLength={100}
-            onSubmitEditing={handleSalvar}
           />
           <Text style={s.charCount}>{descricao.length}/100</Text>
+
+          {/* Cor */}
+          <Text style={s.fieldLabel}>Cor de identificação</Text>
+          <View style={s.colorRow}>
+            {CORES_PREDEFINIDAS.map(c => (
+              <TouchableOpacity
+                key={c}
+                style={[s.colorOption, { backgroundColor: c }, cor === c && s.colorOptionSelected]}
+                onPress={() => setCor(c)}
+              />
+            ))}
+          </View>
+
+          {/* Região */}
+          <TextInput
+            style={s.input}
+            placeholder="Região (ex: Zona Norte)"
+            placeholderTextColor="#94A3B8"
+            value={regiao}
+            onChangeText={setRegiao}
+            maxLength={100}
+          />
+
+          {/* Ordem */}
+          <TextInput
+            style={s.input}
+            placeholder="Ordem de cobrança (0 = sem ordem)"
+            placeholderTextColor="#94A3B8"
+            value={ordem}
+            onChangeText={setOrdem}
+            keyboardType="number-pad"
+          />
 
           {/* Status selector */}
           <View style={s.statusRow}>
@@ -232,9 +296,13 @@ const s = StyleSheet.create({
   addBtn:       { width: 40, height: 40, borderRadius: 20, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center' },
   form:         { backgroundColor: '#FFFFFF', padding: 16, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
   formTitle:    { fontSize: 16, fontWeight: '700', color: '#1E293B', marginBottom: 12 },
+  fieldLabel:   { fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 6, marginTop: 4 },
   input:        { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, padding: 14, fontSize: 16, color: '#1E293B', marginBottom: 4 },
   inputError:   { borderColor: '#EF4444', backgroundColor: '#FEF2F2' },
-  charCount:    { fontSize: 11, color: '#94A3B8', textAlign: 'right', marginBottom: 12 },
+  charCount:    { fontSize: 11, color: '#94A3B8', textAlign: 'right', marginBottom: 8 },
+  colorRow:     { flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
+  colorOption:  { width: 36, height: 36, borderRadius: 18 },
+  colorOptionSelected: { borderWidth: 3, borderColor: '#1E293B' },
   statusRow:    { flexDirection: 'row', gap: 8, marginBottom: 12 },
   statusOption: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', backgroundColor: '#FFFFFF' },
   statusOptionActive: { borderColor: '#16A34A', backgroundColor: '#F0FDF4' },
@@ -253,11 +321,16 @@ const s = StyleSheet.create({
   listEmpty:    { flexGrow: 1 },
   card:         { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 1 },
   cardLeft:     { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  iconBox:      { width: 40, height: 40, borderRadius: 10, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' },
+  iconBox:      { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   iconBoxInactive: { backgroundColor: '#F1F5F9' },
   cardText:     { marginLeft: 12, flex: 1 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardDescricao:{ fontSize: 15, fontWeight: '600', color: '#1E293B' },
-  cardStatus:   { fontSize: 12, fontWeight: '500', marginTop: 2 },
+  colorDot:     { width: 10, height: 10, borderRadius: 5 },
+  cardMeta:     { flexDirection: 'row', marginTop: 2 },
+  cardStatus:   { fontSize: 12, fontWeight: '500' },
+  cardRegiao:   { fontSize: 12, color: '#64748B' },
+  cardOrdem:    { fontSize: 12, color: '#94A3B8' },
   cardActions:  { flexDirection: 'row', gap: 8 },
   actionBtn:    { width: 36, height: 36, borderRadius: 8, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
   actionBtnDanger: { backgroundColor: '#FEF2F2' },

@@ -83,6 +83,11 @@ export interface Rota {
   id: string | number;
   descricao: string; // ex: "Linha Aquidauana"
   status: 'Ativo' | 'Inativo';
+  // Identificação visual e operacional
+  cor?: string;       // Cor hexadecimal para identificação visual (ex: "#2563EB")
+  regiao?: string;    // Região/zona (ex: "Zona Norte", "Centro")
+  ordem?: number;     // Ordem de prioridade para cobrança
+  observacao?: string; // Anotações operacionais
   // Campos de sincronização
   syncStatus?: SyncStatus;
   lastSyncedAt?: string;
@@ -166,7 +171,7 @@ export interface Cliente extends SyncableEntity {
   longitude?: number;
 
   // Vínculo com Rota
-  rotaId: string | number;
+  rotaId?: string | number; // Opcional — cliente pode ficar sem rota vinculada
   rotaNome?: string; // Para exibição fácil
   
   // Sistema

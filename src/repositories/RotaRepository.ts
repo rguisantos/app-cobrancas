@@ -20,6 +20,9 @@ export interface RotaResumo {
   id: string;
   descricao: string;
   status: 'Ativo' | 'Inativo';
+  cor?: string;
+  regiao?: string;
+  ordem?: number;
   totalClientes?: number;
 }
 
@@ -34,14 +37,17 @@ class RotaRepository {
   // ==========================================================================
 
   /**
-   * Busca todas as rotas ativas
+   * Busca todas as rotas ativas, ordenadas por ordem e descrição
    */
   async getAtivas(): Promise<Rota[]> {
     try {
-      const rotas = await databaseService.getRotas();
-      return rotas
-        .filter(r => r.status === 'Ativo')
-        .map(r => this.mapToRota(r));
+      const rotas = await databaseService.getAllAsync<any>(
+        `SELECT id, descricao, status, cor, regiao, ordem, observacao, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt
+         FROM rotas WHERE status = 'Ativo' AND deletedAt IS NULL
+         ORDER BY ordem ASC, descricao ASC`,
+        []
+      );
+      return rotas.map(r => this.mapToRota(r));
     } catch (error) {
       console.error('[RotaRepository] Erro ao buscar rotas ativas:', error);
       return [];
@@ -53,7 +59,12 @@ class RotaRepository {
    */
   async getAll(): Promise<Rota[]> {
     try {
-      const rotas = await databaseService.getRotas();
+      const rotas = await databaseService.getAllAsync<any>(
+        `SELECT id, descricao, status, cor, regiao, ordem, observacao, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt
+         FROM rotas WHERE deletedAt IS NULL
+         ORDER BY ordem ASC, descricao ASC`,
+        []
+      );
       return rotas.map(r => this.mapToRota(r));
     } catch (error) {
       console.error('[RotaRepository] Erro ao buscar todas as rotas:', error);
@@ -62,12 +73,12 @@ class RotaRepository {
   }
 
   /**
-   * Busca rota por ID — usa WHERE clause ao invés de carregar todas
+   * Busca rota por ID
    */
   async getById(id: string | number): Promise<Rota | null> {
     try {
       const rows = await databaseService.getAllAsync<any>(
-        `SELECT id, descricao, status, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt
+        `SELECT id, descricao, status, cor, regiao, ordem, observacao, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt
          FROM rotas WHERE id = ? AND deletedAt IS NULL`,
         [String(id)]
       );
@@ -97,20 +108,28 @@ class RotaRepository {
   }
 
   /**
-   * Cria uma nova rota
+   * Cria uma nova rota com campos enriquecidos
    */
   async save(rota: Partial<Rota>): Promise<Rota> {
     try {
       const id = String(rota.id || `rota_${Date.now()}`);
       const descricao = rota.descricao || '';
       const status = rota.status || 'Ativo';
+      const cor = rota.cor || '#2563EB';
+      const regiao = rota.regiao || null;
+      const ordem = rota.ordem ?? 0;
+      const observacao = rota.observacao || null;
 
       // Verificar unicidade
       if (await this.existeComDescricao(descricao, rota.id)) {
         throw new Error('Já existe uma rota com esta descrição');
       }
 
-      await databaseService.saveRota(id, descricao, status);
+      await databaseService.runAsync(
+        `INSERT OR REPLACE INTO rotas (id, descricao, status, cor, regiao, ordem, observacao, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, 1, 1, '', ?, ?, NULL)`,
+        [id, descricao, status, cor, regiao, ordem, observacao, new Date().toISOString(), new Date().toISOString()]
+      );
       
       console.log('[RotaRepository] Rota criada:', id, descricao);
       
@@ -118,6 +137,10 @@ class RotaRepository {
         id,
         descricao,
         status: status as 'Ativo' | 'Inativo',
+        cor,
+        regiao: regiao || undefined,
+        ordem,
+        observacao: observacao || undefined,
         syncStatus: 'pending',
         needsSync: true,
         version: 1,
@@ -144,16 +167,19 @@ class RotaRepository {
 
       const descricao = rota.descricao || existing.descricao;
       const status = rota.status || existing.status;
+      const cor = rota.cor || existing.cor || '#2563EB';
+      const regiao = rota.regiao !== undefined ? rota.regiao : existing.regiao;
+      const ordem = rota.ordem !== undefined ? rota.ordem : (existing.ordem ?? 0);
+      const observacao = rota.observacao !== undefined ? rota.observacao : existing.observacao;
 
       // Verificar unicidade se a descrição foi alterada
       if (descricao !== existing.descricao && await this.existeComDescricao(descricao, rota.id)) {
         throw new Error('Já existe uma rota com esta descrição');
       }
 
-      // Usar UPDATE ao invés de INSERT OR REPLACE para preservar campos de sync
       await databaseService.runAsync(
-        `UPDATE rotas SET descricao = ?, status = ?, updatedAt = ?, needsSync = 1, syncStatus = 'pending' WHERE id = ?`,
-        [descricao.trim(), status, new Date().toISOString(), String(rota.id)]
+        `UPDATE rotas SET descricao = ?, status = ?, cor = ?, regiao = ?, ordem = ?, observacao = ?, updatedAt = ?, needsSync = 1, syncStatus = 'pending' WHERE id = ?`,
+        [descricao, status, cor, regiao ?? null, ordem, observacao ?? null, new Date().toISOString(), String(rota.id)]
       );
       
       console.log('[RotaRepository] Rota atualizada:', rota.id);
@@ -162,6 +188,10 @@ class RotaRepository {
         ...existing,
         descricao,
         status: status as 'Ativo' | 'Inativo',
+        cor,
+        regiao: regiao || undefined,
+        ordem,
+        observacao: observacao || undefined,
         updatedAt: new Date().toISOString(),
         syncStatus: 'pending',
         needsSync: true,
@@ -210,7 +240,7 @@ class RotaRepository {
    */
   async getFiltered(filters: RotaFilters): Promise<Rota[]> {
     try {
-      let query = `SELECT id, descricao, status, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt FROM rotas WHERE deletedAt IS NULL`;
+      let query = `SELECT id, descricao, status, cor, regiao, ordem, observacao, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt FROM rotas WHERE deletedAt IS NULL`;
       const params: any[] = [];
 
       if (filters.status) {
@@ -223,7 +253,7 @@ class RotaRepository {
         params.push(`%${filters.termoBusca}%`);
       }
 
-      query += ` ORDER BY descricao ASC`;
+      query += ` ORDER BY ordem ASC, descricao ASC`;
 
       const rows = await databaseService.getAllAsync<any>(query, params);
       return rows.map(r => this.mapToRota(r));
@@ -245,6 +275,10 @@ class RotaRepository {
       id: data.id,
       descricao: data.descricao,
       status: data.status || 'Ativo',
+      cor: data.cor || '#2563EB',
+      regiao: data.regiao || undefined,
+      ordem: data.ordem ?? 0,
+      observacao: data.observacao || undefined,
       syncStatus: data.syncStatus || 'synced',
       needsSync: data.needsSync === 1 || data.needsSync === true,
       version: data.version || 1,
@@ -255,7 +289,7 @@ class RotaRepository {
   }
 
   /**
-   * Conta total de rotas ativas usando SQL COUNT (evita carregar todos os registros)
+   * Conta total de rotas ativas
    */
   async count(): Promise<number> {
     try {

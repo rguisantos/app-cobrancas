@@ -493,6 +493,23 @@ class DatabaseService {
         name: 'add_produtoId_to_cobrancas',
         sql: `ALTER TABLE ${TABLES.COBRANCAS} ADD COLUMN produtoId TEXT`,
       },
+      // Migration 2: Adicionar colunas enriquecidas na tabela rotas
+      {
+        name: 'add_cor_to_rotas',
+        sql: `ALTER TABLE ${TABLES.ROTAS} ADD COLUMN cor TEXT DEFAULT '#2563EB'`,
+      },
+      {
+        name: 'add_regiao_to_rotas',
+        sql: `ALTER TABLE ${TABLES.ROTAS} ADD COLUMN regiao TEXT`,
+      },
+      {
+        name: 'add_ordem_to_rotas',
+        sql: `ALTER TABLE ${TABLES.ROTAS} ADD COLUMN ordem INTEGER DEFAULT 0`,
+      },
+      {
+        name: 'add_observacao_to_rotas',
+        sql: `ALTER TABLE ${TABLES.ROTAS} ADD COLUMN observacao TEXT`,
+      },
     ];
     
     // Verificar e executar cada migration
@@ -1980,7 +1997,7 @@ class DatabaseService {
    * Salva rota — apenas para CRIAÇÃO de novas rotas
    * Preserva createdAt e campos de sync
    */
-  async saveRota(id: string, descricao: string, status: string = 'Ativo'): Promise<void> {
+  async saveRota(id: string, descricao: string, status: string = 'Ativo', cor: string = '#2563EB', regiao: string | null = null, ordem: number = 0, observacao: string | null = null): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
     const now = new Date().toISOString();
 
@@ -1993,15 +2010,15 @@ class DatabaseService {
     if (existing.length > 0) {
       // Atualização — preserva createdAt, syncStatus, version, deviceId
       await this.db.runAsync(
-        `UPDATE ${TABLES.ROTAS} SET descricao = ?, status = ?, updatedAt = ?, needsSync = 1, syncStatus = 'pending' WHERE id = ?`,
-        [descricao.trim(), status, now, id]
+        `UPDATE ${TABLES.ROTAS} SET descricao = ?, status = ?, cor = ?, regiao = ?, ordem = ?, observacao = ?, updatedAt = ?, needsSync = 1, syncStatus = 'pending' WHERE id = ?`,
+        [descricao.trim(), status, cor, regiao, ordem, observacao, now, id]
       );
     } else {
       // Criação — define campos iniciais
       await this.db.runAsync(
-        `INSERT INTO ${TABLES.ROTAS} (id, descricao, status, createdAt, updatedAt, needsSync, syncStatus, version, deviceId)
-         VALUES (?, ?, ?, ?, ?, 1, 'pending', 1, '')`,
-        [id, descricao.trim(), status, now, now]
+        `INSERT INTO ${TABLES.ROTAS} (id, descricao, status, cor, regiao, ordem, observacao, createdAt, updatedAt, needsSync, syncStatus, version, deviceId)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending', 1, '')`,
+        [id, descricao.trim(), status, cor, regiao, ordem, observacao, now, now]
       );
     }
     console.log('[Database] Rota salva:', descricao);

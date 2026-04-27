@@ -96,8 +96,12 @@ export function RotaProvider({ children }: RotaProviderProps) {
         // Atualizar rota existente
         rota = await rotaRepository.update(dados as Partial<Rota> & { id: string | number });
       } else {
-        // Criar nova rota
-        rota = await rotaRepository.save(dados);
+        // Criar nova rota — valores default para novos campos
+        rota = await rotaRepository.save({
+          ...dados,
+          cor: dados.cor || '#2563EB',
+          ordem: dados.ordem ?? 0,
+        });
       }
 
       await carregarRotas();
