@@ -641,19 +641,20 @@ class ApiService {
   // ==========================================================================
 
   /**
-   * Registra novo equipamento no servidor
+   * DEPRECATED: Usar fluxo de ativação com PIN (ativarDispositivo) em vez de registro automático.
+   * O admin deve criar o dispositivo no painel web, e o mobile ativa com PIN.
+   * Mantido para compatibilidade com versões antigas.
    */
-  async registrarEquipamento(dados: RegistrarEquipamentoRequest): Promise<ApiResponse<{ success: boolean; id: string }>> {
+  async registrarEquipamento(dados: RegistrarEquipamentoRequest): Promise<ApiResponse<{ success: boolean; id: string; _deprecated?: boolean }>> {
     if (ENV.DEBUG) {
-      console.log(`\n[DEVICE:REGISTER] ========== REGISTRANDO DISPOSITIVO ==========`);
+      console.warn(`[DEVICE:REGISTER] ⚠️ DEPRECATED — Use fluxo de ativação com PIN`);
       console.log(`[DEVICE:REGISTER] ID: ${dados.id}`);
       console.log(`[DEVICE:REGISTER] Nome: ${dados.nome}`);
-      console.log(`[DEVICE:REGISTER] Chave: ${dados.chave?.substring(0, 20)}...`);
-      console.log(`[DEVICE:REGISTER] Tipo: ${dados.tipo}`);
     }
-    
-    const response = await this.post<{ success: boolean; id: string }>('/api/equipamentos', dados);
-    
+
+    // Still calls the legacy endpoint (which now logs deprecation warning)
+    const response = await this.post<{ success: boolean; id: string; _deprecated?: boolean }>('/api/equipamentos', dados);
+
     if (response.success) {
       if (ENV.DEBUG) {
         console.log(`[DEVICE:REGISTER] ✅ Dispositivo registrado: ${response.data?.id}`);
@@ -661,10 +662,7 @@ class ApiService {
     } else if (ENV.DEBUG) {
       console.error(`[DEVICE:REGISTER] ❌ Falha: ${response.error}`);
     }
-    if (ENV.DEBUG) {
-      console.log(`[DEVICE:REGISTER] ========== REGISTRO END ==========\n`);
-    }
-    
+
     return response;
   }
   /**

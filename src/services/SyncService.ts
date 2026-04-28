@@ -476,10 +476,15 @@ class SyncService {
 
   /**
    * Registra o dispositivo no servidor
+   * DEPRECATED: O fluxo correto agora é:
+   * 1. Admin cria dispositivo no painel web (com chave DEV-XXXXXX e senha de 6 dígitos)
+   * 2. Mobile ativa com POST /api/dispositivos/ativar (usando chave + senha)
+   * Este método ainda funciona via /api/equipamentos (legado) mas deve ser migrado.
    */
   async registerDevice(): Promise<boolean> {
     try {
-      logger.info('[Sync] ====== INICIANDO REGISTRO DE DISPOSITIVO ======');
+      logger.info('[Sync] ====== INICIANDO REGISTRO DE DISPOSITIVO (legado) ======');
+      logger.warn('[Sync] ⚠️ registerDevice() é legado — use fluxo de ativação com PIN');
 
       // Gerar ID e chave únicos
       const deviceId = await this.generateDeviceId();
@@ -494,8 +499,8 @@ class SyncService {
         deviceType,
       });
 
-      // Registrar no servidor (endpoint não requer autenticação)
-      logger.info('[Sync] Enviando requisição para API...');
+      // Registrar no servidor (endpoint legado — ainda funciona com aviso de deprecated)
+      logger.info('[Sync] Enviando requisição para API (legado /api/equipamentos)...');
       const response = await apiService.registrarEquipamento({
         id: deviceId,
         nome: deviceName,
@@ -519,7 +524,7 @@ class SyncService {
       // Salvar localmente
       await databaseService.setDeviceId(deviceId, deviceName, deviceKey);
 
-      logger.info('[Sync] ====== DISPOSITIVO REGISTRADO COM SUCESSO ======', { deviceId, deviceName });
+      logger.info('[Sync] ====== DISPOSITIVO REGISTRADO COM SUCESSO (legado) ======', { deviceId, deviceName });
 
       return true;
     } catch (error) {
