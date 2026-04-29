@@ -15,11 +15,7 @@ import {
   DeviceActivationRequest,
   DeviceActivationResponse
 } from '../types';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ENV } from '../config/env';
-
-// Chave do token no AsyncStorage (mesma do AuthContext)
-const TOKEN_KEY = '@cobrancas:token';
 
 // ============================================================================
 // CONFIGURAÇÃO DA API
@@ -193,7 +189,9 @@ class ApiService {
 
   /**
    * Faz requisição HTTP genérica
-   * SEMPRE lê o token do AsyncStorage antes de cada requisição para garantir sincronização
+   * Token é mantido em memória via setToken() pelo AuthContext —
+   * não lemos AsyncStorage a cada request para evitar overhead e inconsistências.
+   * O AuthContext sincroniza o token entre SecureStore e este serviço.
    */
   private async request<T>(
     endpoint: string,
@@ -202,16 +200,6 @@ class ApiService {
     const url = `${this.baseURL}${endpoint}`;
     const requestId = `${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const method = options.method || 'GET';
-
-    // CRÍTICO: Sempre ler token do AsyncStorage antes de cada requisição
-    try {
-      const tokenFromStorage = await AsyncStorage.getItem(TOKEN_KEY);
-      if (tokenFromStorage) {
-        this.token = tokenFromStorage;
-      }
-    } catch {
-      // Silently ignore storage errors — request will proceed without token
-    }
 
     // Configurar headers
     const headers: Record<string, string> = {

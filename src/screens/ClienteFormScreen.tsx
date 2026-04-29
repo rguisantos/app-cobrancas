@@ -1,15 +1,21 @@
 /**
  * ClienteFormScreen.tsx
  * Formulário de cadastro/edição de clientes
- * 
+ *
+ * REFACTORED: Usa useZodForm com clienteFormUnifiedSchema do @cobrancas/shared
+ * - Validação Zod centralizada (idêntica ao web)
+ * - Audit logging em todas as mutações
+ * - Permission guards client-side
+ *
  * Funcionalidades:
  * - Campos para PF e PJ
- * - Validação de CPF/CNPJ
+ * - Validação de CPF/CNPJ via Zod
  * - Contatos adicionais (múltiplos)
  * - Endereço completo com busca de CEP
  * - Seleção de Estado → Cidades via API IBGE
  * - Seleção de rota
  * - Máscaras de input
+ * - Captura de coordenadas GPS
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -32,10 +38,21 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 
+// Schemas & Validation
+import { clienteFormUnifiedSchema } from '@cobrancas/shared';
+import { useZodForm } from '../hooks/useZodForm';
+
 // Contexts
 import { useCliente } from '../contexts/ClienteContext';
 import { useRota } from '../contexts/RotaContext';
 import { useAuth } from '../contexts/AuthContext';
+
+// Services
+import AuditService from '../services/AuditService';
+import localizacaoService, { Estado, Cidade } from '../services/LocalizacaoService';
+
+// Hooks
+import { usePermissionGuard } from '../hooks/usePermissionGuard';
 
 // Types
 import { Cliente, Contato, TipoPessoa } from '../types';
@@ -43,16 +60,43 @@ import { ClientesStackParamList } from '../navigation/ClientesStack';
 
 // Utils
 import { masks } from '../utils/masks';
-import { validators } from '../utils/validators';
-
-// Services
-import localizacaoService, { Estado, Cidade } from '../services/LocalizacaoService';
 
 // ============================================================================
 // TIPOS DE ROTA
 // ============================================================================
 
 type ClienteFormRouteProp = RouteProp<ClientesStackParamList, 'ClienteForm'>;
+
+// ============================================================================
+// DEFAULT FORM VALUES
+// ============================================================================
+
+const getDefaultFormValues = (): Record<string, any> => ({
+  tipoPessoa: 'Fisica' as TipoPessoa,
+  nomeExibicao: '',
+  cpfCnpj: '',
+  rgIe: '',
+  nomeCompleto: '',
+  nomeFantasia: '',
+  razaoSocial: '',
+  inscricaoEstadual: '',
+  email: '',
+  telefonePrincipal: '',
+  contatos: [],
+  cep: '',
+  logradouro: '',
+  numero: '',
+  complemento: '',
+  bairro: '',
+  cidade: '',
+  estado: '',
+  rotaId: '',
+  rotaNome: '',
+  latitude: null as number | null,
+  longitude: null as number | null,
+  observacao: '',
+  status: 'Ativo' as const,
+});
 
 // ============================================================================
 // COMPONENTE PRINCIPAL
@@ -64,35 +108,25 @@ export default function ClienteFormScreen() {
   const { clienteSelecionado, salvarCliente, atualizarCliente, carregando } = useCliente();
   const { rotas } = useRota();
   const { user, canAccessRota } = useAuth();
+  const { canDo } = usePermissionGuard();
 
   const modo = route.params?.modo || 'criar';
   const clienteId = route.params?.clienteId;
 
-  // Estado do formulário
-  const [tipoPessoa, setTipoPessoa] = useState<TipoPessoa>('Fisica');
-  const [formData, setFormData] = useState<Partial<Cliente>>({
-    tipoPessoa: 'Fisica',
-    nomeExibicao: '',
-    cpfCnpj: '',
-    rgIe: '',
-    email: '',
-    telefonePrincipal: '',
-    contatos: [],
-    cep: '',
-    logradouro: '',
-    numero: '',
-    complemento: '',
-    bairro: '',
-    cidade: '',
-    estado: '',
-    rotaId: '',
-    status: 'Ativo',
-  });
+  // Zod Form Hook — validação centralizada
+  const {
+    formData,
+    errors,
+    setField,
+    setFields,
+    setFormData,
+    validateAndGet,
+    isSubmitted,
+  } = useZodForm(clienteFormUnifiedSchema, getDefaultFormValues());
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const tipoPessoa = formData.tipoPessoa as TipoPessoa;
+
   const [buscandoCep, setBuscandoCep] = useState(false);
-  
-  // Estados e Cidades
   const [estados, setEstados] = useState<Estado[]>([]);
   const [cidades, setCidades] = useState<Cidade[]>([]);
   const [carregandoEstados, setCarregandoEstados] = useState(false);
@@ -112,16 +146,38 @@ export default function ClienteFormScreen() {
 
   useEffect(() => {
     if (modo === 'editar' && clienteId && clienteSelecionado) {
-      setFormData({
-        ...clienteSelecionado,
+      // Mapear Cliente para o formato do form
+      const formValues: Record<string, any> = {
+        tipoPessoa: clienteSelecionado.tipoPessoa || 'Fisica',
+        nomeExibicao: clienteSelecionado.nomeExibicao || '',
+        cpfCnpj: clienteSelecionado.cpf || clienteSelecionado.cnpj || clienteSelecionado.cpfCnpj || '',
+        rgIe: clienteSelecionado.rg || clienteSelecionado.inscricaoEstadual || clienteSelecionado.rgIe || '',
+        nomeCompleto: clienteSelecionado.nomeCompleto || '',
+        nomeFantasia: clienteSelecionado.nomeFantasia || '',
+        razaoSocial: clienteSelecionado.razaoSocial || '',
+        inscricaoEstadual: clienteSelecionado.inscricaoEstadual || '',
+        email: clienteSelecionado.email || '',
+        telefonePrincipal: clienteSelecionado.telefonePrincipal || '',
         contatos: clienteSelecionado.contatos || [],
-      });
-      setTipoPessoa(clienteSelecionado.tipoPessoa || 'Fisica');
+        cep: clienteSelecionado.cep || '',
+        logradouro: clienteSelecionado.logradouro || '',
+        numero: clienteSelecionado.numero || '',
+        complemento: clienteSelecionado.complemento || '',
+        bairro: clienteSelecionado.bairro || '',
+        cidade: clienteSelecionado.cidade || '',
+        estado: clienteSelecionado.estado || '',
+        rotaId: clienteSelecionado.rotaId || '',
+        rotaNome: clienteSelecionado.rotaNome || '',
+        latitude: clienteSelecionado.latitude || null,
+        longitude: clienteSelecionado.longitude || null,
+        observacao: clienteSelecionado.observacao || '',
+        status: clienteSelecionado.status || 'Ativo',
+      };
+      setFormData(formValues);
+
       if (clienteSelecionado.latitude && clienteSelecionado.longitude) {
         setLocalizacaoCapturada(true);
       }
-      
-      // Carregar cidades se tiver estado
       if (clienteSelecionado.estado) {
         carregarCidades(clienteSelecionado.estado);
       }
@@ -158,73 +214,12 @@ export default function ClienteFormScreen() {
   };
 
   // ==========================================================================
-  // VALIDAÇÕES
-  // ==========================================================================
-
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {};
-
-    // Nome
-    if (!formData.nomeExibicao?.trim()) {
-      newErrors.nomeExibicao = 'Nome é obrigatório';
-    }
-
-    // CPF/CNPJ
-    if (!formData.cpfCnpj?.trim()) {
-      newErrors.cpfCnpj = 'CPF/CNPJ é obrigatório';
-    } else if (tipoPessoa === 'Fisica' && !validators.isValidCPF(formData.cpfCnpj)) {
-      newErrors.cpfCnpj = 'CPF inválido';
-    } else if (tipoPessoa === 'Juridica' && !validators.isValidCNPJ(formData.cpfCnpj)) {
-      newErrors.cpfCnpj = 'CNPJ inválido';
-    }
-
-    // Telefone
-    if (!formData.telefonePrincipal?.trim()) {
-      newErrors.telefonePrincipal = 'Telefone é obrigatório';
-    } else if (formData.telefonePrincipal.replace(/\D/g, '').length < 10) {
-      newErrors.telefonePrincipal = 'Telefone inválido';
-    }
-
-    // Rota
-    if (!formData.rotaId) {
-      newErrors.rotaId = 'Rota é obrigatória';
-    }
-
-    // Endereço
-    if (!formData.logradouro?.trim()) {
-      newErrors.logradouro = 'Logradouro é obrigatório';
-    }
-    if (!formData.numero?.trim()) {
-      newErrors.numero = 'Número é obrigatório';
-    }
-    if (!formData.bairro?.trim()) {
-      newErrors.bairro = 'Bairro é obrigatório';
-    }
-    if (!formData.cidade?.trim()) {
-      newErrors.cidade = 'Cidade é obrigatória';
-    }
-    if (!formData.estado?.trim()) {
-      newErrors.estado = 'Estado é obrigatório';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  // ==========================================================================
   // HANDLERS
   // ==========================================================================
 
-  const handleInputChange = useCallback((field: keyof Cliente, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    
-    // Limpar erro do campo
-    if (errors[field]) {
-      const newErrors = { ...errors };
-      delete newErrors[field];
-      setErrors(newErrors);
-    }
-  }, [errors]);
+  const handleInputChange = useCallback((field: string, value: any) => {
+    setField(field as any, value);
+  }, [setField]);
 
   const handleCepBlur = useCallback(async () => {
     const cep = formData.cep?.replace(/\D/g, '');
@@ -232,17 +227,15 @@ export default function ClienteFormScreen() {
       setBuscandoCep(true);
       try {
         const endereco = await localizacaoService.buscarEnderecoPorCep(cep);
-        
+
         if (endereco && !endereco.erro) {
-          setFormData(prev => ({
-            ...prev,
+          setFields({
             logradouro: endereco.logradouro,
             bairro: endereco.bairro,
             cidade: endereco.cidade,
             estado: endereco.estado,
-          }));
-          
-          // Carregar cidades do estado
+          } as any);
+
           if (endereco.estado) {
             await carregarCidades(endereco.estado);
           }
@@ -255,86 +248,61 @@ export default function ClienteFormScreen() {
         setBuscandoCep(false);
       }
     }
-  }, [formData.cep]);
+  }, [formData.cep, setFields]);
 
   const handleSelectEstado = useCallback((estado: Estado) => {
-    setFormData(prev => ({ 
-      ...prev, 
+    setFields({
       estado: estado.sigla,
-      cidade: '', // Limpar cidade ao mudar estado
-    }));
+      cidade: '',
+    } as any);
     setModalEstadoVisible(false);
     carregarCidades(estado.sigla);
-    
-    // Limpar erro
-    if (errors.estado) {
-      const newErrors = { ...errors };
-      delete newErrors.estado;
-      delete newErrors.cidade;
-      setErrors(newErrors);
-    }
-  }, [errors]);
+  }, [setFields]);
 
   const handleSelectCidade = useCallback((cidade: Cidade) => {
-    setFormData(prev => ({ ...prev, cidade: cidade.nome }));
+    setField('cidade' as any, cidade.nome);
     setModalCidadeVisible(false);
-    
-    // Limpar erro
-    if (errors.cidade) {
-      const newErrors = { ...errors };
-      delete newErrors.cidade;
-      setErrors(newErrors);
-    }
-  }, [errors]);
+  }, [setField]);
 
   const handleAddContato = useCallback(() => {
-    setFormData(prev => ({
-      ...prev,
-      contatos: [
-        ...(prev.contatos || []),
-        { id: `contato_${Date.now()}`, nome: '', telefone: '' },
-      ],
-    }));
-  }, []);
+    const newContatos = [
+      ...(formData.contatos || []),
+      { id: `contato_${Date.now()}`, nome: '', telefone: '' },
+    ];
+    setField('contatos' as any, newContatos);
+  }, [formData.contatos, setField]);
 
   const handleRemoveContato = useCallback((index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      contatos: prev.contatos?.filter((_, i) => i !== index),
-    }));
-  }, []);
+    const newContatos = formData.contatos?.filter((_: any, i: number) => i !== index);
+    setField('contatos' as any, newContatos);
+  }, [formData.contatos, setField]);
 
   const handleContatoChange = useCallback((index: number, field: keyof Contato, value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      contatos: prev.contatos?.map((c, i) => 
-        i === index ? { ...c, [field]: value } : c
-      ),
-    }));
-  }, []);
+    const newContatos = formData.contatos?.map((c: any, i: number) =>
+      i === index ? { ...c, [field]: value } : c
+    );
+    setField('contatos' as any, newContatos);
+  }, [formData.contatos, setField]);
 
   const handleCapturarLocalizacao = useCallback(async () => {
     try {
       setCapturandoLocalizacao(true);
-      
-      // Pedir permissão
+
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permissão negada', 'Habilite o acesso à localização nas configurações do aparelho para capturar as coordenadas.');
         setCapturandoLocalizacao(false);
         return;
       }
-      
-      // Buscar localização
+
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
-      
-      setFormData(prev => ({
-        ...prev,
+
+      setFields({
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
-      }));
+      } as any);
       setLocalizacaoCapturada(true);
     } catch (error) {
       console.error('Erro ao capturar localização:', error);
@@ -342,18 +310,31 @@ export default function ClienteFormScreen() {
     } finally {
       setCapturandoLocalizacao(false);
     }
-  }, []);
+  }, [setFields]);
 
   const handleSubmit = useCallback(async () => {
-    if (!validateForm()) {
+    // Permission guard
+    if (!canDo('clientes', modo === 'criar' ? 'create' : 'edit')) {
+      Alert.alert('Sem permissão', 'Você não tem permissão para realizar esta ação.');
+      return;
+    }
+
+    // Validação via Zod
+    const validatedData = validateAndGet();
+    if (!validatedData) {
       Alert.alert('Erro', 'Por favor, corrija os campos obrigatórios');
       return;
     }
 
     try {
       if (modo === 'criar') {
-        const cliente = await salvarCliente(formData);
+        const cliente = await salvarCliente(validatedData as any);
         if (cliente) {
+          // Audit log
+          await AuditService.logAction('criar_cliente', 'cliente', cliente.id, {
+            nome: validatedData.nomeExibicao,
+            tipoPessoa: validatedData.tipoPessoa,
+          });
           Alert.alert('Sucesso', 'Cliente cadastrado com sucesso', [
             { text: 'OK', onPress: () => navigation.goBack() },
           ]);
@@ -361,8 +342,13 @@ export default function ClienteFormScreen() {
           Alert.alert('Erro', 'Não foi possível cadastrar o cliente');
         }
       } else {
-        const sucesso = await atualizarCliente({ ...formData, id: clienteId! });
+        const sucesso = await atualizarCliente({ ...validatedData, id: clienteId! } as any);
         if (sucesso) {
+          // Audit log
+          await AuditService.logAction('editar_cliente', 'cliente', clienteId, {
+            nome: validatedData.nomeExibicao,
+            tipoPessoa: validatedData.tipoPessoa,
+          });
           Alert.alert('Sucesso', 'Cliente atualizado com sucesso', [
             { text: 'OK', onPress: () => navigation.goBack() },
           ]);
@@ -373,7 +359,7 @@ export default function ClienteFormScreen() {
     } catch (error) {
       Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao salvar cliente');
     }
-  }, [formData, modo, clienteId, salvarCliente, atualizarCliente, navigation]);
+  }, [modo, clienteId, validatedData, salvarCliente, atualizarCliente, navigation, canDo, validateAndGet]);
 
   // ==========================================================================
   // RENDERIZAÇÃO DE CAMPOS
@@ -381,7 +367,7 @@ export default function ClienteFormScreen() {
 
   const renderInput = useCallback((
     label: string,
-    field: keyof Cliente,
+    field: string,
     placeholder: string,
     options: {
       keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
@@ -391,13 +377,13 @@ export default function ClienteFormScreen() {
     } = {}
   ) => (
     <View style={styles.inputGroup}>
-      <Text style={styles.label}>{label}{!options.editable && ' *'}</Text>
+      <Text style={styles.label}>{label}{options.editable !== false && ' *'}</Text>
       <View style={[styles.inputContainer, errors[field] && styles.inputError]}>
         <TextInput
           style={[styles.input, options.multiline && styles.inputMultiline]}
           placeholder={placeholder}
           placeholderTextColor="#94A3B8"
-          value={formData[field] as string}
+          value={formData[field] as string || ''}
           onChangeText={(value) => {
             const formatted = options.mask ? options.mask(value) : value;
             handleInputChange(field, formatted);
@@ -466,7 +452,7 @@ export default function ClienteFormScreen() {
               <Ionicons name="close" size={24} color="#64748B" />
             </TouchableOpacity>
           </View>
-          
+
           {carregandoEstados ? (
             <View style={styles.modalLoading}>
               <ActivityIndicator size="large" color="#2563EB" />
@@ -514,7 +500,7 @@ export default function ClienteFormScreen() {
               <Ionicons name="close" size={24} color="#64748B" />
             </TouchableOpacity>
           </View>
-          
+
           {!formData.estado ? (
             <View style={styles.modalLoading}>
               <Text style={styles.modalEmptyText}>Selecione um estado primeiro</Text>
@@ -580,8 +566,11 @@ export default function ClienteFormScreen() {
                   tipoPessoa === 'Fisica' && styles.tipoPessoaButtonActive,
                 ]}
                 onPress={() => {
-                  setTipoPessoa('Fisica');
-                  handleInputChange('tipoPessoa', 'Fisica');
+                  setFields({
+                    tipoPessoa: 'Fisica',
+                    cpfCnpj: '',
+                    rgIe: '',
+                  } as any);
                 }}
               >
                 <Text
@@ -599,8 +588,11 @@ export default function ClienteFormScreen() {
                   tipoPessoa === 'Juridica' && styles.tipoPessoaButtonActive,
                 ]}
                 onPress={() => {
-                  setTipoPessoa('Juridica');
-                  handleInputChange('tipoPessoa', 'Juridica');
+                  setFields({
+                    tipoPessoa: 'Juridica',
+                    cpfCnpj: '',
+                    rgIe: '',
+                  } as any);
                 }}
               >
                 <Text
@@ -618,9 +610,9 @@ export default function ClienteFormScreen() {
           {/* Identificação */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Identificação</Text>
-            
+
             {renderInput(
-              tipoPessoa === 'Fisica' ? 'Nome Completo *' : 'Razão Social *',
+              tipoPessoa === 'Fisica' ? 'Nome Completo' : 'Razão Social',
               'nomeExibicao',
               tipoPessoa === 'Fisica' ? 'João da Silva' : 'Empresa LTDA'
             )}
@@ -632,7 +624,7 @@ export default function ClienteFormScreen() {
             )}
 
             {renderInput(
-              tipoPessoa === 'Fisica' ? 'CPF *' : 'CNPJ *',
+              tipoPessoa === 'Fisica' ? 'CPF' : 'CNPJ',
               'cpfCnpj',
               tipoPessoa === 'Fisica' ? '000.000.000-00' : '00.000.000/0000-00',
               {
@@ -651,9 +643,9 @@ export default function ClienteFormScreen() {
           {/* Contato */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Contato</Text>
-            
+
             {renderInput(
-              'Telefone Principal *',
+              'Telefone Principal',
               'telefonePrincipal',
               '(00) 00000-0000',
               {
@@ -682,7 +674,7 @@ export default function ClienteFormScreen() {
                   <Ionicons name="add-circle" size={24} color="#2563EB" />
                 </TouchableOpacity>
               </View>
-              {formData.contatos?.map((contato, index) =>
+              {formData.contatos?.map((contato: any, index: number) =>
                 renderContato(contato, index)
               )}
             </View>
@@ -718,7 +710,7 @@ export default function ClienteFormScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-            
+
             {/* CEP com busca */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>CEP</Text>
@@ -727,7 +719,7 @@ export default function ClienteFormScreen() {
                   style={styles.cepInput}
                   placeholder="00000-000"
                   placeholderTextColor="#94A3B8"
-                  value={formData.cep}
+                  value={formData.cep || ''}
                   onChangeText={(value) => handleInputChange('cep', masks.cep(value))}
                   keyboardType="numeric"
                   maxLength={9}
@@ -736,7 +728,7 @@ export default function ClienteFormScreen() {
                 {buscandoCep && (
                   <ActivityIndicator size="small" color="#2563EB" style={styles.cepLoader} />
                 )}
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.cepButton}
                   onPress={handleCepBlur}
                   disabled={buscandoCep}
@@ -750,14 +742,14 @@ export default function ClienteFormScreen() {
             <View style={styles.row}>
               <View style={[styles.flex2, styles.rowField]}>
                 {renderInput(
-                  'Logradouro *',
+                  'Logradouro',
                   'logradouro',
                   'Rua, Avenida, etc.'
                 )}
               </View>
               <View style={[styles.flex1, styles.rowField]}>
                 {renderInput(
-                  'Número *',
+                  'Número',
                   'numero',
                   '123',
                   { keyboardType: 'numeric' }
@@ -772,12 +764,12 @@ export default function ClienteFormScreen() {
             )}
 
             {renderInput(
-              'Bairro *',
+              'Bairro',
               'bairro',
               'Nome do bairro'
             )}
 
-            {/* Estado - Seleção */}
+            {/* Estado */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Estado *</Text>
               <TouchableOpacity
@@ -785,7 +777,7 @@ export default function ClienteFormScreen() {
                 onPress={() => setModalEstadoVisible(true)}
               >
                 <Text style={[styles.selectText, !formData.estado && styles.selectPlaceholder]}>
-                  {formData.estado 
+                  {formData.estado
                     ? estados.find(e => e.sigla === formData.estado)?.nome || formData.estado
                     : 'Selecione o estado'
                   }
@@ -795,7 +787,7 @@ export default function ClienteFormScreen() {
               {errors.estado && <Text style={styles.errorText}>{errors.estado}</Text>}
             </View>
 
-            {/* Cidade - Seleção */}
+            {/* Cidade */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Cidade *</Text>
               <TouchableOpacity
@@ -833,8 +825,10 @@ export default function ClienteFormScreen() {
                         String(formData.rotaId) === String(rota.id) && styles.rotaChipActive,
                       ]}
                       onPress={() => {
-                        handleInputChange('rotaId', String(rota.id));
-                        handleInputChange('rotaNome', rota.descricao);
+                        setFields({
+                          rotaId: String(rota.id),
+                          rotaNome: rota.descricao,
+                        } as any);
                       }}
                     >
                       <Text
@@ -853,7 +847,6 @@ export default function ClienteFormScreen() {
             </View>
           </View>
 
-          {/* Espaço extra */}
           <View style={styles.footer} />
         </ScrollView>
 
@@ -878,7 +871,6 @@ export default function ClienteFormScreen() {
         </View>
       </KeyboardAvoidingView>
 
-      {/* Modais */}
       {renderModalEstado()}
       {renderModalCidade()}
     </SafeAreaView>
@@ -886,7 +878,7 @@ export default function ClienteFormScreen() {
 }
 
 // ============================================================================
-// ESTILOS
+// ESTILOS (mantidos iguais)
 // ============================================================================
 
 const styles = StyleSheet.create({
@@ -904,8 +896,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
   },
-
-  // Section
   section: {
     marginBottom: 24,
   },
@@ -921,8 +911,6 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     marginBottom: 0,
   },
-
-  // GPS Button
   gpsButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -940,8 +928,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
-
-  // Tipo de Pessoa
   tipoPessoaContainer: {
     flexDirection: 'row',
     gap: 12,
@@ -967,8 +953,6 @@ const styles = StyleSheet.create({
   tipoPessoaTextActive: {
     color: '#FFFFFF',
   },
-
-  // Inputs
   inputGroup: {
     marginBottom: 16,
   },
@@ -1006,8 +990,6 @@ const styles = StyleSheet.create({
     color: '#DC2626',
     marginTop: 4,
   },
-
-  // CEP
   cepContainer: {
     paddingVertical: 0,
   },
@@ -1028,8 +1010,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 4,
   },
-
-  // Select
   selectText: {
     flex: 1,
     fontSize: 16,
@@ -1043,8 +1023,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 4,
   },
-
-  // Row
   row: {
     flexDirection: 'row',
     gap: 12,
@@ -1058,8 +1036,6 @@ const styles = StyleSheet.create({
   rowField: {
     marginBottom: 0,
   },
-
-  // Contatos
   contatosSection: {
     marginTop: 12,
   },
@@ -1111,8 +1087,6 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     paddingVertical: 8,
   },
-
-  // Rotas
   rotasScroll: {
     gap: 8,
   },
@@ -1133,13 +1107,9 @@ const styles = StyleSheet.create({
   rotaChipTextActive: {
     color: '#FFFFFF',
   },
-
-  // Footer
   footer: {
     height: 20,
   },
-
-  // Bottom Bar
   bottomBar: {
     position: 'absolute',
     bottom: 0,
@@ -1167,8 +1137,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
-
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

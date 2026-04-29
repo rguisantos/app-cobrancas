@@ -1,13 +1,19 @@
 /**
  * ProdutosListScreen.tsx
  * Lista de produtos com filtros e busca
- * 
+ *
+ * REFACTORED: Usa usePaginatedList + ExportService + usePermissionGuard
+ * - Paginação cursor-based em memória
+ * - Exportação CSV via ExportService
+ * - Permission guards client-side
+ *
  * Funcionalidades:
  * - Busca por identificador, tipo, descrição
  * - Filtros por tipo, status, situação (locado/disponível)
  * - Pull-to-refresh
  * - Navegação para detalhes
  * - Botão de novo produto (com permissão)
+ * - Exportação CSV
  */
 
 import React, { useState, useCallback } from 'react';
@@ -21,10 +27,18 @@ import {
   TextInput,
   RefreshControl,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+// Hooks
+import { usePermissionGuard } from '../hooks/usePermissionGuard';
+import { usePaginatedList } from '../hooks/usePaginatedList';
+
+// Services
+import ExportService from '../services/ExportService';
 
 // Contexts
 import { useAuth } from '../contexts/AuthContext';
@@ -46,6 +60,7 @@ export default function ProdutosListScreen() {
   const navigation = useNavigation<ProdutosStackNavigationProp>();
   const navigateProduto = useProdutoNavigate();
   const { user, hasPermission } = useAuth();
+  const { canDo } = usePermissionGuard();
   const { produtos, carregando, erro, carregarProdutos, refresh } = useProduto();
 
   // Estado local
@@ -53,6 +68,36 @@ export default function ProdutosListScreen() {
   const [filtroStatus, setFiltroStatus] = useState<StatusProduto | 'todos'>('todos');
   const [filtroLocacao, setFiltroLocacao] = useState<'todos' | 'locados' | 'disponiveis'>('todos');
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // ==========================================================================
+  // PAGINAÇÃO
+  // ==========================================================================
+
+  const filterFn = useCallback((p: any) => {
+    // Filtro por status
+    if (filtroStatus !== 'todos' && p.statusProduto !== filtroStatus) return false;
+    // Filtro por locação
+    if (filtroLocacao === 'locados' && !p.clienteNome) return false;
+    if (filtroLocacao === 'disponiveis' && (p.clienteNome || p.statusProduto !== 'Ativo')) return false;
+    return true;
+  }, [filtroStatus, filtroLocacao]);
+
+  const {
+    data: paginatedProdutos,
+    allData: filteredProdutos,
+    total: totalFiltered,
+    hasMore,
+    loadMore,
+    refresh: refreshPaginated,
+  } = usePaginatedList<ProdutoListItem>({
+    fetchAll: async () => produtos,
+    pageSize: 30,
+    searchFields: ['identificador', 'tipoNome', 'descricaoNome'],
+    searchTerm,
+    filterFn,
+    autoLoad: false,
+  });
 
   // ==========================================================================
   // CARREGAMENTO
@@ -64,46 +109,49 @@ export default function ProdutosListScreen() {
     }, [carregarProdutos])
   );
 
+  // Refresh paginated data when produtos change
+  // (usePaginatedList with autoLoad:false will need manual refresh)
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refresh();
+    await refreshPaginated();
     setRefreshing(false);
-  }, [refresh]);
+  }, [refresh, refreshPaginated]);
 
   // ==========================================================================
-  // FILTRAGEM
+  // FILTRAGEM — delegada ao usePaginatedList
+  // ==========================================================================
+  // A filtragem por searchTerm, filtroStatus e filtroLocacao é feita
+  // pelo usePaginatedList via searchFields e filterFn.
+
+  // ==========================================================================
+  // EXPORTAÇÃO CSV
   // ==========================================================================
 
-  const produtosFiltrados = useCallback(() => {
-    let filtrados = produtos;
-
-    // Filtro por busca
-    if (searchTerm.trim()) {
-      const termo = searchTerm.toLowerCase();
-      filtrados = filtrados.filter(
-        p =>
-          p.identificador.toLowerCase().includes(termo) ||
-          p.tipoNome.toLowerCase().includes(termo) ||
-          p.descricaoNome.toLowerCase().includes(termo)
+  const handleExportCSV = useCallback(async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await ExportService.exportCSV(
+        filteredProdutos,
+        'produtos',
+        ExportService.constructor.PRODUTO_COLUMNS || ExportService['PRODUTO_COLUMNS'] || [
+          { key: 'identificador', header: 'Identificador' },
+          { key: 'tipoNome', header: 'Tipo' },
+          { key: 'descricaoNome', header: 'Descrição' },
+          { key: 'tamanhoNome', header: 'Tamanho' },
+          { key: 'numeroRelogio', header: 'Relógio' },
+          { key: 'conservacao', header: 'Conservação' },
+          { key: 'statusProduto', header: 'Status' },
+        ],
+        { title: 'Relatório de Produtos' }
       );
-  
-  }
-
-    // Filtro por status
-    if (filtroStatus !== 'todos') {
-      filtrados = filtrados.filter(p => p.statusProduto === filtroStatus);
-  
-  }
-
-    // Filtro por locação
-    if (filtroLocacao === 'locados') {
-      filtrados = filtrados.filter(p => p.clienteNome);
-    } else if (filtroLocacao === 'disponiveis') {
-      filtrados = filtrados.filter(p => !p.clienteNome && p.statusProduto === 'Ativo');
-  
-  }
-    return filtrados;
-  }, [produtos, searchTerm, filtroStatus, filtroLocacao]);
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível exportar os dados');
+    } finally {
+      setExporting(false);
+    }
+  }, [filteredProdutos, exporting]);
 
   // ==========================================================================
   // RENDERIZAÇÃO DE ITENS
@@ -254,22 +302,42 @@ export default function ProdutosListScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Produtos</Text>
-        <Text style={styles.headerSubtitle}>
-          {produtosFiltrados().length} produto(s)
-        </Text>
+        <View style={styles.headerRow}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.headerTitle}>Produtos</Text>
+            <Text style={styles.headerSubtitle}>
+              {totalFiltered} produto(s)
+            </Text>
+          </View>
+          {/* Export CSV button */}
+          {canDo('produtos') && filteredProdutos.length > 0 && (
+            <TouchableOpacity
+              style={styles.exportButton}
+              onPress={handleExportCSV}
+              disabled={exporting}
+              activeOpacity={0.7}
+            >
+              {exporting ? (
+                <ActivityIndicator size="small" color="#2563EB" />
+              ) : (
+                <Ionicons name="download-outline" size={20} color="#2563EB" />
+              )}
+              <Text style={styles.exportButtonText}>CSV</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Lista */}
       <FlatList
-        data={produtosFiltrados()}
+        data={paginatedProdutos}
         renderItem={renderProduto}
         keyExtractor={(item) => String(item.id)}
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={renderEmpty}
         contentContainerStyle={[
           styles.listContent,
-          produtosFiltrados().length === 0 && styles.listEmpty,
+          paginatedProdutos.length === 0 && styles.listEmpty,
         ]}
         refreshControl={
           <RefreshControl
@@ -278,13 +346,14 @@ export default function ProdutosListScreen() {
             colors={['#2563EB']}
             tintColor="#2563EB"
           />
-      
-  }
+      }
+        onEndReached={() => hasMore && loadMore()}
+        onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
       />
 
       {/* Botão Novo Produto (com permissão) */}
-      {(user?.tipoPermissao === 'Administrador' || hasPermission('produtos', 'mobile')) && (
+      {canDo('produtos', 'create') && (
         <TouchableOpacity
           style={styles.fab}
           onPress={() => navigateProduto.toForm('criar')}
@@ -336,6 +405,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerLeft: {
+    flex: 1,
+  },
   headerTitle: {
     fontSize: 24,
     fontWeight: '700',
@@ -345,6 +422,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     marginTop: 4,
+  },
+  exportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  exportButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563EB',
   },
 
   // Search

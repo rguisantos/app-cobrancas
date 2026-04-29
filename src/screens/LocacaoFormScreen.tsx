@@ -2,6 +2,11 @@
  * LocacaoFormScreen.tsx
  * Formulário de locação — modos: criar | editar | relocar
  *
+ * REFACTORED: Usa locacaoFormSchema do @cobrancas/shared para validação
+ * - Validação Zod centralizada (idêntica ao web)
+ * - Audit logging em todas as mutações
+ * - Permission guards client-side
+ *
  * Modo CRIAR:
  *   - Produto selecionável (disponíveis em estoque)
  *   - Cliente fixo (vem da tela anterior)
@@ -27,6 +32,15 @@ import {
 import { Ionicons }     from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+// Schemas & Validation
+import { locacaoFormSchema } from '@cobrancas/shared';
+
+// Hooks
+import { usePermissionGuard } from '../hooks/usePermissionGuard';
+
+// Services
+import AuditService from '../services/AuditService';
 
 import { useLocacao }  from '../contexts/LocacaoContext';
 import { useProduto }  from '../contexts/ProdutoContext';
@@ -70,6 +84,7 @@ export default function LocacaoFormScreen() {
   const { criarLocacao, atualizarLocacao, realizarRelocacao, carregando } = useLocacao();
   const { produtos, carregarProdutos }                                    = useProduto();
   const { clienteSelecionado, buscarCliente }                             = useCliente();
+  const { canDo } = usePermissionGuard();
 
   const { clienteId, produtoId, modo, locacaoId } = route.params;
 
@@ -228,27 +243,50 @@ export default function LocacaoFormScreen() {
 
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
-    // Validate with current form state (inline to avoid stale closure)
-    const e: Record<string, string> = {};
-    if (!form.produtoId)     e.produtoId    = 'Produto é obrigatório';
-    if (!form.clienteId)     e.clienteId    = 'Cliente é obrigatório';
-    if (!form.numeroRelogio) e.numeroRelogio = 'Relógio é obrigatório';
-    if (form.formaPagamento !== 'Periodo') {
-      if (!form.precoFicha || parseFloat(form.precoFicha) <= 0)
-        e.precoFicha = 'Preço da ficha deve ser maior que zero';
-      const pct = parseFloat(form.percentualEmpresa);
-      if (isNaN(pct) || pct < 0 || pct > 100)
-        e.percentualEmpresa = 'Percentual entre 0 e 100';
-    } else {
-      if (!form.valorFixo || parseFloat(form.valorFixo) <= 0)
-        e.valorFixo = 'Valor fixo deve ser maior que zero';
-      if (!form.periodicidade)
-        e.periodicidade = 'Periodicidade é obrigatória';
+    // Permission guard
+    const permEntity = 'locacaoRelocacaoEstoque' as const;
+    if (!canDo(permEntity, modo === 'criar' ? 'create' : 'edit')) {
+      Alert.alert('Sem permissão', 'Você não tem permissão para realizar esta ação.');
+      return;
     }
-    if (modo === 'relocar' && !form.motivoRelocacao.trim())
-      e.motivoRelocacao = 'Informe o motivo da relocação';
-    if (Object.keys(e).length > 0) {
+
+    // Validate with Zod schema — transform string form to typed data first
+    const typedData = {
+      clienteId:            form.clienteId,
+      clienteNome:          form.clienteNome,
+      produtoId:            form.produtoId,
+      produtoIdentificador: form.produtoIdentificador,
+      produtoTipo:          form.produtoTipo,
+      dataLocacao:          new Date().toISOString(),
+      formaPagamento:       form.formaPagamento as FormaPagamentoLocacao,
+      numeroRelogio:        form.numeroRelogio,
+      precoFicha:           parseFloat(form.precoFicha) || 0,
+      percentualEmpresa:    parseFloat(form.percentualEmpresa) || 50,
+      percentualCliente,
+      periodicidade:        form.periodicidade as any || undefined,
+      valorFixo:            form.valorFixo ? parseFloat(form.valorFixo) : undefined,
+      dataPrimeiraCobranca: form.dataPrimeiraCobranca || undefined,
+      observacao:           form.observacao || undefined,
+      trocaPano:            form.trocaPano || false,
+    };
+
+    const result = locacaoFormSchema.safeParse(typedData);
+    if (!result.success) {
+      const e: Record<string, string> = {};
+      for (const issue of result.error.issues) {
+        const fieldPath = issue.path.join('.');
+        if (!e[fieldPath]) e[fieldPath] = issue.message;
+      }
+      // Additional check for relocar mode
+      if (modo === 'relocar' && !form.motivoRelocacao.trim())
+        e.motivoRelocacao = 'Informe o motivo da relocação';
       setErrors(e);
+      Alert.alert('Atenção', 'Corrija os campos obrigatórios');
+      return;
+    }
+    // Also check motivoRelocacao for relocar mode
+    if (modo === 'relocar' && !form.motivoRelocacao.trim()) {
+      setErrors({ motivoRelocacao: 'Informe o motivo da relocação' });
       Alert.alert('Atenção', 'Corrija os campos obrigatórios');
       return;
     }
@@ -257,27 +295,18 @@ export default function LocacaoFormScreen() {
     try {
       if (modo === 'criar') {
         const locacao = await criarLocacao({
-          clienteId:            form.clienteId,
-          clienteNome:          form.clienteNome,
-          produtoId:            form.produtoId,
-          produtoIdentificador: form.produtoIdentificador,
-          produtoTipo:          form.produtoTipo,
-          dataLocacao:          new Date().toISOString(),
-          formaPagamento:       form.formaPagamento,
-          numeroRelogio:        form.numeroRelogio,
-          precoFicha:           parseFloat(form.precoFicha) || 0,
-          percentualEmpresa:    parseFloat(form.percentualEmpresa) || 50,
-          percentualCliente,
-          periodicidade:        form.periodicidade as any || undefined,
-          valorFixo:            form.valorFixo ? parseFloat(form.valorFixo) : undefined,
-          dataPrimeiraCobranca: form.dataPrimeiraCobranca || undefined,
-          observacao:           form.observacao || undefined,
+          ...typedData,
           status:               'Ativa',
-          trocaPano:            form.trocaPano || false,
           dataUltimaManutencao: form.trocaPano ? new Date().toISOString() : undefined,
         } as any);
 
         if (locacao) {
+          // Audit log
+          await AuditService.logAction('criar_locacao', 'locacao', String(locacao.id), {
+            cliente: form.clienteNome,
+            produto: form.produtoIdentificador,
+            formaPagamento: form.formaPagamento,
+          });
           Alert.alert('Sucesso', 'Locação criada com sucesso', [
             { text: 'OK', onPress: () => navigation.goBack() },
           ]);
@@ -299,6 +328,11 @@ export default function LocacaoFormScreen() {
         } as any);
 
         if (ok) {
+          // Audit log
+          await AuditService.logAction('editar_locacao', 'locacao', locacaoId, {
+            cliente: form.clienteNome,
+            produto: form.produtoIdentificador,
+          });
           Alert.alert('Sucesso', 'Locação atualizada com sucesso', [
             { text: 'OK', onPress: () => navigation.goBack() },
           ]);
@@ -327,6 +361,12 @@ export default function LocacaoFormScreen() {
         // trocaPano handled separately via produtoRepository in realizarRelocacao
 
         if (ok) {
+          // Audit log
+          await AuditService.logAction('finalizar_locacao', 'locacao', locacaoId, {
+            produto: form.produtoIdentificador,
+            novoCliente: form.clienteNome,
+            motivo: form.motivoRelocacao,
+          });
           Alert.alert(
             'Relocação Realizada!',
             `Produto ${form.produtoIdentificador} relocado para ${form.clienteNome}`,
@@ -341,7 +381,7 @@ export default function LocacaoFormScreen() {
     } finally {
       setSalvando(false);
     }
-  }, [form, modo, locacaoId, percentualCliente, criarLocacao, atualizarLocacao, realizarRelocacao, navigation, setErrors]);
+  }, [form, modo, locacaoId, percentualCliente, criarLocacao, atualizarLocacao, realizarRelocacao, navigation, setErrors, canDo]);
 
   // ── loading inicial ───────────────────────────────────────────────────────
   if (carregandoInit) {

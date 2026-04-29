@@ -1,16 +1,24 @@
 /**
  * ClientesListScreen.tsx
  * Lista de clientes com busca e filtros
- * 
+ *
+ * REFACTORED:
+ * - Paginação via usePaginatedList (load more on scroll)
+ * - Exportação CSV via ExportService
+ * - Permission guards client-side via usePermissionGuard
+ * - Audit logging em ações sensíveis
+ *
  * Funcionalidades:
  * - Busca por nome, CPF, cidade
  * - Filtro por rota
  * - Pull-to-refresh
+ * - Paginação com load more
+ * - Exportação CSV
  * - Navegação para detalhes
  * - Botão de novo cliente (com permissão)
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -29,6 +37,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { useCliente } from '../contexts/ClienteContext';
 
+// Hooks
+import { usePaginatedList } from '../hooks/usePaginatedList';
+import { usePermissionGuard } from '../hooks/usePermissionGuard';
+
+// Services
+import ExportService from '../services/ExportService';
+import AuditService from '../services/AuditService';
+
 // Types
 import { ClienteListItem } from '../types';
 import { ClientesStackNavigationProp } from '../navigation/ClientesStack';
@@ -45,62 +61,81 @@ export default function ClientesListScreen() {
   const navigateCliente = useClienteNavigate();
   const { user, canAccessRota, hasPermission } = useAuth();
   const { clientes, carregando, erro, carregarClientes, refresh } = useCliente();
+  const { canDo } = usePermissionGuard();
 
   // Estado local
-  const [searchTerm, setSearchTerm] = useState('');  const [filtroRota, setFiltroRota] = useState<string | undefined>();
-  const [refreshing, setRefreshing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filtroRota, setFiltroRota] = useState<string | undefined>();
+  const [exporting, setExporting] = useState(false);
 
   // ==========================================================================
-  // CARREGAMENTO
+  // PAGINAÇÃO
   // ==========================================================================
 
+  const {
+    data: paginatedClientes,
+    hasMore,
+    loadMore,
+    refresh: paginatedRefresh,
+    isRefreshing,
+    total,
+  } = usePaginatedList<ClienteListItem>({
+    fetchAll: async () => {
+      await carregarClientes();
+      return clientes;
+    },
+    pageSize: 25,
+    searchFields: ['nomeExibicao', 'cpfCnpj', 'cidade'],
+    searchTerm,
+    filterFn: filtroRota
+      ? (c: ClienteListItem) => String(c.rotaId) === filtroRota
+      : user?.tipoPermissao !== 'Administrador'
+        ? (c: ClienteListItem) => c.rotaId !== undefined && canAccessRota(c.rotaId)
+        : undefined,
+    autoLoad: false,
+  });
+
+  // Recarregar dados quando a tela ganha foco
   useFocusEffect(
     useCallback(() => {
-      carregarClientes();
-    }, [carregarClientes])
+      paginatedRefresh();
+    }, [])
   );
 
   const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await refresh();
-    setRefreshing(false);
-  }, [refresh]);
+    await paginatedRefresh();
+  }, [paginatedRefresh]);
 
   // ==========================================================================
-  // FILTRAGEM
+  // EXPORTAÇÃO CSV
   // ==========================================================================
 
-  const clientesFiltrados = useCallback(() => {
-    let filtrados = clientes;
+  const handleExportCSV = useCallback(async () => {
+    if (!canDo('clientes', 'view')) {
+      return;
+    }
 
-    // Filtro por busca
-    if (searchTerm.trim()) {
-      const termo = searchTerm.toLowerCase();
-      filtrados = filtrados.filter(
-        c =>
-          c.nomeExibicao.toLowerCase().includes(termo) ||
-          c.cpfCnpj?.toLowerCase().includes(termo) ||
-          c.cidade.toLowerCase().includes(termo)
+    setExporting(true);
+    try {
+      await ExportService.exportCSV(
+        paginatedClientes,
+        'clientes',
+        ExportService.constructor.CLIENTE_COLUMNS || ExportService.CLIENTE_COLUMNS,
+        { title: 'Relatório de Clientes' }
       );
-  
-  }
+      await AuditService.logAction('gerar_relatorio', 'cliente', undefined, {
+        tipo: 'csv_export',
+        totalRegistros: paginatedClientes.length,
+      });
+    } catch (error) {
+      console.error('Erro ao exportar CSV:', error);
+    } finally {
+      setExporting(false);
+    }
+  }, [paginatedClientes, canDo]);
 
-    // Filtro por rota (respeita permissões)
-    if (filtroRota) {
-      filtrados = filtrados.filter(c => String(c.rotaId) === filtroRota);
-  
-  }
-
-    // Filtro por permissão de rota
-    if (user?.tipoPermissao !== 'Administrador') {
-      filtrados = filtrados.filter(c => c.rotaId !== undefined && canAccessRota(c.rotaId));
-  
-  }
-
-    return filtrados;
-  }, [clientes, searchTerm, filtroRota, user, canAccessRota]);
   // ==========================================================================
-  // RENDERIZACÃO DE ITENS
+  // RENDERIZAÇÃO
   // ==========================================================================
 
   const renderCliente = useCallback(({ item }: { item: ClienteListItem }) => (
@@ -148,7 +183,8 @@ export default function ClientesListScreen() {
           </Text>
         </View>
       </View>
-    </TouchableOpacity>  ), [navigateCliente]);
+    </TouchableOpacity>
+  ), [navigateCliente]);
 
   const renderEmpty = useCallback(() => (
     <View style={styles.emptyContainer}>
@@ -159,6 +195,18 @@ export default function ClientesListScreen() {
       </Text>
     </View>
   ), [searchTerm]);
+
+  const renderFooter = useCallback(() => {
+    if (hasMore) {
+      return (
+        <View style={styles.loadMoreContainer}>
+          <ActivityIndicator size="small" color="#2563EB" />
+          <Text style={styles.loadMoreText}>Carregando mais...</Text>
+        </View>
+      );
+    }
+    return null;
+  }, [hasMore]);
 
   const renderHeader = useCallback(() => (
     <View style={styles.searchContainer}>
@@ -184,25 +232,31 @@ export default function ClientesListScreen() {
           <Text style={styles.filterChipText}>Filtrar por Rota</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.filterChip}>
-          <Ionicons name="swap-vertical" size={16} color="#2563EB" />
-          <Text style={styles.filterChipText}>Ordenar</Text>
+        <TouchableOpacity
+          style={[styles.filterChip, exporting && styles.filterChipDisabled]}
+          onPress={handleExportCSV}
+          disabled={exporting}
+        >
+          <Ionicons name="download-outline" size={16} color="#2563EB" />
+          <Text style={styles.filterChipText}>
+            {exporting ? 'Exportando...' : 'Exportar CSV'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
-  ), [searchTerm]);
+  ), [searchTerm, exporting, handleExportCSV]);
 
   // ==========================================================================
   // RENDER
   // ==========================================================================
 
   if (carregando && clientes.length === 0) {
-    return (      <View style={styles.loadingContainer}>
+    return (
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2563EB" />
         <Text style={styles.loadingText}>Carregando clientes...</Text>
       </View>
     );
-
   }
 
   return (
@@ -211,35 +265,37 @@ export default function ClientesListScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Clientes</Text>
         <Text style={styles.headerSubtitle}>
-          {clientesFiltrados().length} cliente(s)
+          {total} cliente(s)
         </Text>
       </View>
 
-      {/* Lista */}
+      {/* Lista com paginação */}
       <FlatList
-        data={clientesFiltrados()}
+        data={paginatedClientes}
         renderItem={renderCliente}
         keyExtractor={(item) => String(item.id)}
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={renderEmpty}
+        ListFooterComponent={renderFooter}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
         contentContainerStyle={[
           styles.listContent,
-          clientesFiltrados().length === 0 && styles.listEmpty,
+          paginatedClientes.length === 0 && styles.listEmpty,
         ]}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            refreshing={isRefreshing}
             onRefresh={onRefresh}
             colors={['#2563EB']}
             tintColor="#2563EB"
           />
-      
-  }
+        }
         showsVerticalScrollIndicator={false}
       />
 
       {/* Botão Novo Cliente (com permissão) */}
-      {(user?.tipoPermissao === 'Administrador' || hasPermission('clientes', 'mobile')) && (
+      {canDo('clientes', 'create') && (
         <TouchableOpacity
           style={styles.fab}
           onPress={() => navigateCliente.toForm('criar')}
@@ -248,6 +304,7 @@ export default function ClientesListScreen() {
           <Ionicons name="add" size={28} color="#FFFFFF" />
         </TouchableOpacity>
       )}
+
       {/* Erro */}
       {erro && (
         <View style={styles.errorContainer}>
@@ -281,8 +338,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 16,
   },
-
-  // Header
   header: {
     paddingHorizontal: 16,
     paddingTop: 16,
@@ -297,11 +352,10 @@ const styles = StyleSheet.create({
     color: '#1E293B',
   },
   headerSubtitle: {
-    fontSize: 14,    color: '#64748B',
+    fontSize: 14,
+    color: '#64748B',
     marginTop: 4,
   },
-
-  // Search
   searchContainer: {
     backgroundColor: '#FFFFFF',
     padding: 16,
@@ -338,21 +392,32 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
   },
+  filterChipDisabled: {
+    opacity: 0.5,
+  },
   filterChipText: {
     fontSize: 13,
     fontWeight: '600',
     color: '#2563EB',
   },
-
-  // List
   listContent: {
-    padding: 16,    gap: 12,
+    padding: 16,
+    gap: 12,
   },
   listEmpty: {
     flexGrow: 1,
   },
-
-  // Card
+  loadMoreContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  loadMoreText: {
+    fontSize: 14,
+    color: '#64748B',
+  },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -395,7 +460,8 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
   },
-  statusBadge: {    flexDirection: 'row',
+  statusBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#F0FDF4',
@@ -431,8 +497,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     flex: 1,
   },
-
-  // Empty State
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -444,14 +508,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1E293B',
     marginTop: 16,
-  },  emptySubtitle: {
+  },
+  emptySubtitle: {
     fontSize: 14,
     color: '#64748B',
     marginTop: 8,
     textAlign: 'center',
   },
-
-  // FAB
   fab: {
     position: 'absolute',
     bottom: 24,
@@ -468,8 +531,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-
-  // Error
   errorContainer: {
     position: 'absolute',
     bottom: 0,

@@ -1,13 +1,18 @@
 /**
  * ProdutoFormScreen.tsx
  * Formulário de cadastro/edição de produtos
- * 
+ *
+ * REFACTORED: Usa useZodForm com produtoFormSchema do @cobrancas/shared
+ * - Validação Zod centralizada (idêntica ao web)
+ * - Audit logging em todas as mutações
+ * - Permission guards client-side
+ *
  * Funcionalidades:
  * - Campos de identificação (identificador, relógio)
  * - Seleção de tipo, descrição, tamanho
  * - Conservação e status
  * - Dados de manutenção
- * - Validações de negócio
+ * - Validações de negócio via Zod
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -29,9 +34,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+// Schemas & Validation
+import { produtoFormSchema } from '@cobrancas/shared';
+import { useZodForm } from '../hooks/useZodForm';
+
 // Contexts
 import { useProduto } from '../contexts/ProdutoContext';
 import { useAuth } from '../contexts/AuthContext';
+
+// Hooks
+import { usePermissionGuard } from '../hooks/usePermissionGuard';
+
+// Services
+import AuditService from '../services/AuditService';
+import atributosProdutoService, { AtributoItem } from '../services/AtributosProdutoService';
 
 // Types
 import { Produto, Conservacao, StatusProduto } from '../types';
@@ -39,10 +55,6 @@ import { ProdutosStackParamList } from '../navigation/ProdutosStack';
 
 // Utils
 import { masks } from '../utils/masks';
-import { validators } from '../utils/validators';
-
-// Services
-import atributosProdutoService, { AtributoItem } from '../services/AtributosProdutoService';
 
 // ============================================================================
 // TIPOS DE ROTA
@@ -65,27 +77,35 @@ export default function ProdutoFormScreen() {
   const navigation = useNavigation();
   const { produtoSelecionado, carregarProduto, salvarProduto, atualizarProduto, carregando } = useProduto();
   const { user, hasPermission } = useAuth();
+  const { canDo } = usePermissionGuard();
 
   const modo = route.params?.modo || 'criar';
   const produtoId = route.params?.produtoId;
 
-  // Estado do formulário
-  const [formData, setFormData] = useState<Partial<Produto>>({
+  // Zod Form Hook — validação centralizada
+  const {
+    formData,
+    errors,
+    setField,
+    setFields,
+    setFormData,
+    validateAndGet,
+    isSubmitted,
+  } = useZodForm(produtoFormSchema, {
     identificador: '',
     numeroRelogio: '',
-    tipoId: '',    tipoNome: '',
+    tipoId: '',
+    tipoNome: '',
     descricaoId: '',
     descricaoNome: '',
     tamanhoId: '',
     tamanhoNome: '',
-    conservacao: 'Boa',
-    statusProduto: 'Ativo',
+    conservacao: 'Boa' as Conservacao,
+    statusProduto: 'Ativo' as StatusProduto,
     codigoCH: '',
     codigoABLF: '',
     observacao: '',
   });
-
-  const [errors, setErrors] = useState<Record<string, string>>({});
   const [showTipoPicker, setShowTipoPicker] = useState(false);
   const [showDescricaoPicker, setShowDescricaoPicker] = useState(false);
   const [showTamanhoPicker, setShowTamanhoPicker] = useState(false);
@@ -142,7 +162,7 @@ export default function ProdutoFormScreen() {
               tipoId: produtoSelecionado.tipoId?.toString() || '',
               descricaoId: produtoSelecionado.descricaoId?.toString() || '',
               tamanhoId: produtoSelecionado.tamanhoId?.toString() || '',
-            });
+            } as any);
           } else {
             // Carregar o produto do repositório
             await carregarProduto(produtoId);
@@ -166,140 +186,97 @@ export default function ProdutoFormScreen() {
         tipoId: produtoSelecionado.tipoId?.toString() || '',
         descricaoId: produtoSelecionado.descricaoId?.toString() || '',
         tamanhoId: produtoSelecionado.tamanhoId?.toString() || '',
-      });
+      } as any);
     }
   }, [produtoSelecionado, modo, produtoId]);
 
   // ==========================================================================
-  // VALIDAÇÕES
+  // VALIDAÇÕES — Delegadas ao useZodForm + produtoFormSchema
   // ==========================================================================
-
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {};
-
-    // Identificador (obrigatório e único)
-    if (!formData.identificador?.trim()) {
-      newErrors.identificador = 'Identificador é obrigatório';
-  
-  }
-
-    // Número do relógio
-    if (!formData.numeroRelogio?.trim()) {
-      newErrors.numeroRelogio = 'Número do relógio é obrigatório';
-  
-  }
-    // Tipo
-    if (!formData.tipoId) {
-      newErrors.tipoId = 'Tipo é obrigatório';
-  
-  }
-
-    // Descrição
-    if (!formData.descricaoId) {
-      newErrors.descricaoId = 'Descrição é obrigatória';
-  
-  }
-
-    // Tamanho
-    if (!formData.tamanhoId) {
-      newErrors.tamanhoId = 'Tamanho é obrigatório';
-  
-  }
-
-    // Conservação
-    if (!formData.conservacao) {
-      newErrors.conservacao = 'Conservação é obrigatória';
-  
-  }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+  // A validação é feita automaticamente pelo useZodForm ao chamar validateAndGet().
+  // O schema produtoFormSchema (de @cobrancas/shared) garante validação idêntica ao web.
 
   // ==========================================================================
   // HANDLERS
   // ==========================================================================
 
-  const handleInputChange = useCallback((field: keyof Produto, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    
-    if (errors[field]) {
-      const newErrors = { ...errors };
-      delete newErrors[field];
-      setErrors(newErrors);
-  
-  }
-  }, [errors]);
+  const handleInputChange = useCallback((field: string, value: string) => {
+    setField(field as any, value);
+  }, [setField]);
 
   const handleSelectTipo = useCallback((item: any) => {
-    setFormData(prev => ({
-      ...prev,
-      tipoId: item.id,
-      tipoNome: item.nome,
-    }));
+    setFields({ tipoId: item.id, tipoNome: item.nome } as any);
     setShowTipoPicker(false);
-  }, []);
+  }, [setFields]);
 
   const handleSelectDescricao = useCallback((item: any) => {
-    setFormData(prev => ({
-      ...prev,
-      descricaoId: item.id,      descricaoNome: item.nome,
-    }));
+    setFields({ descricaoId: item.id, descricaoNome: item.nome } as any);
     setShowDescricaoPicker(false);
-  }, []);
+  }, [setFields]);
 
   const handleSelectTamanho = useCallback((item: any) => {
-    setFormData(prev => ({
-      ...prev,
-      tamanhoId: item.id,
-      tamanhoNome: item.nome,
-    }));
+    setFields({ tamanhoId: item.id, tamanhoNome: item.nome } as any);
     setShowTamanhoPicker(false);
-  }, []);
+  }, [setFields]);
 
   const handleSelectConservacao = useCallback((value: Conservacao) => {
-    setFormData(prev => ({ ...prev, conservacao: value }));
+    setField('conservacao' as any, value);
     setShowConservacaoPicker(false);
-  }, []);
+  }, [setField]);
 
   const handleSelectStatus = useCallback((value: StatusProduto) => {
-    setFormData(prev => ({ ...prev, statusProduto: value }));
+    setField('statusProduto' as any, value);
     setShowStatusPicker(false);
-  }, []);
+  }, [setField]);
 
   const handleSubmit = useCallback(async () => {
-    if (!validateForm()) {
+    // Permission guard
+    if (!canDo('produtos', modo === 'criar' ? 'create' : 'edit')) {
+      Alert.alert('Sem permissão', 'Você não tem permissão para realizar esta ação.');
+      return;
+    }
+
+    // Validação via Zod
+    const validatedData = validateAndGet();
+    if (!validatedData) {
       Alert.alert('Erro', 'Por favor, corrija os campos obrigatórios');
       return;
-  
-  }
+    }
 
     try {
       if (modo === 'criar') {
-        const produto = await salvarProduto(formData);
+        const produto = await salvarProduto(validatedData as any);
         if (produto) {
+          // Audit log
+          await AuditService.logAction('criar_produto', 'produto', String(produto.id), {
+            identificador: validatedData.identificador,
+            tipo: validatedData.tipoNome,
+          });
           Alert.alert('Sucesso', 'Produto cadastrado com sucesso', [
             { text: 'OK', onPress: () => navigation.goBack() },
           ]);
         } else {
           Alert.alert('Erro', 'Não foi possível cadastrar o produto');
-      
-  }
+        }
       } else {
-        const sucesso = await atualizarProduto({ ...formData, id: produtoId! });
+        const sucesso = await atualizarProduto({ ...validatedData, id: produtoId! } as any);
         if (sucesso) {
+          // Audit log
+          await AuditService.logAction('editar_produto', 'produto', produtoId, {
+            identificador: validatedData.identificador,
+            tipo: validatedData.tipoNome,
+          });
           Alert.alert('Sucesso', 'Produto atualizado com sucesso', [
             { text: 'OK', onPress: () => navigation.goBack() },
           ]);
         } else {
           Alert.alert('Erro', 'Não foi possível atualizar o produto');
-      
-  }
-      }    } catch (error) {
+        }
+      }
+    } catch (error) {
       Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao salvar produto');
-  
-  }
-  }, [formData, modo, produtoId, salvarProduto, atualizarProduto, navigation]);
+    }
+  }, [modo, produtoId, salvarProduto, atualizarProduto, navigation, canDo, validateAndGet]);
 
   // ==========================================================================
   // RENDERIZAÇÃO DE SELECTS

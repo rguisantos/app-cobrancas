@@ -2,6 +2,11 @@
  * CobrancaConfirmScreen.tsx
  * Fluxo de cobrança direta (a partir de uma locação)
  *
+ * REFACTORED: Usa cobrancaFormSchema do @cobrancas/shared para validação
+ * - Validação Zod centralizada (idêntica ao web)
+ * - Audit logging no registro de cobrança
+ * - Permission guards client-side
+ *
  * PASSO 1 — Preenchimento: relógio atual, descontos, valor recebido
  * PASSO 2 — Resumo/Confirmação: exibe todos os detalhes calculados,
  *            permite voltar para corrigir ou confirmar a cobrança
@@ -16,6 +21,15 @@ import {
 import { Ionicons }      from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView }  from 'react-native-safe-area-context';
+
+// Schemas & Validation
+import { cobrancaFormSchema } from '@cobrancas/shared';
+
+// Hooks
+import { usePermissionGuard } from '../hooks/usePermissionGuard';
+
+// Services
+import AuditService from '../services/AuditService';
 
 import { useLocacao }      from '../contexts/LocacaoContext';
 import { useCobranca }     from '../contexts/CobrancaContext';
@@ -46,6 +60,7 @@ export default function CobrancaConfirmScreen() {
   const { locacaoSelecionada, selecionarLocacao, atualizarLocacao } = useLocacao();
   const { atualizarProduto } = useProduto();
   const { registrarCobranca, carregando } = useCobranca();
+  const { canDo } = usePermissionGuard();
 
   const { locacaoId } = route.params;
 
@@ -125,11 +140,41 @@ export default function CobrancaConfirmScreen() {
   // ── confirmar cobrança ────────────────────────────────────────────────────
   const handleConfirmar = useCallback(async () => {
     if (!calculo || !locacaoSelecionada || isSubmitting) return;
+
+    // Permission guard
+    if (!canDo('cobrancasFaturas', 'create')) {
+      Alert.alert('Sem permissão', 'Você não tem permissão para registrar cobranças.');
+      return;
+    }
+
+    const relogioAtualNum = parseInt(relogioAtual.replace(/\D/g, ''), 10);
+
+    // Validate with Zod schema
+    const cobrancaData = {
+      locacaoId:             String(locacaoSelecionada.id),
+      clienteId:             String(locacaoSelecionada.clienteId),
+      clienteNome:           locacaoSelecionada.clienteNome || '',
+      produtoIdentificador:  locacaoSelecionada.produtoIdentificador || '',
+      dataInicio:            locacaoSelecionada.dataUltimaCobranca || locacaoSelecionada.dataLocacao || new Date().toISOString(),
+      dataFim:               new Date().toISOString(),
+      relogioAnterior,
+      relogioAtual:          relogioAtualNum,
+      descontoPartidasQtd:   parseInt(descontoPartidas.replace(/\D/g, ''), 10) || 0,
+      descontoPartidasValor: calculo.descontoPartidasValor,
+      descontoDinheiro:      calculo.descontoDinheiroValor,
+      observacao:            observacao || undefined,
+    };
+
+    const zodResult = cobrancaFormSchema.safeParse(cobrancaData);
+    if (!zodResult.success) {
+      const msgs = zodResult.error.issues.map(i => i.message).join('\n');
+      Alert.alert('Dados inválidos', msgs);
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const relogioAtualNum = parseInt(relogioAtual.replace(/\D/g, ''), 10);
-
       // Buscar saldo devedor pendente desta locação para acumulá-lo corretamente
       const { cobrancaRepository } = await import('../repositories/CobrancaRepository');
       const saldoAnterior = await cobrancaRepository.getSaldoPendenteByLocacao(
@@ -168,6 +213,15 @@ export default function CobrancaConfirmScreen() {
           dataUltimaCobranca:   new Date().toISOString(),
         });
 
+        // Audit log
+        await AuditService.logAction('criar_cobranca', 'cobranca', String(cobranca.id), {
+          cliente: locacaoSelecionada.clienteNome,
+          produto: locacaoSelecionada.produtoIdentificador,
+          fichas: calculo.fichasRodadas,
+          total: calculo.totalClientePaga,
+          valorRecebido: valorRecebidoNum,
+        });
+
         Alert.alert(
           'Cobrança Registrada! ✓',
           [
@@ -198,7 +252,7 @@ export default function CobrancaConfirmScreen() {
       setIsSubmitting(false);
     }
   }, [calculo, locacaoSelecionada, relogioAtual, relogioAnterior, descontoPartidas, isSubmitting,
-      valorRecebidoNum, observacao, saldoDevedor, troco, registrarCobranca, atualizarLocacao, navigation]);
+      valorRecebidoNum, observacao, saldoDevedor, troco, registrarCobranca, atualizarLocacao, navigation, canDo]);
 
   // ── loading ───────────────────────────────────────────────────────────────
   if (!locacaoSelecionada && locacaoId) {

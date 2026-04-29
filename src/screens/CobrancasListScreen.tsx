@@ -1,13 +1,19 @@
 /**
  * CobrancasListScreen.tsx
  * Lista de cobranças pendentes e histórico
- * 
+ *
+ * REFACTORED: Usa usePaginatedList + ExportService + usePermissionGuard
+ * - Paginação cursor-based em memória
+ * - Exportação CSV via ExportService
+ * - Permission guards client-side
+ *
  * Funcionalidades:
  * - Lista de cobranças por rota/cliente
  * - Filtros por status (pendente, pago, atrasado)
  * - Pull-to-refresh
  * - Navegação para confirmação de cobrança
  * - Resumo de valores
+ * - Exportação CSV
  */
 
 import React, { useState, useCallback } from 'react';
@@ -20,11 +26,19 @@ import {
   ActivityIndicator,
   RefreshControl,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { CobrancasStackParamList } from '../navigation/CobrancasStack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+// Hooks
+import { usePermissionGuard } from '../hooks/usePermissionGuard';
+import { usePaginatedList } from '../hooks/usePaginatedList';
+
+// Services
+import ExportService from '../services/ExportService';
 
 // Contexts
 import { useAuth } from '../contexts/AuthContext';
@@ -51,11 +65,38 @@ export default function CobrancasListScreen() {
   const navigateCobranca = useCobrancaNavigate();
   const route = useRoute<RouteProp<CobrancasStackParamList, 'CobrancasList'>>();
   const { user, hasPermission, canAccessRota } = useAuth();
+  const { canDo } = usePermissionGuard();
   const { cobrancas, carregando, erro, carregarCobrancas, refresh, totalPendentes } = useCobranca();
 
   // Estado local
   const [filtroStatus, setFiltroStatus] = useState<StatusPagamento | 'todas'>('todas');
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // ==========================================================================
+  // PAGINAÇÃO
+  // ==========================================================================
+
+  const filterFn = useCallback((c: any) => {
+    // Filtro por status
+    if (filtroStatus !== 'todas' && c.status !== filtroStatus) return false;
+    return true;
+  }, [filtroStatus]);
+
+  const {
+    data: paginatedCobrancas,
+    allData: filteredCobrancas,
+    total: totalFiltered,
+    hasMore,
+    loadMore,
+    refresh: refreshPaginated,
+  } = usePaginatedList<HistoricoCobranca>({
+    fetchAll: async () => cobrancas,
+    pageSize: 30,
+    searchFields: ['clienteNome', 'produtoIdentificador'],
+    filterFn,
+    autoLoad: false,
+  });
 
   // ==========================================================================
   // CARREGAMENTO
@@ -76,28 +117,43 @@ export default function CobrancasListScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refresh();
+    await refreshPaginated();
     setRefreshing(false);
-  }, [refresh]);
+  }, [refresh, refreshPaginated]);
 
   // ==========================================================================
-  // FILTRAGEM
+  // FILTRAGEM — delegada ao usePaginatedList
+  // ==========================================================================
+  // A filtragem por filtroStatus é feita pelo usePaginatedList via filterFn.
+
+  // ==========================================================================
+  // EXPORTAÇÃO CSV
   // ==========================================================================
 
-  const cobrancasFiltradas = useCallback(() => {
-    let filtradas = cobrancas;
-
-    // Filtro por status
-    if (filtroStatus !== 'todas') {
-      filtradas = filtradas.filter(c => c.status === filtroStatus);
+  const handleExportCSV = useCallback(async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await ExportService.exportCSV(
+        filteredCobrancas,
+        'cobrancas',
+        ExportService.constructor.COBRANCA_COLUMNS || ExportService['COBRANCA_COLUMNS'] || [
+          { key: 'clienteNome', header: 'Cliente' },
+          { key: 'produtoIdentificador', header: 'Produto' },
+          { key: 'dataInicio', header: 'Data Início' },
+          { key: 'fichasRodadas', header: 'Fichas' },
+          { key: 'totalClientePaga', header: 'Total', format: (v: number) => formatarMoeda(v) },
+          { key: 'valorRecebido', header: 'Recebido', format: (v: number) => formatarMoeda(v) },
+          { key: 'status', header: 'Status' },
+        ],
+        { title: 'Relatório de Cobranças' }
+      );
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível exportar os dados');
+    } finally {
+      setExporting(false);
     }
-
-    // Filtro por permissão de rota (se não for admin)
-    if (user?.tipoPermissao !== 'Administrador') {
-      // Implementar filtro por rota permitida
-    }
-
-    return filtradas;
-  }, [cobrancas, filtroStatus, user]);
+  }, [filteredCobrancas, exporting]);
 
   // ==========================================================================
   // RENDERIZAÇÃO DE ITENS
@@ -250,22 +306,42 @@ export default function CobrancasListScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Cobranças</Text>
-        <Text style={styles.headerSubtitle}>
-          {cobrancasFiltradas().length} cobrança(s)
-        </Text>
+        <View style={styles.headerRow}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.headerTitle}>Cobranças</Text>
+            <Text style={styles.headerSubtitle}>
+              {totalFiltered} cobrança(s)
+            </Text>
+          </View>
+          {/* Export CSV button */}
+          {canDo('cobrancasFaturas') && filteredCobrancas.length > 0 && (
+            <TouchableOpacity
+              style={styles.exportButton}
+              onPress={handleExportCSV}
+              disabled={exporting}
+              activeOpacity={0.7}
+            >
+              {exporting ? (
+                <ActivityIndicator size="small" color="#2563EB" />
+              ) : (
+                <Ionicons name="download-outline" size={20} color="#2563EB" />
+              )}
+              <Text style={styles.exportButtonText}>CSV</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Lista */}
       <FlatList
-        data={cobrancasFiltradas()}
+        data={paginatedCobrancas}
         renderItem={renderCobranca}
         keyExtractor={(item) => String(item.id)}
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={renderEmpty}
         contentContainerStyle={[
           styles.listContent,
-          cobrancasFiltradas().length === 0 && styles.listEmpty,
+          paginatedCobrancas.length === 0 && styles.listEmpty,
         ]}
         refreshControl={
           <RefreshControl
@@ -275,11 +351,13 @@ export default function CobrancasListScreen() {
             tintColor="#2563EB"
           />
         }
+        onEndReached={() => hasMore && loadMore()}
+        onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
       />
 
       {/* Botão Nova Cobrança (com permissão) */}
-      {(user?.tipoPermissao === 'Administrador' || hasPermission('cobrancasFaturas', 'mobile')) && (
+      {canDo('cobrancasFaturas', 'create') && (
         <TouchableOpacity
           style={styles.fab}
           onPress={() => navigateCobranca.toRotas()}
@@ -331,6 +409,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerLeft: {
+    flex: 1,
+  },
   headerTitle: {
     fontSize: 24,
     fontWeight: '700',
@@ -340,6 +426,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     marginTop: 4,
+  },
+  exportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  exportButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563EB',
   },
 
   // Header Content
