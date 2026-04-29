@@ -129,7 +129,7 @@ export default function SyncStatusScreen({ navigation }: Props) {
 
   // Testar registro de dispositivo
   const testDeviceRegistration = useCallback(async () => {
-    addLog('info', 'Testando registro de dispositivo...');
+    addLog('info', 'Verificando registro do dispositivo...');
     try {
       const metadata = await databaseService.getSyncMetadata();
       addLog('info', 'Metadata atual', JSON.stringify({
@@ -139,21 +139,15 @@ export default function SyncStatusScreen({ navigation }: Props) {
       }));
 
       if (!metadata.deviceId || !metadata.deviceKey) {
-        addLog('warn', 'Dispositivo não registrado. Tentando registrar...');
-        const registrado = await syncService.registerDevice();
-        if (registrado) {
-          addLog('success', 'Dispositivo registrado com sucesso!');
-          await loadDebugInfo();
-        } else {
-          addLog('error', 'Falha ao registrar dispositivo');
-        }
+        addLog('warn', 'Dispositivo não registrado. Use o fluxo de ativação com PIN (DeviceActivationScreen).');
+        addLog('warn', 'O registro legado (registerDevice) foi removido — ative o dispositivo via PIN de 6 dígitos.');
       } else {
         addLog('success', 'Dispositivo já registrado', `ID: ${metadata.deviceId}`);
       }
     } catch (error) {
       addLog('error', 'Erro no registro', String(error));
     }
-  }, [addLog, loadDebugInfo]);
+  }, [addLog]);
 
   // Executar sync com logs
   const handleSyncNow = useCallback(async () => {

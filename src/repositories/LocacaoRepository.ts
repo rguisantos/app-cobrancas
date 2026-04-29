@@ -13,17 +13,18 @@ import {
   FormaPagamentoLocacao,
   Periodicidade
 } from '../types';
+import { generateId } from '../utils/database';
 
 // ============================================================================
 // INTERFACES E TIPOS
 // ============================================================================
 
 export interface LocacaoFilters {
-  clienteId?: string | number;
-  produtoId?: string | number;
+  clienteId?: string;
+  produtoId?: string;
   status?: StatusLocacao;
   formaPagamento?: FormaPagamentoLocacao;
-  rotaId?: string | number;
+  rotaId?: string;
   dataInicio?: string;
   dataFim?: string;
   termoBusca?: string; // Busca por identificador do produto, nome do cliente
@@ -40,7 +41,7 @@ export interface LocacaoComDetalhes extends Locacao {
 }
 
 export interface LocacaoResumo {
-  id: string | number;
+  id: string;
   produtoIdentificador: string;
   produtoNome: string;
   produtoTipo?: string;
@@ -257,7 +258,7 @@ class LocacaoRepository {
     try {
       const locacaoCompleta: Locacao = {
         ...locacao,
-        id: locacao.id || this.generateId(),
+        id: locacao.id || generateId('locacao'),
         tipo: this.entityType,
         syncStatus: 'pending',
         lastSyncedAt: undefined,
@@ -714,13 +715,6 @@ class LocacaoRepository {
     };
   }
 
-  /**
-   * Gera ID único para a locação
-   */
-  private generateId(): string {
-    return `locacao_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-  }
 }
 
 // ============================================================================

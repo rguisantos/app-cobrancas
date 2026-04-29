@@ -239,7 +239,7 @@ export default function ClientesListScreen() {
       />
 
       {/* Botão Novo Cliente (com permissão) */}
-      {(user?.tipoPermissao === 'Administrador' || hasPermission('todosCadastros', 'mobile')) && (
+      {(user?.tipoPermissao === 'Administrador' || hasPermission('clientes', 'mobile')) && (
         <TouchableOpacity
           style={styles.fab}
           onPress={() => navigateCliente.toForm('criar')}

@@ -11,13 +11,14 @@ import {
   EntityType,
   SyncableEntity 
 } from '../types';
+import { generateId, parseJSON } from '../utils/database';
 
 // ============================================================================
 // INTERFACES E TIPOS
 // ============================================================================
 
 export interface ClienteFilters {
-  rotaId?: string | number;
+  rotaId?: string;
   status?: 'Ativo' | 'Inativo';
   cidade?: string;
   estado?: string;
@@ -139,7 +140,7 @@ class ClienteRepository {
   async save(cliente: Omit<Cliente, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'lastSyncedAt' | 'needsSync' | 'version' | 'deviceId' | 'tipo'> & { id?: string }): Promise<Cliente> {
     try {
       // Gerar ID único se não existir
-      const id = cliente.id || this.generateId();
+      const id = cliente.id || generateId('cliente');
       const now = new Date().toISOString();
       
       // Mapear cpfCnpj para cpf ou cnpj baseado no tipoPessoa
@@ -274,7 +275,7 @@ class ClienteRepository {
   /**
    * Busca clientes por rota
    */
-  async getByRota(rotaId: string | number): Promise<ClienteListItem[]> {
+  async getByRota(rotaId: string): Promise<ClienteListItem[]> {
     return this.getAll({ rotaId, status: 'Ativo' });
   }
 
@@ -427,20 +428,8 @@ class ClienteRepository {
       ...data,
       cpfCnpj: data.cpfCnpj || data.cpf || data.cnpj || '',
       rgIe: data.rgIe || data.rg || data.inscricaoEstadual || '',
-      contatos: this.parseJSON(data.contatos, []),
+      contatos: parseJSON(data.contatos, []),
     };
-  }
-
-  /**
-   * Parseia JSON com fallback
-   */
-  private parseJSON<T>(value: string | undefined | null, fallback: T): T {
-    if (!value) return fallback;
-    try {
-      return JSON.parse(value);
-    } catch {
-      return fallback;
-    }
   }
 
   /**
@@ -456,14 +445,6 @@ class ClienteRepository {
       estado: cliente.estado,
       status: cliente.status,
     };
-
-  }
-
-  /**
-   * Gera ID único para o cliente
-   */
-  private generateId(): string {
-    return `cliente_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
   }
 

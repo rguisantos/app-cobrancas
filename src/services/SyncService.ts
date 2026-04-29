@@ -4,7 +4,6 @@
  * Arquitetura: Offline-first com SQLite local + PostgreSQL remoto
  */
 
-import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   SyncMetadata, 
@@ -17,9 +16,6 @@ import { databaseService } from './DatabaseService';
 import { apiService } from './ApiService';
 import { ENV } from '../config/env';
 import logger from '../utils/logger';
-
-// Chave do token no AsyncStorage (mesma do AuthContext)
-const TOKEN_KEY = '@cobrancas:token';
 
 // ============================================================================
 // TIPOS E INTERFACES
@@ -138,20 +134,6 @@ class SyncService {
     try {
       logger.info('[Sync] Iniciando sincronização...');
 
-      // IMPORTANTE: Sincronizar token do AsyncStorage com ApiService
-      // Isso garante que o token de autenticação esteja disponível para as requisições
-      try {
-        const savedToken = await AsyncStorage.getItem(TOKEN_KEY);
-        if (savedToken) {
-          apiService.setToken(savedToken);
-          logger.info('[Sync] Token sincronizado com ApiService');
-        } else {
-          logger.warn('[Sync] ⚠️ Nenhum token encontrado no AsyncStorage');
-        }
-      } catch (tokenError) {
-        logger.error('[Sync] Erro ao sincronizar token:', tokenError);
-      }
-
       // Verificar se o dispositivo está registrado
       const isRegistered = await this.ensureDeviceRegistered();
       if (!isRegistered) {
@@ -185,6 +167,13 @@ class SyncService {
       pulled = pullResult.pulled;
       errors.push(...pullResult.errors);
 
+      // Purge old change logs after successful sync
+      try {
+        await databaseService.purgeOldChangeLogs(30);
+      } catch (purgeError) {
+        logger.warn('[Sync] Falha no purge de changelogs:', purgeError);
+      }
+
       // Atualizar metadata
       const now = new Date().toISOString();
       await databaseService.updateSyncMetadata({
@@ -202,7 +191,7 @@ class SyncService {
         errors,
       });
 
-      logger.info('[Sync] Sincronização concluída', { pushed, pulled, conflicts: conflicts.length });
+      logger.info('[Sync] Concluída', { pushed, pulled, conflicts: conflicts.length });
 
       return {
         success: errors.length === 0,
@@ -216,7 +205,7 @@ class SyncService {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Erro desconhecido';
       errors.push(errorMsg);
-      logger.error('[Sync] Erro na sincronização:', error);
+      logger.error('[Sync] Erro:', error);
 
       this.notify({
         phase: 'error',
@@ -238,7 +227,6 @@ class SyncService {
       this.syncInProgress = false;
     }
   }
-  // FIM _doSync
 
   /**
    * Envia mudanças locais para o servidor (PUSH)
@@ -249,15 +237,6 @@ class SyncService {
     let conflicts: SyncConflict[] = [];
 
     try {
-      // IMPORTANTE: Sincronizar token antes de cada requisição
-      const savedToken = await AsyncStorage.getItem(TOKEN_KEY);
-      if (savedToken) {
-        apiService.setToken(savedToken);
-        logger.info('[Sync/Push] Token sincronizado com ApiService');
-      } else {
-        logger.error('[Sync/Push] ❌ Token NÃO encontrado no AsyncStorage!');
-      }
-
       // Buscar mudanças pendentes
       const pendingChanges = await databaseService.getPendingChanges();
       
@@ -294,16 +273,6 @@ class SyncService {
         })),
       };
 
-      logger.info('[Sync/Push] Payload preparado:', {
-        deviceId: payload.deviceId,
-        changesCount: payload.changes.length,
-        firstChange: payload.changes[0] ? {
-          entityType: payload.changes[0].entityType,
-          operation: payload.changes[0].operation,
-          entityId: payload.changes[0].entityId,
-        } : null,
-      });
-
       // Enviar para o servidor
       const response = await apiService.pushChanges(payload);
 
@@ -316,8 +285,7 @@ class SyncService {
       conflicts = response.conflicts || [];
       
       // CORREÇÃO: Atualizar versões locais com base no updatedVersions retornado pelo servidor
-      // Isso evita que o próximo push do mesmo registro seja visto como conflito
-      const updatedVersions = (response as any).updatedVersions || [];
+      const updatedVersions = response.updatedVersions || [];
       for (const uv of updatedVersions) {
         try {
           const tableName = this.getTableName(uv.entityType as EntityType);
@@ -330,13 +298,12 @@ class SyncService {
         }
       }
 
-      // Marcar mudanças como sincronizadas
-      for (const change of pendingChanges) {
-        await databaseService.markAsSynced(change.id);
-        pushed++;
-      }
+      // Batch mark changes as synced
+      const changeIds = pendingChanges.map(c => c.id);
+      await this.batchMarkAsSynced(changeIds);
+      pushed = changeIds.length;
 
-      // Atualizar status das entidades locais
+      // Atualizar status das entidades locais (batched)
       await this.markEntitiesAsSynced(pendingChanges);
 
       logger.info('[Sync/Push] Mudanças enviadas', { pushed, conflicts: conflicts.length });
@@ -358,15 +325,6 @@ class SyncService {
     let pulled = 0;
 
     try {
-      // IMPORTANTE: Sincronizar token antes de cada requisição
-      const savedToken = await AsyncStorage.getItem(TOKEN_KEY);
-      if (savedToken) {
-        apiService.setToken(savedToken);
-        logger.info('[Sync/Pull] Token sincronizado com ApiService');
-      } else {
-        logger.error('[Sync/Pull] ❌ Token NÃO encontrado no AsyncStorage!');
-      }
-
       const metadata = await databaseService.getSyncMetadata();
       
       const payload = {
@@ -374,8 +332,6 @@ class SyncService {
         deviceKey: metadata.deviceKey,
         lastSyncAt: metadata.lastSyncAt || new Date(0).toISOString(),
       };
-
-      logger.info('[Sync/Pull] Buscando mudanças...', { lastSyncAt: payload.lastSyncAt });
 
       const response = await apiService.pullChanges(payload);
 
@@ -392,10 +348,10 @@ class SyncService {
         (changes.locacoes?.length || 0) +
         (changes.cobrancas?.length || 0) +
         (changes.rotas?.length || 0) +
-        ((changes as any).usuarios?.length || 0);  // Incluir usuários
+        (changes.usuarios?.length || 0);
 
       // Avisar se o dispositivo está muito tempo sem sync (servidor truncou o payload)
-      if ((response as any).isStale) {
+      if (response.isStale) {
         logger.warn(
           '[Sync/Pull] AVISO: dispositivo sem sync há mais de 30 dias. ' +
           'Dados podem estar incompletos — usando snapshot para resync completo.'
@@ -411,12 +367,10 @@ class SyncService {
         const snapshotResult = await this.syncFromSnapshot();
         if (snapshotResult) {
           pulled += snapshotResult;
-          logger.info('[Sync/Pull] Snapshot aplicado com sucesso');
         }
       }
 
       if (pulled > 0) {
-        logger.info('[Sync/Pull] Aplicando mudanças...', { count: pulled });
         await databaseService.applyRemoteChanges(response);
       }
 
@@ -444,10 +398,6 @@ class SyncService {
       
       // Se já tem deviceId e deviceKey no SyncMetadata, verificar se ainda é válido
       if (metadata.deviceId && metadata.deviceKey) {
-        logger.info('[Sync] Dispositivo já registrado no SyncMetadata:', {
-          deviceId: metadata.deviceId,
-          deviceKey: metadata.deviceKey.substring(0, 20) + '...'
-        });
         return true;
       }
 
@@ -457,16 +407,13 @@ class SyncService {
       const savedDeviceName = await AsyncStorage.getItem('@device:name');
       
       if (savedDeviceId && savedDeviceKey) {
-        logger.info('[Sync] Encontrado deviceKey no AsyncStorage, sincronizando com SyncMetadata...');
         // Salvar no SyncMetadata para uso futuro
         await databaseService.setDeviceId(savedDeviceId, savedDeviceName || 'Dispositivo', savedDeviceKey);
-        logger.info('[Sync] SyncMetadata atualizado com deviceKey do AsyncStorage');
         return true;
       }
 
-      // Se não tem deviceKey em nenhum lugar, precisa registrar
-      // Mas isso só deve acontecer se o dispositivo ainda não foi ativado
-      logger.warn('[Sync] Dispositivo não registrado. Precisa de ativação.');
+      // Se não tem deviceKey em nenhum lugar, precisa de ativação
+      logger.warn('[Sync] Dispositivo não registrado. Precisa de ativação via PIN.');
       return false;
     } catch (error) {
       logger.error('[Sync] Erro ao verificar registro:', error);
@@ -474,148 +421,68 @@ class SyncService {
     }
   }
 
-  /**
-   * Registra o dispositivo no servidor
-   * DEPRECATED: O fluxo correto agora é:
-   * 1. Admin cria dispositivo no painel web (com chave DEV-XXXXXX e senha de 6 dígitos)
-   * 2. Mobile ativa com POST /api/dispositivos/ativar (usando chave + senha)
-   * Este método ainda funciona via /api/equipamentos (legado) mas deve ser migrado.
-   */
-  async registerDevice(): Promise<boolean> {
-    try {
-      logger.info('[Sync] ====== INICIANDO REGISTRO DE DISPOSITIVO (legado) ======');
-      logger.warn('[Sync] ⚠️ registerDevice() é legado — use fluxo de ativação com PIN');
-
-      // Gerar ID e chave únicos
-      const deviceId = await this.generateDeviceId();
-      const deviceKey = await this.generateDeviceKey();
-      const deviceName = await this.getDeviceName();
-      const deviceType = this.getDeviceType();
-
-      logger.info('[Sync] Dados do dispositivo gerados:', {
-        deviceId,
-        deviceKey: deviceKey.substring(0, 20) + '...',
-        deviceName,
-        deviceType,
-      });
-
-      // Registrar no servidor (endpoint legado — ainda funciona com aviso de deprecated)
-      logger.info('[Sync] Enviando requisição para API (legado /api/equipamentos)...');
-      const response = await apiService.registrarEquipamento({
-        id: deviceId,
-        nome: deviceName,
-        chave: deviceKey,
-        tipo: deviceType,
-        dataCadastro: new Date().toISOString(),
-      });
-
-      logger.info('[Sync] Resposta da API:', {
-        success: response.success,
-        error: response.error,
-        statusCode: response.statusCode,
-        data: response.data,
-      });
-
-      if (!response.success) {
-        logger.error('[Sync] Falha ao registrar dispositivo:', response.error);
-        return false;
-      }
-
-      // Salvar localmente
-      await databaseService.setDeviceId(deviceId, deviceName, deviceKey);
-
-      logger.info('[Sync] ====== DISPOSITIVO REGISTRADO COM SUCESSO (legado) ======', { deviceId, deviceName });
-
-      return true;
-    } catch (error) {
-      logger.error('[Sync] ERRO CRÍTICO ao registrar dispositivo:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Gera ID único do dispositivo
-   */
-  private async generateDeviceId(): Promise<string> {
-    const existingId = await databaseService.getDeviceId();
-    if (existingId) return existingId;
-
-    // Usar timestamp + random como ID único
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 10);
-    
-    return `dev_${timestamp}_${random}`;
-  }
-
-  /**
-   * Gera chave única do dispositivo
-   */
-  private async generateDeviceKey(): Promise<string> {
-    // Usar modelo + OS + timestamp
-    let model = 'unknown';
-    let os = 'unknown';
-    
-    try {
-      model = (Device as any).modelName || (Device as any).deviceName || 'device';
-      os = (Device as any).osName || 'mobile';
-    } catch {
-      // Ignorar erros
-    }
-    
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 10);
-    
-    return `${model}_${os}_${timestamp}_${random}`.replace(/\s+/g, '_').toLowerCase();
-  }
-
-  /**
-   * Obtém nome do dispositivo
-   */
-  private async getDeviceName(): Promise<string> {
-    let deviceName = 'Dispositivo';
-    let model = '';
-    
-    try {
-      deviceName = (Device as any).deviceName || (Device as any).modelName || 'Dispositivo';
-      model = (Device as any).modelName || '';
-    } catch {
-      // Ignorar erros
-    }
-    
-    return model ? `${deviceName} (${model})` : deviceName;
-  }
-
-  /**
-   * Determina tipo do dispositivo
-   */
-  private getDeviceType(): 'Celular' | 'Tablet' | 'Outro' {
-    // Fallback simples: assumir celular
-    return 'Celular';
-  }
+  // NOTE: registerDevice() and its helper methods (generateDeviceId, generateDeviceKey,
+  // getDeviceName, getDeviceType) have been REMOVED.
+  // The new activation flow is:
+  //   1. Admin creates device on web panel (with DEV-XXXXXX key and 6-digit PIN)
+  //   2. Mobile activates via POST /api/dispositivos/ativar (using key + PIN)
+  // See: DeviceActivationScreen, ativarDispositivo() in ApiService.
 
   // ==========================================================================
   // AUXILIARES
   // ==========================================================================
 
   /**
-   * Marca entidades locais como sincronizadas
+   * Batch mark change logs as synced — single SQL statement instead of N individual calls.
+   */
+  private async batchMarkAsSynced(changeIds: string[]): Promise<void> {
+    if (changeIds.length === 0) return;
+    try {
+      const now = new Date().toISOString();
+      const placeholders = changeIds.map(() => '?').join(',');
+      await databaseService.runAsync(
+        `UPDATE change_log SET synced = 1, syncedAt = ? WHERE id IN (${placeholders})`,
+        [now, ...changeIds]
+      );
+    } catch (error) {
+      logger.error('[Sync] Erro ao marcar changelogs como sincronizados (batch):', error);
+      // Fallback: mark one by one
+      for (const id of changeIds) {
+        try {
+          await databaseService.markAsSynced(id);
+        } catch (err) {
+          logger.error(`[Sync] Erro ao marcar changelog ${id}:`, err);
+        }
+      }
+    }
+  }
+
+  /**
+   * Marca entidades locais como sincronizadas (batched by entity type)
    */
   private async markEntitiesAsSynced(changes: ChangeLog[]): Promise<void> {
-    for (const change of changes) {
-      try {
-        const tableName = this.getTableName(change.entityType);
-        const now = new Date().toISOString();
+    if (changes.length === 0) return;
 
+    // Group by entity type
+    const byType: Record<string, string[]> = {};
+    for (const change of changes) {
+      if (!byType[change.entityType]) byType[change.entityType] = [];
+      byType[change.entityType].push(change.entityId);
+    }
+
+    const now = new Date().toISOString();
+
+    // Batch update per type
+    for (const [entityType, ids] of Object.entries(byType)) {
+      try {
+        const tableName = this.getTableName(entityType as EntityType);
+        const placeholders = ids.map(() => '?').join(',');
         await databaseService.runAsync(
-          `UPDATE ${tableName} 
-           SET syncStatus = 'synced', 
-               lastSyncedAt = ?, 
-               needsSync = 0 
-           WHERE id = ?`,
-          [now, change.entityId]
+          `UPDATE ${tableName} SET syncStatus = 'synced', lastSyncedAt = ?, needsSync = 0 WHERE id IN (${placeholders})`,
+          [now, ...ids]
         );
       } catch (error) {
-        logger.error(`[Sync] Erro ao marcar ${change.entityType}:${change.entityId}:`, error);
+        logger.error(`[Sync] Erro ao marcar ${entityType} como synced (batch):`, error);
       }
     }
   }

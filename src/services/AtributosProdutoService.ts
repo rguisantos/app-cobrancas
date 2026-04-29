@@ -11,7 +11,7 @@ import { apiService } from './ApiService';
 export type TipoAtributo = 'tipo' | 'descricao' | 'tamanho';
 
 export interface AtributoItem {
-  id: string | number;
+  id: string;
   nome: string;
 }
 
@@ -128,7 +128,7 @@ class AtributosProdutoService {
   /**
    * Atualiza um item existente
    */
-  async atualizar(tipo: TipoAtributo, id: string | number, novoNome: string): Promise<AtributoItem | null> {
+  async atualizar(tipo: TipoAtributo, id: string, novoNome: string): Promise<AtributoItem | null> {
     try {
       const idStr = String(id);
       
@@ -155,7 +155,7 @@ class AtributosProdutoService {
   /**
    * Remove um item (soft delete)
    */
-  async remover(tipo: TipoAtributo, id: string | number): Promise<boolean> {
+  async remover(tipo: TipoAtributo, id: string): Promise<boolean> {
     try {
       const idStr = String(id);
       
@@ -182,7 +182,7 @@ class AtributosProdutoService {
   /**
    * Busca item por ID
    */
-  async getById(tipo: TipoAtributo, id: string | number): Promise<AtributoItem | null> {
+  async getById(tipo: TipoAtributo, id: string): Promise<AtributoItem | null> {
     try {
       const itens = await this.getAll(tipo);
       return itens.find(item => String(item.id) === String(id)) || null;
@@ -195,7 +195,7 @@ class AtributosProdutoService {
   /**
    * Verifica se nome já existe
    */
-  async nomeExiste(tipo: TipoAtributo, nome: string, excluirId?: string | number): Promise<boolean> {
+  async nomeExiste(tipo: TipoAtributo, nome: string, excluirId?: string): Promise<boolean> {
     try {
       const itens = await this.getAll(tipo);
       const nomeLower = nome.toLowerCase().trim();

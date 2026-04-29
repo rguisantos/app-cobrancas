@@ -70,7 +70,7 @@ export default function ProdutosStack() {
   const canEditProduto = (): boolean => {
     if (!user) return false;
     if (user.tipoPermissao === 'Administrador') return true;
-    return hasPermission('todosCadastros', 'mobile');
+    return hasPermission('produtos', 'mobile');
   };
 
   const canAlterarRelogio = (): boolean => {
@@ -196,7 +196,7 @@ export function useProdutoNavigate() {
   }, [navigation]);
 
   const toForm = useCallback((modo: 'criar' | 'editar', produtoId?: string) => {
-    if (!hasPermission('todosCadastros', 'mobile') && user?.tipoPermissao !== 'Administrador') {
+    if (!hasPermission('produtos', 'mobile') && user?.tipoPermissao !== 'Administrador') {
       Alert.alert('Aviso', 'Você não tem permissão para editar produtos');
       return;
     }

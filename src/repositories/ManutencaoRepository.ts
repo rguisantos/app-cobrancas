@@ -4,6 +4,7 @@
  */
 
 import { databaseService } from '../services/DatabaseService';
+import { generateId } from '../utils/database';
 
 export interface RegistroManutencao {
   id: string;
@@ -29,12 +30,8 @@ export interface ManutencaoFilters {
 }
 
 class ManutencaoRepository {
-  private generateId(): string {
-    return `manut_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-  }
-
   async registrar(dados: Omit<RegistroManutencao, 'id' | 'createdAt'>): Promise<RegistroManutencao> {
-    const id = this.generateId();
+    const id = generateId('manut');
     const registro: RegistroManutencao = {
       ...dados,
       id,

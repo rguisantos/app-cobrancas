@@ -13,6 +13,7 @@ import {
   EntityType 
 } from '../types';
 import logger from '../utils/logger';
+import { parseJSON } from '../utils/database';
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -30,7 +31,7 @@ export interface UsuarioLogin {
   nome: string;
   tipoPermissao: TipoPermissaoUsuario;
   permissoes: PermissoesUsuario;
-  rotasPermitidas: Array<string | number>;
+  rotasPermitidas: string[];
   status: 'Ativo' | 'Inativo';
 }
 
@@ -292,19 +293,19 @@ class UsuarioRepository {
           nome: (result as any).nome,
           tipoPermissao: (result as any).tipoPermissao,
           permissoes: {
-            web: this.parseJSON((result as any).permissoesWeb, {
+            web: parseJSON((result as any).permissoesWeb, {
               clientes: false, produtos: false, rotas: false,
               locacaoRelocacaoEstoque: false, cobrancas: false, manutencoes: false, relogios: false,
               relatorios: false, dashboard: true, agenda: false, mapa: false,
               adminCadastros: false, adminUsuarios: false, adminDispositivos: false, adminSincronizacao: false, adminAuditoria: false,
             }),
-            mobile: this.parseJSON((result as any).permissoesMobile, {
+            mobile: parseJSON((result as any).permissoesMobile, {
               clientes: false, produtos: false,
               alteracaoRelogio: false, locacaoRelocacaoEstoque: false, cobrancasFaturas: true, manutencoes: false,
               relatorios: false, sincronizacao: true,
             }),
           },
-          rotasPermitidas: this.parseJSON((result as any).rotasPermitidas, []),
+          rotasPermitidas: parseJSON((result as any).rotasPermitidas, []),
           status: (result as any).status,
         };
       }
@@ -422,23 +423,11 @@ class UsuarioRepository {
       ...data,
       bloqueado: data.bloqueado === 1 || data.bloqueado === true,
       permissoes: {
-        web: this.parseJSON(data.permissoesWeb, {}),
-        mobile: this.parseJSON(data.permissoesMobile, {}),
+        web: parseJSON(data.permissoesWeb, {}),
+        mobile: parseJSON(data.permissoesMobile, {}),
       },
-      rotasPermitidas: this.parseJSON(data.rotasPermitidas, []),
+      rotasPermitidas: parseJSON(data.rotasPermitidas, []),
     };
-  }
-
-  /**
-   * Parseia JSON com fallback
-   */
-  private parseJSON<T>(value: string | undefined | null, fallback: T): T {
-    if (!value) return fallback;
-    try {
-      return JSON.parse(value);
-    } catch {
-      return fallback;
-    }
   }
 
   /**

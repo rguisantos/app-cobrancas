@@ -162,6 +162,12 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   const [progress, setProgress] = useState<SyncState['progress']>(null);
   const [conflitosPendentes, setConflitosPendentes] = useState<SyncConflict[]>([]);
   const [mudancasPendentes, setMudancasPendentes] = useState(0);
+  const [pendingItemsState, setPendingItemsState] = useState<SyncContextData['pendingItems']>({
+    clientes: 0,
+    produtos: 0,
+    locacoes: 0,
+    cobrancas: 0,
+  });
   
   const [dispositivo, setDispositivo] = useState<SyncState['dispositivo']>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -172,8 +178,9 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   const [dispositivoPendenteId, setDispositivoPendenteId] = useState<string | null>(null);
   const [ativacaoErro, setAtivacaoErro] = useState<string | null>(null);
 
-  // Timer para auto sync
-  const [autoSyncTimer, setAutoSyncTimer] = useState<NodeJS.Timeout | null>(null);
+  // Timer para auto sync — useRef para evitar memory leak
+  // (useState causaria re-render e não limparia o interval anterior corretamente)
+  const autoSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // ==========================================================================
   // INICIALIZAÇÃO
@@ -204,6 +211,9 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       // Contar mudanças pendentes
       const changes = await databaseService.getPendingChanges();
       setMudancasPendentes(changes.length);
+      
+      // Contar mudanças pendentes por tipo de entidade
+      await atualizarPendingItems();
       
       setStatus('synced');
       setLastSyncMessage('Sincronização inicializada');
@@ -397,6 +407,9 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       // Atualizar contagem de mudanças pendentes
       const restantes = await databaseService.getPendingChanges();
       setMudancasPendentes(restantes.length);
+      
+      // Atualizar contagem por tipo de entidade
+      await atualizarPendingItems();
       // Limpar progresso após 2 segundos
       setTimeout(() => setProgress(null), 2000);
 
@@ -741,6 +754,23 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   // ==========================================================================
 
   /**
+   * Atualiza contagem de mudanças pendentes por tipo de entidade
+   */
+  const atualizarPendingItems = useCallback(async () => {
+    try {
+      const counts = await databaseService.getPendingChangesCountByEntity();
+      setPendingItemsState({
+        clientes: counts['cliente'] || 0,
+        produtos: counts['produto'] || 0,
+        locacoes: counts['locacao'] || 0,
+        cobrancas: counts['cobranca'] || 0,
+      });
+    } catch (error) {
+      console.error('[SyncContext] Erro ao contar pending items:', error);
+    }
+  }, []);
+
+  /**
    * Ativa ou desativa auto sync
    */
   const ativarAutoSync = useCallback((ativo: boolean) => {
@@ -749,12 +779,11 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       autoSyncEnabled: ativo,
     }));
 
-    // Limpar timer existente
-    if (autoSyncTimer) {
-      clearInterval(autoSyncTimer);
-      setAutoSyncTimer(null);
-  
-  }
+    // Limpar timer existente via ref (evita memory leak)
+    if (autoSyncTimerRef.current) {
+      clearInterval(autoSyncTimerRef.current);
+      autoSyncTimerRef.current = null;
+    }
 
     // Criar novo timer se ativo
     if (ativo) {
@@ -763,10 +792,9 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
         sincronizar();
       }, syncConfig.autoSyncInterval * 60 * 1000);
 
-      setAutoSyncTimer(timer);
-  
-  }
-  }, [autoSyncTimer, syncConfig.autoSyncInterval, sincronizar]);
+      autoSyncTimerRef.current = timer;
+    }
+  }, [syncConfig.autoSyncInterval, sincronizar]);
 
   /**
    * Define intervalo do auto sync
@@ -791,12 +819,12 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   useEffect(() => {
     inicializar();
 
-    // Cleanup
+    // Cleanup — limpar timer via ref
     return () => {
-      if (autoSyncTimer) {
-        clearInterval(autoSyncTimer);
-    
-  }
+      if (autoSyncTimerRef.current) {
+        clearInterval(autoSyncTimerRef.current);
+        autoSyncTimerRef.current = null;
+      }
     };
   }, [inicializar]);
 
@@ -804,9 +832,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   useEffect(() => {
     if (syncConfig.autoSyncEnabled && dispositivo?.registrado) {
       ativarAutoSync(true);
-  
-  }
-  }, [syncConfig.autoSyncEnabled, dispositivo?.registrado]);
+    }
+  }, [syncConfig.autoSyncEnabled, dispositivo?.registrado, ativarAutoSync]);
 
   // ==========================================================================
   // ESTADO DO CONTEXT
@@ -860,12 +887,7 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
 
     // Propriedades adicionais para compatibilidade
     lastSync: lastSyncAt,
-    pendingItems: {
-      clientes: 0,
-      produtos: 0,
-      locacoes: 0,
-      cobrancas: 0,
-    },
+    pendingItems: pendingItemsState,
   };
 
   return (

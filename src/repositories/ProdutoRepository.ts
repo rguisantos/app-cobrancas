@@ -12,21 +12,22 @@ import {
   ProdutoHistoricoRelogio,
   StatusProduto
 } from '../types';
+import { generateId } from '../utils/database';
 
 // ============================================================================
 // INTERFACES E TIPOS
 // ============================================================================
 
 export interface ProdutoFilters {
-  tipoId?: string | number;
-  descricaoId?: string | number;
-  tamanhoId?: string | number;
+  tipoId?: string;
+  descricaoId?: string;
+  tamanhoId?: string;
   statusProduto?: StatusProduto;
   conservacao?: string;
   estabelecimento?: string;
   termoBusca?: string; // Busca por identificador, tipo, descrição
   comLocacaoAtiva?: boolean; // true = locados, false = disponíveis
-  rotaId?: string | number; // Filtro por rota do cliente (se locado)
+  rotaId?: string; // Filtro por rota do cliente (se locado)
 }
 
 export interface ProdutoComLocacao extends Produto {
@@ -206,7 +207,7 @@ class ProdutoRepository {
       // Gerar ID único se não existir
       const produtoCompleto: Produto = {
         ...produtoSemRelacionamentos,
-        id: produto.id || this.generateId(),
+        id: produto.id || generateId('produto'),
         tipo: this.entityType,
         syncStatus: 'pending',
         lastSyncedAt: undefined,
@@ -466,7 +467,7 @@ class ProdutoRepository {
       }
       
       const historico: ProdutoHistoricoRelogio = {
-        id: this.generateId(),
+        id: generateId('produto'),
         produtoId,
         relogioAnterior: produto.numeroRelogio,
         relogioNovo: novoNumeroRelogio,
@@ -529,14 +530,6 @@ class ProdutoRepository {
       numeroRelogio: produto.numeroRelogio,
       estaLocado: !!(produto as any).estaLocado,
     };
-  }
-
-  /**
-   * Gera ID único para o produto
-   */
-  private generateId(): string {
-    return `produto_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
   }
 
   /**

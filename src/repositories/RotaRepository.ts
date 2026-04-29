@@ -6,6 +6,7 @@
 
 import { databaseService } from '../services/DatabaseService';
 import { Rota } from '../types';
+import { generateId } from '../utils/database';
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -75,7 +76,7 @@ class RotaRepository {
   /**
    * Busca rota por ID
    */
-  async getById(id: string | number): Promise<Rota | null> {
+  async getById(id: string): Promise<Rota | null> {
     try {
       const rows = await databaseService.getAllAsync<any>(
         `SELECT id, descricao, status, cor, regiao, ordem, observacao, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt
@@ -93,7 +94,7 @@ class RotaRepository {
   /**
    * Verifica se já existe uma rota com a descrição (case-insensitive)
    */
-  async existeComDescricao(descricao: string, excludeId?: string | number): Promise<boolean> {
+  async existeComDescricao(descricao: string, excludeId?: string): Promise<boolean> {
     try {
       const query = excludeId
         ? `SELECT COUNT(*) as cnt FROM rotas WHERE descricao = ? AND id != ? AND deletedAt IS NULL`
@@ -112,7 +113,7 @@ class RotaRepository {
    */
   async save(rota: Partial<Rota>): Promise<Rota> {
     try {
-      const id = String(rota.id || `rota_${Date.now()}`);
+      const id = String(rota.id || generateId('rota'));
       const descricao = rota.descricao || '';
       const status = rota.status || 'Ativo';
       const cor = rota.cor || '#2563EB';
@@ -157,7 +158,7 @@ class RotaRepository {
   /**
    * Atualiza rota existente — preserva campos de sync e createdAt
    */
-  async update(rota: Partial<Rota> & { id: string | number }): Promise<Rota | null> {
+  async update(rota: Partial<Rota> & { id: string }): Promise<Rota | null> {
     try {
       const existing = await this.getById(rota.id);
       if (!existing) {
@@ -205,7 +206,7 @@ class RotaRepository {
   /**
    * Remove rota (soft delete) e desvincula clientes
    */
-  async delete(id: string | number): Promise<boolean> {
+  async delete(id: string): Promise<boolean> {
     try {
       const existing = await this.getById(id);
       if (!existing) {
@@ -306,7 +307,7 @@ class RotaRepository {
   /**
    * Conta total de clientes vinculados a uma rota
    */
-  async countClientesByRota(rotaId: string | number): Promise<number> {
+  async countClientesByRota(rotaId: string): Promise<number> {
     try {
       const rows = await databaseService.getAllAsync<{ cnt: number }>(
         `SELECT COUNT(*) as cnt FROM clientes WHERE rotaId = ? AND deletedAt IS NULL`,

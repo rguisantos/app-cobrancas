@@ -134,7 +134,8 @@ export default function HomeScreen() {
   }, [navigation]);
 
   // ─── permissões ───────────────────────────────────────────────────────────
-  const podeCadastrar  = isAdmin() || hasPermission('todosCadastros', 'mobile');
+  const podeCadastrarCliente = isAdmin() || hasPermission('clientes', 'mobile');
+  const podeCadastrarProduto = isAdmin() || hasPermission('produtos', 'mobile');
   const podeLocar      = isAdmin() || hasPermission('locacaoRelocacaoEstoque', 'mobile');
   const podeCobrar     = isAdmin() || hasPermission('cobrancasFaturas', 'mobile');
   const podeRelogio    = isAdmin() || hasPermission('alteracaoRelogio', 'mobile');
@@ -215,10 +216,10 @@ export default function HomeScreen() {
 
   // ─── ações rápidas ───────────────────────────────────────────────────────
   const quickActions = [
-    { key: 'cliente', label: 'Novo Cliente', icon: 'person-add' as const, color: '#2563EB', visible: podeCadastrar, onPress: () => navModal('ClienteForm', { modo: 'criar' }) },
+    { key: 'cliente', label: 'Novo Cliente', icon: 'person-add' as const, color: '#2563EB', visible: podeCadastrarCliente, onPress: () => navModal('ClienteForm', { modo: 'criar' }) },
     { key: 'locacao', label: 'Nova Locação', icon: 'add-circle' as const, color: '#9333EA', visible: podeLocar, onPress: () => nav('Clientes') },
     { key: 'cobranca', label: 'Cobrança', icon: 'cash' as const, color: '#16A34A', visible: podeCobrar, onPress: () => nav('Cobrancas') },
-    { key: 'produto', label: 'Novo Produto', icon: 'cube' as const, color: '#EA580C', visible: podeCadastrar, onPress: () => navModal('ProdutoForm', { modo: 'criar' }) },
+    { key: 'produto', label: 'Novo Produto', icon: 'cube' as const, color: '#EA580C', visible: podeCadastrarProduto, onPress: () => navModal('ProdutoForm', { modo: 'criar' }) },
     { key: 'relogio', label: 'Alterar Relógio', icon: 'timer' as const, color: '#0891B2', visible: podeRelogio, onPress: () => nav('Produtos') },
     { key: 'config', label: 'Configurações', icon: 'settings' as const, color: '#64748B', visible: isAdmin(), onPress: () => navModal('Settings') },
   ].filter(a => a.visible);

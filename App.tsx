@@ -3,7 +3,7 @@
  * Ponto de entrada principal do aplicativo
  * 
  * Responsabilidades:
- * - Configurar todos os Providers (Contexts)
+ * - Configurar todos os Providers via AppProviders
  * - Configurar Navigation
  * - Error Boundary
  * - Suporte white label via BrandingProvider
@@ -19,16 +19,9 @@ import * as Updates from 'expo-updates';
 // Navigation
 import AppNavigator from './src/navigation/AppNavigator';
 
-// Contexts
+// Composite Provider (replaces 11 levels of inline nesting)
+import { AppProviders } from './src/providers/AppProviders';
 import { DatabaseProvider, useDatabase } from './src/contexts/DatabaseContext';
-import { AuthProvider, useAuth } from './src/contexts/AuthContext';
-import { SyncProvider } from './src/contexts/SyncContext';
-import { DashboardProvider } from './src/contexts/DashboardContext';
-import { LocacaoProvider } from './src/contexts/LocacaoContext';
-import { ClienteProvider } from './src/contexts/ClienteContext';
-import { ProdutoProvider } from './src/contexts/ProdutoContext';
-import { CobrancaProvider } from './src/contexts/CobrancaContext';
-import { RotaProvider } from './src/contexts/RotaContext';
 
 // White Label
 import { BrandingProvider } from './src/components/BrandingProvider';
@@ -197,23 +190,6 @@ function AppContent() {
 }
 
 // ============================================================================
-// DASHBOARD PROVIDER COM AUTENTICAÇÃO
-// ============================================================================
-
-function DashboardProviderWithAuth({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
-  
-  const usuarioNome = user?.nome || 'Usuário';
-  const usuarioTipo = user?.tipoPermissao || 'Administrador';
-  
-  return (
-    <DashboardProvider usuarioNome={usuarioNome} usuarioTipo={usuarioTipo}>
-      {children}
-    </DashboardProvider>
-  );
-}
-
-// ============================================================================
 // APP WRAPPER - AGUARDA BANCO PRONTO
 // ============================================================================
 
@@ -259,35 +235,11 @@ function AppWithDatabase() {
     return <LoadingScreen />;
   }
 
-  // Providers em ordem correta (mais externo para mais interno)
-  // AuthProvider deve ser o mais externo para que useAuth() funcione nos providers internos
+  // AppProviders handles all context nesting cleanly
   return (
-    <AuthProvider>
-      <SyncProvider
-        config={{
-          autoSyncEnabled: true,
-          autoSyncInterval: ENV.SYNC_INTERVAL,
-          syncOnAppStart: true,
-          syncOnAppResume: true,
-          warnBeforeLargeSync: true,
-          maxRecordsPerSync: ENV.MAX_RECORDS_PER_SYNC,
-        }}
-      >
-        <DashboardProviderWithAuth>
-          <LocacaoProvider>
-            <ClienteProvider>
-              <ProdutoProvider>
-                <CobrancaProvider>
-                  <RotaProvider>
-                    <AppContent />
-                  </RotaProvider>
-                </CobrancaProvider>
-              </ProdutoProvider>
-            </ClienteProvider>
-          </LocacaoProvider>
-        </DashboardProviderWithAuth>
-      </SyncProvider>
-    </AuthProvider>
+    <AppProviders>
+      <AppContent />
+    </AppProviders>
   );
 }
 

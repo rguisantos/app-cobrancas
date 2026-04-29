@@ -32,7 +32,7 @@ interface LoginResponse {
     role: string;
     tipoPermissao: TipoPermissaoUsuario;
     permissoes: PermissoesUsuario;
-    rotasPermitidas: Array<string | number>;
+    rotasPermitidas: string[];
     status: 'Ativo' | 'Inativo';
   };
 }
@@ -50,6 +50,32 @@ interface RegisterResponse {
 interface LockoutInfo {
   locked: boolean;
   minutosRestantes?: number;
+}
+
+/**
+ * Interface para dados de usuário armazenados no banco local (SQLite).
+ * Campos JSON são armazenados como string no banco.
+ */
+interface StoredUsuarioData {
+  id: string;
+  tipo: string;
+  nome: string;
+  email: string;
+  senha: string;
+  cpf: string;
+  telefone: string;
+  tipoPermissao: TipoPermissaoUsuario;
+  permissoesWeb: string;
+  permissoesMobile: string;
+  rotasPermitidas: string;
+  status: 'Ativo' | 'Inativo';
+  bloqueado: boolean | number;
+  syncStatus: string;
+  needsSync: boolean | number;
+  version: number;
+  deviceId: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const PERMISSOES_PADRAO: Record<TipoPermissaoUsuario, PermissoesUsuario> = {
@@ -221,16 +247,24 @@ class AuthService {
 
   /**
    * Gera um token local seguro para autenticação offline.
-   * Usa timestamp + random bytes para garantir unicidade e não-previsibilidade.
+   * Formato JWT-like (header.payload.signature) para não revelar que é token local.
+   * O prefixo "ey" imita o header base64 de um JWT real.
    */
   private async gerarTokenLocal(usuarioId: string): Promise<string> {
-    // Token local com estrutura não-óbvia, criptograficamente seguro
     const randomPart = Array.from(crypto.getRandomValues(new Uint8Array(32)))
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
     const timestamp = Date.now().toString(36);
     const userIdHash = usuarioId.slice(0, 8);
-    return `loc_${timestamp}_${userIdHash}_${randomPart}`;
+    // Format: ey<header-like>.<payload>.<signature> — looks like a JWT
+    return `ey${timestamp}.${userIdHash}${randomPart.slice(0, 16)}.${randomPart}`;
+  }
+
+  /**
+   * Verifica se o token foi gerado localmente (offline) pelo formato JWT-like.
+   */
+  private isLocalToken(token: string): boolean {
+    return token.startsWith('ey') && token.split('.').length === 3;
   }
 
   /**
@@ -239,11 +273,11 @@ class AuthService {
    */
   private async salvarUsuarioLocal(user: LoginResponse['user'], password: string): Promise<void> {
     try {
-      const usuarioExistente = await databaseService.getUsuarioByEmail(user.email);
+      const usuarioExistente = await databaseService.getUsuarioByEmail(user.email) as StoredUsuarioData | null;
 
       // Reutilizar hash existente se ainda bate; caso contrário gerar novo hash.
       let senhaHash: string;
-      const hashExistente: string | undefined = (usuarioExistente as any)?.senha;
+      const hashExistente = usuarioExistente?.senha;
       if (hashExistente && hashExistente.startsWith('$2')) {
         const bate = await bcrypt.compare(password, hashExistente);
         senhaHash = bate ? hashExistente : await hashSenha(password);
@@ -251,14 +285,14 @@ class AuthService {
         senhaHash = await hashSenha(password);
       }
 
-      const dadosUsuario = {
+      const dadosUsuario: StoredUsuarioData = {
         id: user.id,
         tipo: 'usuario',
         nome: user.nome,
         email: user.email,
         senha: senhaHash,
-        cpf: (usuarioExistente as any)?.cpf || '',
-        telefone: (usuarioExistente as any)?.telefone || '',
+        cpf: usuarioExistente?.cpf || '',
+        telefone: usuarioExistente?.telefone || '',
         tipoPermissao: user.tipoPermissao,
         permissoesWeb: JSON.stringify(user.permissoes.web),
         permissoesMobile: JSON.stringify(user.permissoes.mobile),
@@ -267,9 +301,9 @@ class AuthService {
         bloqueado: false,
         syncStatus: 'synced',
         needsSync: false,
-        version: (usuarioExistente as any)?.version || 1,
+        version: usuarioExistente?.version || 1,
         deviceId: '',
-        createdAt: (usuarioExistente as any)?.createdAt || new Date().toISOString(),
+        createdAt: usuarioExistente?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
@@ -282,8 +316,9 @@ class AuthService {
 
   private async criarUsuarioPadrao(email: string, password: string) {
     const nome = email.split('@')[0];
-    const isAdmin = email.toLowerCase().includes('admin');
-    const tipoPermissao: TipoPermissaoUsuario = isAdmin ? 'Administrador' : 'AcessoControlado';
+    // Segurança: sempre criar como AcessoControlado.
+    // Promoção para Administrador deve ser feita manualmente via painel web.
+    const tipoPermissao: TipoPermissaoUsuario = 'AcessoControlado';
     const senhaHash = await hashSenha(password);
 
     return usuarioRepository.save({
@@ -306,6 +341,11 @@ class AuthService {
     });
   }
 
+  /**
+   * @deprecated Registro mobile é um fluxo legado. Novos usuários devem ser
+   * criados via painel web e sincronizados para o mobile.
+   * Este método será removido em versão futura.
+   */
   async register(
     nome: string,
     email: string,
@@ -352,14 +392,14 @@ class AuthService {
 
   /**
    * Valida token:
-   * - Token real (Bearer): confirma com /api/auth/me; offline → fallback SecureStore.
-   * - Token local (loc_*): válido apenas se houver usuário no armazenamento.
+   * - Token real (Bearer JWT): confirma com /api/auth/me; offline → fallback SecureStore.
+   * - Token local (ey*.*.*): válido apenas se houver usuário no armazenamento.
    */
   async validateToken(token: string): Promise<boolean> {
     try {
       logger.info('Validando token');
 
-      if (token && token.startsWith('loc_')) {
+      if (token && this.isLocalToken(token)) {
         const userJson = await secureStorage.getUser();
         return !!userJson;
       }
@@ -388,7 +428,7 @@ class AuthService {
     const currentToken = await secureStorage.getAccessToken();
     
     // Token local não pode ser renovado via API
-    if (currentToken && currentToken.startsWith('loc_')) {
+    if (currentToken && this.isLocalToken(currentToken)) {
       // Renovar token local mantendo a sessão offline
       const userJson = await secureStorage.getUser();
       if (userJson) {
@@ -572,7 +612,10 @@ class AuthService {
 
         if (!adminExistente) {
           logger.info('Criando usuário admin padrão para desenvolvimento...');
-          const mockPassword = ENV.MOCK_PASSWORD || 'admin123';
+          if (!ENV.MOCK_PASSWORD) {
+            throw new Error('MOCK_PASSWORD não configurada. Defina MOCK_PASSWORD no .env para usar modo mock.');
+          }
+          const mockPassword = ENV.MOCK_PASSWORD;
           const senhaHash = await hashSenha(mockPassword);
 
           await databaseService.saveUsuario({

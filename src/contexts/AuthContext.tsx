@@ -63,7 +63,7 @@ export interface AuthContextType {
   
   // Utilitários
   hasPermission: (module: keyof PermissoesUsuario['web'] | keyof PermissoesUsuario['mobile'], platform: 'web' | 'mobile') => boolean;
-  canAccessRota: (rotaId: string | number) => boolean;
+  canAccessRota: (rotaId: string) => boolean;
   isAdmin: () => boolean;
 }
 
@@ -80,7 +80,7 @@ const toUsuario = (
     nome: string;
     tipoPermissao: TipoPermissaoUsuario;
     permissoes: PermissoesUsuario;
-    rotasPermitidas: Array<string | number>;
+    rotasPermitidas: string[];
     status: 'Ativo' | 'Inativo';
   }
 ): Usuario => ({
@@ -170,7 +170,7 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   // ==========================================================================
 
   useEffect(() => {
-    if (!token || token.startsWith('loc_')) return; // Não refresh tokens locais
+    if (!token || (token.startsWith('ey') && token.split('.').length === 3)) return; // Não refresh tokens locais
 
     const interval = setInterval(async () => {
       try {
@@ -370,7 +370,7 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
     return perms ? (perms as any)[module] ?? false : false;
   }, [user]);
 
-  const canAccessRota = useCallback((rotaId: string | number): boolean => {
+  const canAccessRota = useCallback((rotaId: string): boolean => {
     if (!user) return false;
     
     if (user.tipoPermissao === 'Administrador') return true;

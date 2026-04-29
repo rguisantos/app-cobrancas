@@ -110,7 +110,8 @@ export type AuthStackParamList = {
 export type AppTabsParamList = {
   Home: undefined;
   Clientes: undefined;
-  Produtos: undefined;  Cobrancas: undefined;
+  Produtos: undefined;
+  Cobrancas: undefined;
   Mais: undefined;
 };
 
@@ -228,7 +229,7 @@ function AppTabsNavigator() {
       <AppTabs.Screen name="Home" component={HomeScreen} />
       
       {/* Clientes - com permissão */}
-      {(!user || user.tipoPermissao === 'Administrador' || hasPermission('todosCadastros', 'mobile')) && (
+      {(!user || user.tipoPermissao === 'Administrador' || hasPermission('clientes', 'mobile')) && (
         <AppTabs.Screen 
           name="Clientes" 
           component={ClientesStack}
@@ -237,7 +238,7 @@ function AppTabsNavigator() {
       )}
       
       {/* Produtos - com permissão */}
-      {(!user || user.tipoPermissao === 'Administrador' || hasPermission('todosCadastros', 'mobile')) && (
+      {(!user || user.tipoPermissao === 'Administrador' || hasPermission('produtos', 'mobile')) && (
         <AppTabs.Screen 
           name="Produtos" 
           component={ProdutosStack}
@@ -677,13 +678,14 @@ export function useAuthNavigate() {
   const navigate = useCallback(<Screen extends keyof ModalStackParamList>(
     screen: Screen,
     params?: ModalStackParamList[Screen],
-    options?: { requirePermission?: boolean; rotaId?: string | number }
+    options?: { requirePermission?: boolean; rotaId?: string }
   ) => {
     // Verificar permissão se necessário
     if (options?.requirePermission && user?.tipoPermissao !== 'Administrador') {
       // Verificar permissão específica da tela
-      const permissionMap: Record<string, keyof PermissoesUsuario['mobile']> = {        'ClienteForm': 'todosCadastros',
-        'ProdutoForm': 'todosCadastros',
+      const permissionMap: Record<string, keyof PermissoesUsuario['mobile']> = {
+        'ClienteForm': 'clientes',
+        'ProdutoForm': 'produtos',
         'LocacaoForm': 'locacaoRelocacaoEstoque',
         'CobrancaConfirm': 'cobrancasFaturas',
         'ProdutoAlterarRelogio': 'alteracaoRelogio',
@@ -705,8 +707,8 @@ export function useAuthNavigate() {
   
   }
 
-    // Navegar normalmente
-    navigation.navigate(screen as any, params as any);
+    // Navegar com tipo seguro — o genérico <Screen> já restringe os tipos
+    navigation.navigate(screen, params);
   }, [navigation, user, hasPermission, canAccessRota]);
 
   return navigate;

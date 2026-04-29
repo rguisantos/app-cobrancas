@@ -22,10 +22,10 @@ export interface RotaState {
 
 export interface RotaContextData extends RotaState {
   carregarRotas: (filters?: RotaFilters) => Promise<void>;
-  selecionarRota: (id: string | number) => Promise<void>;
+  selecionarRota: (id: string) => Promise<void>;
   limparSelecao: () => void;
   salvarRota: (dados: Partial<Rota>) => Promise<Rota | null>;
-  excluirRota: (id: string | number) => Promise<boolean>;
+  excluirRota: (id: string) => Promise<boolean>;
   refresh: () => Promise<void>;
 }
 
@@ -50,6 +50,7 @@ export function RotaProvider({ children }: RotaProviderProps) {
   const [rotas, setRotas] = useState<Rota[]>([]);
   const [rotaSelecionada, setRotaSelecionada] = useState<Rota | null>(null);
   const [carregando, setCarregando] = useState(false);
+  // TODO: Add operation-specific loading (operacoes / isOperacao) like ClienteContext/ProdutoContext
   const [erro, setErro] = useState<string | null>(null);
 
   const carregarRotas = useCallback(async (filters?: RotaFilters) => {
@@ -67,7 +68,7 @@ export function RotaProvider({ children }: RotaProviderProps) {
     }
   }, []);
 
-  const selecionarRota = useCallback(async (id: string | number) => {
+  const selecionarRota = useCallback(async (id: string) => {
     setCarregando(true);
     try {
       const rota = await rotaRepository.getById(id);
@@ -94,7 +95,7 @@ export function RotaProvider({ children }: RotaProviderProps) {
 
       if (dados.id) {
         // Atualizar rota existente
-        rota = await rotaRepository.update(dados as Partial<Rota> & { id: string | number });
+        rota = await rotaRepository.update(dados as Partial<Rota> & { id: string });
       } else {
         // Criar nova rota — valores default para novos campos
         rota = await rotaRepository.save({
@@ -115,7 +116,7 @@ export function RotaProvider({ children }: RotaProviderProps) {
     }
   }, [carregarRotas, isAdmin]);
 
-  const excluirRota = useCallback(async (id: string | number): Promise<boolean> => {
+  const excluirRota = useCallback(async (id: string): Promise<boolean> => {
     if (!isAdmin()) {
       setErro('Apenas administradores podem excluir rotas');
       return false;

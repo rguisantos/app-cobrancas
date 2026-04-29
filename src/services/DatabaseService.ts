@@ -18,6 +18,7 @@ import {
   Rota
 } from '../types';
 import { ENV } from '../config/env';
+import { UPDATE_EXCLUIDOS, serializeForDB } from '../utils/database';
 
 // ============================================================================
 // CONFIGURAÇÃO DO BANCO DE DADOS
@@ -715,14 +716,6 @@ class DatabaseService {
     const tableName = this.getTableName(entityType);
     const now = new Date().toISOString();
 
-    // Campos virtuais que não existem como colunas no banco
-    const CAMPOS_EXCLUIDOS = new Set([
-      'id', 'createdAt',
-      'cpfCnpj', 'rgIe',             // Campos computados do Cliente
-      'locacaoAtiva', 'estaLocado', 'locacaoAtual', // Campos computados do Produto
-      'totalLocacoesAtivas', 'totalLocacoesFinalizadas', 'saldoDevedorTotal' // Campos de join
-    ]);
-
     try {
       // Marcar como precisando de sync
       const entityWithSync = {
@@ -734,7 +727,7 @@ class DatabaseService {
 
       // Construir campos e valores dinamicamente, excluindo campos virtuais
       const fields = Object.keys(entityWithSync).filter(
-        (key) => !CAMPOS_EXCLUIDOS.has(key) && (entityWithSync as any)[key] !== undefined
+        (key) => !UPDATE_EXCLUIDOS.has(key) && (entityWithSync as any)[key] !== undefined
       );
       const setClause = fields.map((field) => `${field} = ?`).join(', ');
       
@@ -839,6 +832,31 @@ class DatabaseService {
   }
 
   /**
+   * Conta mudanças pendentes agrupadas por entityType
+   * Retorna um mapa: { cliente: 3, produto: 1, ... }
+   */
+  async getPendingChangesCountByEntity(): Promise<Record<string, number>> {
+    if (!this.db) throw new Error('Database não inicializado');
+
+    try {
+      const results = await this.db.getAllAsync<{ entityType: string; count: number }>(
+        `SELECT entityType, COUNT(*) as count FROM ${TABLES.CHANGE_LOG}
+         WHERE synced = 0
+         GROUP BY entityType`
+      );
+
+      const counts: Record<string, number> = {};
+      for (const row of results) {
+        counts[row.entityType] = row.count;
+      }
+      return counts;
+    } catch (error) {
+      console.error('[Database] Erro ao contar mudanças pendentes por entidade:', error);
+      return {};
+    }
+  }
+
+  /**
    * Marca mudança como sincronizada
    */
   async markAsSynced(changeId: string): Promise<void> {
@@ -897,16 +915,12 @@ class DatabaseService {
 
     const changes = response.changes || {};
     
-    // LOG: Mostrar quantos registros estão sendo recebidos
-    console.log('[Database] ========================================');
-    console.log('[Database] APLICANDO MUDANÇAS REMOTAS:');
-    console.log(`[Database] - Clientes: ${(changes.clientes || []).length}`);
-    console.log(`[Database] - Produtos: ${(changes.produtos || []).length}`);
-    console.log(`[Database] - Locações: ${(changes.locacoes || []).length}`);
-    console.log(`[Database] - Cobranças: ${(changes.cobrancas || []).length}`);
-    console.log(`[Database] - Rotas: ${(changes.rotas || []).length}`);
-    console.log(`[Database] - Usuários: ${((changes as any).usuarios || []).length}`);
-    console.log('[Database] ========================================');
+    if (ENV.DEBUG) {
+      const total = (changes.clientes || []).length + (changes.produtos || []).length +
+        (changes.locacoes || []).length + (changes.cobrancas || []).length +
+        (changes.rotas || []).length + (changes.usuarios || []).length;
+      console.log(`[Database] Aplicando ${total} mudanças remotas`);
+    }
 
     await this.runTransaction(async () => {
       // Aplicar mudanças de cada entidade usando upsert direto
@@ -937,25 +951,25 @@ class DatabaseService {
       }
 
       // Usuários - sincronizar permissões alteradas no web
-      const usuarios = (changes as any).usuarios || [];
+      const usuarios = changes.usuarios || [];
       for (const usuario of usuarios) {
         await this.upsertUsuarioFromSync(usuario);
       }
 
       // Tipos de Produto (atributos)
-      const tiposProduto = (response as any).tiposProduto || [];
+      const tiposProduto = response.tiposProduto || [];
       for (const tipo of tiposProduto) {
         await this.upsertTipoProdutoFromSync(tipo);
       }
 
       // Descrições de Produto (atributos)
-      const descricoesProduto = (response as any).descricoesProduto || [];
+      const descricoesProduto = response.descricoesProduto || [];
       for (const desc of descricoesProduto) {
         await this.upsertDescricaoProdutoFromSync(desc);
       }
 
       // Tamanhos de Produto (atributos)
-      const tamanhosProduto = (response as any).tamanhosProduto || [];
+      const tamanhosProduto = response.tamanhosProduto || [];
       for (const tam of tamanhosProduto) {
         await this.upsertTamanhoProdutoFromSync(tam);
       }
@@ -971,25 +985,14 @@ class DatabaseService {
       });
     });
 
-    // VERIFICAÇÃO: Contar registros após aplicar mudanças
-    const clientesCount = await this.getFirstAsync<{ cnt: number }>(
-      `SELECT COUNT(*) as cnt FROM clientes WHERE deletedAt IS NULL`, []
-    );
-    const produtosCount = await this.getFirstAsync<{ cnt: number }>(
-      `SELECT COUNT(*) as cnt FROM produtos WHERE deletedAt IS NULL`, []
-    );
-    const locacoesCount = await this.getFirstAsync<{ cnt: number }>(
-      `SELECT COUNT(*) as cnt FROM locacoes WHERE deletedAt IS NULL`, []
-    );
-
-    console.log('[Database] ========================================');
-    console.log('[Database] VERIFICAÇÃO APÓS APLICAR MUDANÇAS:');
-    console.log(`[Database] - Clientes no SQLite: ${clientesCount?.cnt || 0}`);
-    console.log(`[Database] - Produtos no SQLite: ${produtosCount?.cnt || 0}`);
-    console.log(`[Database] - Locações no SQLite: ${locacoesCount?.cnt || 0}`);
-    console.log('[Database] ========================================');
-
-    console.log('[Database] Mudanças remotas aplicadas com sucesso');
+    if (ENV.DEBUG) {
+      const clientesCount = await this.getFirstAsync<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM clientes WHERE deletedAt IS NULL`, []
+      );
+      console.log(`[Database] Mudanças remotas aplicadas — clientes: ${clientesCount?.cnt || 0}`);
+    } else {
+      console.log('[Database] Mudanças remotas aplicadas com sucesso');
+    }
   }
 
   /**
@@ -1001,13 +1004,6 @@ class DatabaseService {
     const tableName = this.getTableName(entityType);
     const now = new Date().toISOString();
 
-    // Campos virtuais que não existem como colunas
-    const CAMPOS_EXCLUIDOS = new Set([
-      'cpfCnpj', 'rgIe',
-      'locacaoAtiva', 'estaLocado', 'locacaoAtual',
-      'totalLocacoesAtivas', 'totalLocacoesFinalizadas', 'saldoDevedorTotal'
-    ]);
-
     // Preparar dados
     const data = { ...entity };
     delete data.id;
@@ -1018,18 +1014,10 @@ class DatabaseService {
     try {
       if (existing) {
         // UPDATE - não incrementar version se veio do servidor
-        const fields = Object.keys(data).filter(
-          (key) => !CAMPOS_EXCLUIDOS.has(key) && data[key] !== undefined
-        );
+        const serialized = serializeForDB(data);
+        const fields = Object.keys(serialized);
         const setClause = fields.map((field) => `${field} = ?`).join(', ');
-        
-        const values = fields.map((field) => {
-          const val = data[field];
-          if (val !== null && val !== undefined && typeof val === 'object') {
-            return JSON.stringify(val);
-          }
-          return val;
-        });
+        const values = fields.map((field) => serialized[field]);
 
         await this.db.runAsync(
           `UPDATE ${tableName} SET ${setClause} WHERE id = ?`,
@@ -1038,18 +1026,10 @@ class DatabaseService {
         console.log(`[Database] UPDATE ${entityType}:${entity.id} realizado`);
       } else {
         // INSERT
-        const fields = Object.keys(data).filter(
-          (key) => !CAMPOS_EXCLUIDOS.has(key) && data[key] !== undefined
-        );
+        const serialized = serializeForDB(data);
+        const fields = Object.keys(serialized);
         const placeholders = fields.map(() => '?').join(', ');
-
-        const values = fields.map((field) => {
-          const val = data[field];
-          if (val !== null && val !== undefined && typeof val === 'object') {
-            return JSON.stringify(val);
-          }
-          return val;
-        });
+        const values = fields.map((field) => serialized[field]);
 
         await this.db.runAsync(
           `INSERT INTO ${tableName} (id, ${fields.join(', ')}) VALUES (?, ${placeholders})`,
@@ -1193,50 +1173,101 @@ class DatabaseService {
 
   /**
    * Upsert de usuário recebido do servidor (SEM criar ChangeLog)
-   * Sincroniza permissões alteradas no web para o mobile
+   * Sincroniza permissões alteradas no web para o mobile.
+   *
+   * BUG FIX: Usa UPDATE + INSERT separados em vez de INSERT OR REPLACE.
+   * O servidor NÃO envia o campo `senha` por segurança, e o INSERT OR REPLACE
+   * sobrescrevia a senha local com ''/null, impedindo login offline.
+   * Agora, no UPDATE, a senha local é preservada se o servidor não enviá-la.
    */
   private async upsertUsuarioFromSync(usuario: any): Promise<void> {
     if (!this.db) return;
-    
+
     // Converter objetos JSON para string
-    const permissoesWeb = typeof usuario.permissoesWeb === 'object' 
-      ? JSON.stringify(usuario.permissoesWeb) 
+    const permissoesWeb = typeof usuario.permissoesWeb === 'object'
+      ? JSON.stringify(usuario.permissoesWeb)
       : usuario.permissoesWeb || '{}';
-    const permissoesMobile = typeof usuario.permissoesMobile === 'object' 
-      ? JSON.stringify(usuario.permissoesMobile) 
+    const permissoesMobile = typeof usuario.permissoesMobile === 'object'
+      ? JSON.stringify(usuario.permissoesMobile)
       : usuario.permissoesMobile || '{}';
-    const rotasPermitidas = typeof usuario.rotasPermitidas === 'object' 
-      ? JSON.stringify(usuario.rotasPermitidas) 
+    const rotasPermitidas = typeof usuario.rotasPermitidas === 'object'
+      ? JSON.stringify(usuario.rotasPermitidas)
       : usuario.rotasPermitidas || '[]';
 
-    await this.db.runAsync(
-      `INSERT OR REPLACE INTO ${TABLES.USUARIOS} 
-       (id, tipo, nome, cpf, telefone, email, senha, tipoPermissao, permissoesWeb, permissoesMobile, rotasPermitidas, status, bloqueado, dataUltimoAcesso, ultimoAcessoDispositivo, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
-      [
-        usuario.id,
-        usuario.tipo || 'usuario',
-        usuario.nome,
-        usuario.cpf || null,
-        usuario.telefone || null,
-        usuario.email,
-        usuario.senha || '',
-        usuario.tipoPermissao,
+    const existing = await this.getById<any>('usuario', usuario.id);
+
+    if (existing) {
+      // UPDATE — preservar senha local se o servidor não enviou
+      const updateData: Record<string, unknown> = {
+        tipo: usuario.tipo || 'usuario',
+        nome: usuario.nome,
+        cpf: usuario.cpf || null,
+        telefone: usuario.telefone || null,
+        email: usuario.email,
+        tipoPermissao: usuario.tipoPermissao,
         permissoesWeb,
         permissoesMobile,
         rotasPermitidas,
-        usuario.status || 'Ativo',
-        usuario.bloqueado ? 1 : 0,
-        usuario.dataUltimoAcesso || null,
-        usuario.ultimoAcessoDispositivo || null,
-        usuario.lastSyncedAt || new Date().toISOString(),
-        usuario.version || 1,
-        usuario.deviceId || '',
-        usuario.createdAt || new Date().toISOString(),
-        usuario.updatedAt || new Date().toISOString(),
-        usuario.deletedAt || null
-      ]
-    );
+        status: usuario.status || 'Ativo',
+        bloqueado: usuario.bloqueado ? 1 : 0,
+        dataUltimoAcesso: usuario.dataUltimoAcesso || null,
+        ultimoAcessoDispositivo: usuario.ultimoAcessoDispositivo || null,
+        syncStatus: 'synced',
+        lastSyncedAt: usuario.lastSyncedAt || new Date().toISOString(),
+        needsSync: 0,
+        version: usuario.version || 1,
+        deviceId: usuario.deviceId || '',
+        updatedAt: usuario.updatedAt || new Date().toISOString(),
+        deletedAt: usuario.deletedAt || null,
+      };
+
+      // Preservar senha local se o servidor não enviou (segurança)
+      if (usuario.senha) {
+        updateData.senha = usuario.senha;
+      }
+      // else: keep existing senha — NOT overwriting with empty
+
+      const serialized = serializeForDB(updateData);
+      const fields = Object.keys(serialized);
+      const setClause = fields.map((field) => `${field} = ?`).join(', ');
+      const values = fields.map((field) => serialized[field]);
+
+      await this.db.runAsync(
+        `UPDATE ${TABLES.USUARIOS} SET ${setClause} WHERE id = ?`,
+        [...values, usuario.id]
+      );
+    } else {
+      // INSERT — novo usuário vindo do servidor
+      // Se não tem senha, vazio (usuário precisará redefinir ou será autenticado via token)
+      await this.db.runAsync(
+        `INSERT INTO ${TABLES.USUARIOS}
+         (id, tipo, nome, cpf, telefone, email, senha, tipoPermissao, permissoesWeb, permissoesMobile, rotasPermitidas, status, bloqueado, dataUltimoAcesso, ultimoAcessoDispositivo, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
+        [
+          usuario.id,
+          usuario.tipo || 'usuario',
+          usuario.nome,
+          usuario.cpf || null,
+          usuario.telefone || null,
+          usuario.email,
+          usuario.senha || '',
+          usuario.tipoPermissao,
+          permissoesWeb,
+          permissoesMobile,
+          rotasPermitidas,
+          usuario.status || 'Ativo',
+          usuario.bloqueado ? 1 : 0,
+          usuario.dataUltimoAcesso || null,
+          usuario.ultimoAcessoDispositivo || null,
+          usuario.lastSyncedAt || new Date().toISOString(),
+          usuario.version || 1,
+          usuario.deviceId || '',
+          usuario.createdAt || new Date().toISOString(),
+          usuario.updatedAt || new Date().toISOString(),
+          usuario.deletedAt || null,
+        ]
+      );
+    }
   }
 
   // ==========================================================================
@@ -1431,26 +1462,10 @@ class DatabaseService {
   private async insert(tableName: string, entity: any): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
 
-    // Campos virtuais que não existem como colunas no banco
-    const CAMPOS_EXCLUIDOS = new Set([
-      'cpfCnpj', 'rgIe',
-      'locacaoAtiva', 'estaLocado', 'locacaoAtual',
-      'totalLocacoesAtivas', 'totalLocacoesFinalizadas', 'saldoDevedorTotal'
-    ]);
-
-    const fields = Object.keys(entity).filter(
-      (key) => !CAMPOS_EXCLUIDOS.has(key) && entity[key] !== undefined
-    );
+    const serialized = serializeForDB(entity);
+    const fields = Object.keys(serialized);
     const placeholders = fields.map(() => '?').join(', ');
-
-    // Serializar arrays e objetos para JSON antes de salvar
-    const values = fields.map((field) => {
-      const val = entity[field];
-      if (val !== null && val !== undefined && typeof val === 'object') {
-        return JSON.stringify(val);
-      }
-      return val;
-    });
+    const values = fields.map((field) => serialized[field]);
 
     await this.db.runAsync(
       `INSERT INTO ${tableName} (${fields.join(', ')}) VALUES (${placeholders})`,

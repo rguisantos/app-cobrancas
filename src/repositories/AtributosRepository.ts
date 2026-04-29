@@ -5,6 +5,7 @@
  */
 
 import { databaseService } from '../services/DatabaseService';
+import { generateId } from '../utils/database';
 
 // Tipos
 export interface AtributoItem {
@@ -98,7 +99,7 @@ class AtributosRepository {
    * Adicionar item
    */
   async adicionar(tipo: TipoAtributo, nome: string): Promise<AtributoItem> {
-    const novoId = `novo_${Date.now()}`;
+    const novoId = generateId('atributo');
     const novoItem: AtributoItem = {
       id: novoId,
       nome: nome.trim(),

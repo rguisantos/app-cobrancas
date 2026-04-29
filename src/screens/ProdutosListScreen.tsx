@@ -284,7 +284,7 @@ export default function ProdutosListScreen() {
       />
 
       {/* Botão Novo Produto (com permissão) */}
-      {(user?.tipoPermissao === 'Administrador' || hasPermission('todosCadastros', 'mobile')) && (
+      {(user?.tipoPermissao === 'Administrador' || hasPermission('produtos', 'mobile')) && (
         <TouchableOpacity
           style={styles.fab}
           onPress={() => navigateProduto.toForm('criar')}

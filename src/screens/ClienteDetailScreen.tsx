@@ -201,7 +201,7 @@ export default function ClienteDetailScreen() {
 
   }
 
-  const canEdit = user?.tipoPermissao === 'Administrador' || hasPermission('todosCadastros', 'mobile');
+  const canEdit = user?.tipoPermissao === 'Administrador' || hasPermission('clientes', 'mobile');
 
   return (
     <SafeAreaView style={styles.container}>

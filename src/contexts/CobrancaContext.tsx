@@ -55,6 +55,7 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
   const [cobrancas, setCobrancas] = useState<HistoricoCobranca[]>([]);
   const [cobrancaSelecionada, setCobrancaSelecionada] = useState<HistoricoCobranca | null>(null);
   const [carregando, setCarregando] = useState(false);
+  // TODO: Add operation-specific loading (operacoes / isOperacao) like ClienteContext/ProdutoContext
   const [erro, setErro] = useState<string | null>(null);
   const [totalCobrancas, setTotalCobrancas] = useState(0);
   const [totalPendentes, setTotalPendentes] = useState(0);

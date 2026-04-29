@@ -74,9 +74,25 @@ interface DashboardProviderProps {
   children: ReactNode;
   usuarioNome?: string;
   usuarioTipo?: string;
+  /**
+   * Split ratio for cobranças by percentual vs período.
+   * Default: { percentual: 0.95, periodo: 0.05 }
+   * 
+   * PLACEHOLDER: This is a temporary approximation until the API provides
+   * actual per-type breakdown. Configure via props if the business has
+   * a known split ratio.
+   */
+  ganhosSplitRatio?: { percentual: number; periodo: number };
 }
 
-export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioTipo = 'Administrador' }: DashboardProviderProps) {
+const DEFAULT_GANHOS_SPLIT = { percentual: 0.95, periodo: 0.05 };
+
+export function DashboardProvider({
+  children,
+  usuarioNome = 'Usuário',
+  usuarioTipo = 'Administrador',
+  ganhosSplitRatio = DEFAULT_GANHOS_SPLIT,
+}: DashboardProviderProps) {
   // Estado
   const { isReady } = useDatabase();
   const { isSyncing, status: syncStatus } = useSync();
@@ -87,6 +103,7 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
     const [mobile, setMobile] = useState<DashboardMobileData | null>(null);
   const [web, setWeb] = useState<DashboardWebData | null>(null);
   const [carregando, setCarregando] = useState(false);
+  // TODO: Add operation-specific loading (operacoes / isOperacao) like ClienteContext/ProdutoContext
   const [erro, setErro] = useState<string | null>(null);
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState<string | null>(null);
   const [metricas, setMetricas] = useState<DashboardMobileMetricas | null>(null);
@@ -164,9 +181,11 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
       );
 
       // Separar ganhos por tipo de cobrança
-      // (Esta é uma simplificação - idealmente viria da API)
-      const ganhoComPercentual = resumo.totalRecebido * 0.95; // 95% das cobranças são por %
-      const ganhoComPeriodo = resumo.totalRecebido * 0.05; // 5% são por período
+      // PLACEHOLDER: This split ratio is an approximation. The API should eventually
+      // provide the actual per-type (percentual vs período) breakdown.
+      // Use `ganhosSplitRatio` prop to configure a different ratio.
+      const ganhoComPercentual = resumo.totalRecebido * ganhosSplitRatio.percentual;
+      const ganhoComPeriodo = resumo.totalRecebido * ganhosSplitRatio.periodo;
 
       return {
         ganhoAtualMes: resumo.totalRecebido,
@@ -181,7 +200,7 @@ export function DashboardProvider({ children, usuarioNome = 'Usuário', usuarioT
       };
   
   }
-  }, []);
+  }, [ganhosSplitRatio]);
 
   /**
    * Busca clientes não cobrados há mais de 3 meses

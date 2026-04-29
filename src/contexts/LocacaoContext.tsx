@@ -128,6 +128,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   const [locacoesAtivas, setLocacoesAtivas] = useState<LocacaoListItem[]>([]);
   const [locacaoSelecionada, setLocacaoSelecionada] = useState<Locacao | null>(null);
   const [carregando, setCarregando] = useState(false);
+  // TODO: Add operation-specific loading (operacoes / isOperacao) like ClienteContext/ProdutoContext
   const [erro, setErro] = useState<string | null>(null);
 
   // Contagens

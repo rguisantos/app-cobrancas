@@ -200,7 +200,7 @@ export default function ProdutoDetailScreen() {
 
   }
 
-  const canEdit = user?.tipoPermissao === 'Administrador' || hasPermission('todosCadastros', 'mobile');
+  const canEdit = user?.tipoPermissao === 'Administrador' || hasPermission('produtos', 'mobile');
   const canAlterarRelogio = user?.tipoPermissao === 'Administrador' || hasPermission('alteracaoRelogio', 'mobile');
   const canLocar = user?.tipoPermissao === 'Administrador' || hasPermission('locacaoRelocacaoEstoque', 'mobile');
 

@@ -1,52 +1,34 @@
-import Constants from 'expo-constants';
+/**
+ * config/config.ts
+ *
+ * Application-level configuration that is NOT covered by env.ts.
+ *
+ * IMPORTANT: env.ts is the primary configuration source for environment
+ * variables (API_URL, SYNC_INTERVAL, DEBUG, etc.).  This file only
+ * contains truly unique config that does not belong in env.ts, such as
+ * storage keys and derived values.
+ *
+ * For API_URL, sync interval, timeout, debug, or mock settings,
+ * import from env.ts instead:
+ *
+ *   import { ENV } from './env';
+ *   console.log(ENV.API_URL, ENV.SYNC_INTERVAL, ENV.DEBUG);
+ */
 
-// URL da API - lê da variável de ambiente ou usa fallback
-const getApiUrl = (): string => {
-  // Tentar pegar do extra do expo config
-  const extraUrl = (Constants.expoConfig as any)?.extra?.API_URL;
-  if (extraUrl) return extraUrl;
-  
-  // Tentar pegar do process.env
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (envUrl) return envUrl;
-  
-  // Fallback - AVISO: isso provavelmente não funcionará em produção!
-  console.warn('⚠️ API_URL não configurado! Configure EXPO_PUBLIC_API_URL no .env');
-  return 'https://api.seuservidor.com.br';
-};
-
-// Modo mock - lê da variável de ambiente
-const getUseMock = (): boolean => {
-  const mockEnv = process.env.EXPO_PUBLIC_USE_MOCK;
-  // Se não definido, assume FALSE (precisa configurar .env)
-  if (mockEnv === undefined) {
-    console.warn('⚠️ USE_MOCK não configurado. Configure EXPO_PUBLIC_USE_MOCK=false no .env para conectar ao backend.');
-    return false;
-  }
-  return mockEnv === 'true' || mockEnv === '1';
-};
+import { ENV } from './env';
 
 export const CONFIG = {
-  // URL da API backend
-  API_URL: getApiUrl(),
-  
-  // Chaves de armazenamento (DEVEM ser iguais às do AuthContext!)
+  // ── Storage keys (MUST match AuthContext) ────────────────────────────
   tokenStorageKey: '@cobrancas:token',
   userStorageKey: '@cobrancas:user',
   deviceKeyStorageKey: '@cobrancas:device',
-  
-  // Configurações de sincronização
-  syncIntervalMs: 15 * 60 * 1000, // 15 minutos
-  syncTimeout: 30000, // 30 segundos
-  
-  // Debug
-  get debug() {
-    const debugEnv = process.env.EXPO_PUBLIC_DEBUG;
-    return debugEnv === 'true' || debugEnv === '1';
-  },
-  
-  // Modo mock
-  get useMock() {
-    return getUseMock();
-  },
+
+  // ── Derived from env.ts ──────────────────────────────────────────────
+  // Re-exported here for backward compatibility with existing consumers
+  // that import CONFIG instead of ENV.
+  get API_URL()       { return ENV.API_URL; },
+  get syncIntervalMs() { return ENV.SYNC_INTERVAL * 60 * 1000; },
+  get syncTimeout()    { return ENV.TIMEOUT; },
+  get debug()          { return ENV.DEBUG; },
+  get useMock()        { return ENV.USE_MOCK; },
 };

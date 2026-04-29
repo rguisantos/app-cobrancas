@@ -13,38 +13,6 @@ export * from '../../shared'
 // EXTENSÕES ESPECÍFICAS DO MOBILE
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { SyncConflict as _SyncConflict } from '../../shared'
-
-// O SyncResponse do mobile inclui campos de paginação e versões atualizadas
-// que o shared não tem (são específicos da API mobile).
-export interface UpdatedVersion {
-  entityId: string;
-  entityType: string;
-  newVersion: number;
-}
-
-export interface SyncResponse {
-  success: boolean;
-  lastSyncAt: string;
-  hasMore?: boolean;
-  isStale?: boolean;
-  changes?: {
-    clientes?: any[];
-    produtos?: any[];
-    locacoes?: any[];
-    cobrancas?: any[];
-    rotas?: any[];
-    usuarios?: any[];
-  };
-  conflicts?: _SyncConflict[];
-  errors?: string[];
-  updatedVersions?: UpdatedVersion[];
-  clientes?: any[];
-  produtos?: any[];
-  locacoes?: any[];
-  cobrancas?: any[];
-  rotas?: any[];
-  tiposProduto?: any[];
-  descricoesProduto?: any[];
-  tamanhosProduto?: any[];
-}
+// The shared SyncResponse is now the canonical type with proper typing.
+// UpdatedVersion is also properly typed in shared/types.ts.
+// No more duplicate declarations needed.

@@ -65,7 +65,7 @@ export default function ClientesStack() {
   const canEditCliente = (): boolean => {
     if (!user) return false;
     if (user.tipoPermissao === 'Administrador') return true;
-    return hasPermission('todosCadastros', 'mobile');
+    return hasPermission('clientes', 'mobile');
   };
 
   const canManageLocacoes = (): boolean => {
@@ -162,7 +162,7 @@ export function useClienteNavigate() {
   const navigation = useNavigation<NativeStackNavigationProp<ClientesStackParamList>>();
   const { user, canAccessRota } = useAuth();
 
-  const toDetail = useCallback((clienteId: string, cliente?: { rotaId?: string | number }) => {
+  const toDetail = useCallback((clienteId: string, cliente?: { rotaId?: string }) => {
     if (cliente?.rotaId && user?.tipoPermissao !== 'Administrador') {
       if (!canAccessRota(cliente.rotaId)) {
         console.warn('[ClientesNav] Acesso negado à rota do cliente');

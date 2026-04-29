@@ -2,6 +2,9 @@
  * ClienteContext.tsx
  * Contexto para gerenciamento de estado de Clientes
  * Integração: Repositórios + Types + DatabaseContext
+ * 
+ * Operação-specific loading: Each async operation tracks its own loading state
+ * via `operacoes`, while `carregando` remains as a general "any operation active" flag.
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
@@ -19,6 +22,10 @@ export interface ClienteState {
   carregando: boolean;
   erro: string | null;
   totalClientes: number;
+  /** Operation-specific loading flags (e.g., { carregar: true, salvar: false }) */
+  operacoes: Record<string, boolean>;
+  /** Check if a specific operation is in progress */
+  isOperacao: (nome: string) => boolean;
 }
 
 export interface ClienteContextData extends ClienteState {
@@ -66,12 +73,22 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
   const [erro, setErro] = useState<string | null>(null);
   const [totalClientes, setTotalClientes] = useState(0);
 
+  // Operation-specific loading — allows tracking individual operations
+  const [operacoes, setOperacoes] = useState<Record<string, boolean>>({});
+
+  const isOperacao = useCallback((nome: string) => operacoes[nome] || false, [operacoes]);
+
+  const setOperacao = useCallback((nome: string, ativa: boolean) => {
+    setOperacoes(prev => ({ ...prev, [nome]: ativa }));
+  }, []);
+
   // ==========================================================================
   // CARREGAMENTO
   // ==========================================================================
 
   const carregarClientes = useCallback(async (filtros?: ClienteFilters) => {
     setCarregando(true);
+    setOperacao('carregar', true);
     setErro(null);
 
     try {
@@ -84,12 +101,13 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
       console.error('[ClienteContext] Erro ao carregar clientes:', error);
     } finally {
       setCarregando(false);
-  
-  }
-  }, []);
+      setOperacao('carregar', false);
+    }
+  }, [setOperacao]);
 
   const carregarCliente = useCallback(async (id: string) => {
     setCarregando(true);
+    setOperacao('carregar', true);
     setErro(null);
 
     try {
@@ -98,16 +116,16 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
         setClienteSelecionado(cliente);
       } else {
         setErro('Cliente não encontrado');
-    
-  }
+      }
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao carregar cliente';
-      setErro(mensagem);      console.error('[ClienteContext] Erro ao carregar cliente:', error);
+      setErro(mensagem);
+      console.error('[ClienteContext] Erro ao carregar cliente:', error);
     } finally {
       setCarregando(false);
-  
-  }
-  }, []);
+      setOperacao('carregar', false);
+    }
+  }, [setOperacao]);
 
   // ==========================================================================
   // SELEÇÃO
@@ -115,6 +133,7 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
 
   const selecionarCliente = useCallback(async (id: string) => {
     setCarregando(true);
+    setOperacao('selecionar', true);
     try {
       const cliente = await clienteRepository.getByIdWithLocacoes(id);
       setClienteSelecionado(cliente);
@@ -122,9 +141,9 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
       console.error('[ClienteContext] Erro ao selecionar cliente:', error);
     } finally {
       setCarregando(false);
-  
-  }
-  }, []);
+      setOperacao('selecionar', false);
+    }
+  }, [setOperacao]);
 
   const limparSelecao = useCallback(() => {
     setClienteSelecionado(null);
@@ -136,6 +155,7 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
 
   const salvarCliente = useCallback(async (dados: Partial<Cliente>): Promise<Cliente | null> => {
     setCarregando(true);
+    setOperacao('salvar', true);
     setErro(null);
 
     try {
@@ -150,11 +170,13 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
       return null;
     } finally {
       setCarregando(false);
-  
-  }
-  }, [carregarClientes]);
+      setOperacao('salvar', false);
+    }
+  }, [carregarClientes, setOperacao]);
 
-  const atualizarCliente = useCallback(async (dados: Partial<Cliente> & { id: string }): Promise<boolean> => {    setCarregando(true);
+  const atualizarCliente = useCallback(async (dados: Partial<Cliente> & { id: string }): Promise<boolean> => {
+    setCarregando(true);
+    setOperacao('atualizar', true);
     setErro(null);
 
     try {
@@ -163,8 +185,7 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
         await carregarClientes();
         console.log('[ClienteContext] Cliente atualizado:', dados.id);
         return true;
-    
-  }
+      }
       return false;
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao atualizar cliente';
@@ -173,12 +194,13 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
       return false;
     } finally {
       setCarregando(false);
-  
-  }
-  }, [carregarClientes]);
+      setOperacao('atualizar', false);
+    }
+  }, [carregarClientes, setOperacao]);
 
   const excluirCliente = useCallback(async (id: string): Promise<boolean> => {
     setCarregando(true);
+    setOperacao('excluir', true);
     setErro(null);
 
     try {
@@ -187,8 +209,7 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
         await carregarClientes();
         console.log('[ClienteContext] Cliente excluído:', id);
         return true;
-    
-  }
+      }
       return false;
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao excluir cliente';
@@ -197,9 +218,9 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
       return false;
     } finally {
       setCarregando(false);
-  
-  }
-  }, [carregarClientes]);
+      setOperacao('excluir', false);
+    }
+  }, [carregarClientes, setOperacao]);
 
   // ==========================================================================
   // BUSCA
@@ -207,11 +228,11 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
 
   const buscarCliente = useCallback(async (termo: string): Promise<ClienteListItem[]> => {
     try {
-      return await clienteRepository.search(termo);    } catch (error) {
+      return await clienteRepository.search(termo);
+    } catch (error) {
       console.error('[ClienteContext] Erro ao buscar cliente:', error);
       return [];
-  
-  }
+    }
   }, []);
 
   // ==========================================================================
@@ -244,6 +265,8 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
     carregando,
     erro,
     totalClientes,
+    operacoes,
+    isOperacao,
 
     // Carregamento
     carregarClientes,
@@ -280,7 +303,6 @@ export function useCliente(): ClienteContextData {
 
   if (context === undefined) {
     throw new Error('useCliente deve ser usado dentro de um ClienteProvider');
-
   }
 
   return context;

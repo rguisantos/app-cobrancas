@@ -10,14 +10,15 @@ import {
   EntityType,
   StatusPagamento
 } from '../types';
+import { generateId } from '../utils/database';
 
 // ============================================================================
 // INTERFACES E TIPOS
 // ============================================================================
 
 export interface CobrancaFilters {
-  locacaoId?: string | number;
-  clienteId?: string | number;
+  locacaoId?: string;
+  clienteId?: string;
   status?: StatusPagamento;
   dataInicio?: string;
   dataFim?: string;
@@ -179,7 +180,7 @@ class CobrancaRepository {
     try {
       const cobrancaCompleta: HistoricoCobranca = {
         ...cobranca,
-        id: cobranca.id || this.generateId(),
+        id: cobranca.id || generateId('cobranca'),
         tipo: this.entityType,
         syncStatus: 'pending',
         lastSyncedAt: undefined,
@@ -799,13 +800,6 @@ class CobrancaRepository {
     const diffTime = hoje.getTime() - vencimento.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return Math.max(0, diffDays);
-
-  }
-  /**
-   * Gera ID único para a cobrança
-   */
-  private generateId(): string {
-    return `cobranca_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
   }
 }

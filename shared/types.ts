@@ -58,7 +58,7 @@ export interface ChangeLog {
   entityId: string;
   entityType: EntityType;
   operation: 'create' | 'update' | 'delete';
-  changes: Record<string, any>;
+  changes: Record<string, unknown>;
   timestamp: string;
   deviceId: string;
   synced: boolean;
@@ -68,8 +68,8 @@ export interface ChangeLog {
 export interface SyncConflict {
   entityId: string;
   entityType: EntityType;
-  localVersion: Record<string, any>;
-  remoteVersion: Record<string, any>;
+  localVersion: Record<string, unknown>;
+  remoteVersion: Record<string, unknown>;
   conflictType: 'update' | 'delete';
   resolvedAt?: string;
   resolution: ConflictResolutionStrategy | null;
@@ -80,7 +80,7 @@ export interface SyncConflict {
 // ============================================================================
 
 export interface Rota {
-  id: string | number;
+  id: string;
   descricao: string; // ex: "Linha Aquidauana"
   status: 'Ativo' | 'Inativo';
   // Identificação visual e operacional
@@ -107,17 +107,17 @@ export interface Contato {
 }
 
 export interface TipoProduto {
-  id: string | number;
+  id: string;
   nome: string; // ex: "Bilhar", "Jukebox Padrão Grande", "Mesa"
 }
 
 export interface DescricaoProduto {
-  id: string | number;
+  id: string;
   nome: string; // ex: "Azul", "Branco/Carijo", "Preto"
 }
 
 export interface TamanhoProduto {
-  id: string | number;
+  id: string;
   nome: string; // ex: "2,00", "2,20", "Grande", "Média"
 }
 
@@ -171,7 +171,7 @@ export interface Cliente extends SyncableEntity {
   longitude?: number;
 
   // Vínculo com Rota
-  rotaId?: string | number; // Opcional — cliente pode ficar sem rota vinculada
+  rotaId?: string; // Opcional — cliente pode ficar sem rota vinculada
   rotaNome?: string; // Para exibição fácil
   
   // Sistema
@@ -183,10 +183,10 @@ export interface Cliente extends SyncableEntity {
 
 // Interface leve para listagem
 export interface ClienteListItem {
-  id: string | number;
+  id: string;
   nomeExibicao: string;
   cpfCnpj?: string;
-  rotaId?: string | number;
+  rotaId?: string;
   rotaNome: string;
   cidade: string;
   estado: string;
@@ -208,13 +208,13 @@ export interface Produto extends SyncableEntity {
   numeroRelogio: string; // ex: "8070" - contador mecânico
   
   // Características (vínculos com tabelas de apoio)
-  tipoId: string | number;
+  tipoId: string;
   tipoNome: string; // ex: "Bilhar"
   
-  descricaoId: string | number;
+  descricaoId: string;
   descricaoNome: string; // ex: "Azul"
   
-  tamanhoId: string | number;
+  tamanhoId: string;
   tamanhoNome: string; // ex: "2,20"
   
   // Códigos internos (opcional)
@@ -254,7 +254,7 @@ export interface LocacaoAtivaInfo {
 
 // Interface leve para listagem
 export interface ProdutoListItem {
-  id: string | number;
+  id: string;
   identificador: string;
   tipoNome: string;
   descricaoNome: string;
@@ -268,8 +268,8 @@ export interface ProdutoListItem {
 
 // Histórico de alteração do número do relógio
 export interface ProdutoHistoricoRelogio {
-  id: string | number;
-  produtoId: string | number;
+  id: string;
+  produtoId: string;
   relogioAnterior: string;
   relogioNovo: string;
   motivo: string;
@@ -285,9 +285,9 @@ export interface Locacao extends SyncableEntity {
   tipo: EntityType;
   
   // Vínculos
-  clienteId: string | number;
+  clienteId: string;
   clienteNome: string;
-  produtoId: string | number;
+  produtoId: string;
   produtoIdentificador: string; // ex: "515"
   produtoTipo: string; // ex: "Bilhar"
   
@@ -326,8 +326,8 @@ export interface Locacao extends SyncableEntity {
 
 // Interface leve para listagem por cliente
 export interface LocacaoListItem {
-  id: string | number;
-  produtoId?: string | number; // Added for relocar/enviarEstoque actions
+  id: string;
+  produtoId?: string; // Added for relocar/enviarEstoque actions
   produtoIdentificador: string;
   produtoTipo: string;
   produtoDescricao: string;
@@ -382,8 +382,8 @@ export interface HistoricoCobranca extends SyncableEntity {
   tipo: EntityType;
   
   // Vínculos
-  locacaoId: string | number;
-  clienteId: string | number;
+  locacaoId: string;
+  clienteId: string;
   clienteNome: string;
   produtoIdentificador: string;
   
@@ -428,6 +428,28 @@ export interface CobrancaView {
   locacoesAtivas: Locacao[];
   locacoesDevedoras: Locacao[];
   totalAPagar: number;
+}
+
+// ============================================================================
+// 🔧 MANUTENÇÕES
+// ============================================================================
+
+export interface Manutencao {
+  id: string;
+  produtoId: string;
+  produtoIdentificador?: string;
+  produtoTipo?: string;
+  clienteId?: string;
+  clienteNome?: string;
+  locacaoId?: string;
+  cobrancaId?: string;
+  tipo: 'trocaPano' | 'manutencao';
+  descricao?: string;
+  data: string;
+  registradoPor?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string;
 }
 
 // ============================================================================
@@ -490,13 +512,39 @@ export interface Usuario extends SyncableEntity {
   permissoes: PermissoesUsuario;
   
   // Rotas permitidas (para Acesso Controlado)
-  rotasPermitidas: Array<string | number>;
+  rotasPermitidas: string[];
   
   status: 'Ativo' | 'Inativo';
   bloqueado?: boolean;
   
   dataUltimoAcesso?: string;
   ultimoAcessoDispositivo?: 'Web' | 'Mobile';
+}
+
+// Versão segura de Usuario para sincronização (sem senha)
+export interface UsuarioSyncData {
+  id: string;
+  tipo: EntityType;
+  nome: string;
+  cpf: string;
+  telefone: string;
+  email: string;
+  tipoPermissao: TipoPermissaoUsuario;
+  permissoes: PermissoesUsuario;
+  rotasPermitidas: string[];
+  status: 'Ativo' | 'Inativo';
+  bloqueado?: boolean;
+  dataUltimoAcesso?: string;
+  ultimoAcessoDispositivo?: 'Web' | 'Mobile';
+  // Campos de sincronização
+  syncStatus?: SyncStatus;
+  lastSyncedAt?: string;
+  needsSync?: boolean;
+  version?: number;
+  deviceId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string;
 }
 
 // ============================================================================
@@ -510,10 +558,10 @@ export interface DashboardWebGanhos {
 }
 
 export interface ClienteNaoCobrado {
-  clienteId: string | number;
+  clienteId: string;
   clienteNome: string;
   ultimaDataPagamento: string;
-  rotaId: string | number;
+  rotaId: string;
   rotaNome: string;
   diasAtraso: number;
 }
@@ -606,7 +654,7 @@ export interface DeviceActivationResponse {
 // ============================================================================
 
 export interface ClienteFilters {
-  rotaId?: string | number;
+  rotaId?: string;
   status?: 'Ativo' | 'Inativo';
   cidade?: string;
   estado?: string;
@@ -615,7 +663,7 @@ export interface ClienteFilters {
 
 export interface ProdutoFilters {
   status?: StatusProduto;
-  tipoId?: string | number;
+  tipoId?: string;
   conservacao?: Conservacao;
   termoBusca?: string;
   comLocacaoAtiva?: boolean;
@@ -623,15 +671,15 @@ export interface ProdutoFilters {
 
 export interface CobrancaFilters {
   status?: StatusPagamento;
-  clienteId?: string | number;
+  clienteId?: string;
   dataInicio?: string;
   dataFim?: string;
 }
 
 export interface LocacaoFilters {
   status?: StatusLocacao;
-  clienteId?: string | number;
-  produtoId?: string | number;
+  clienteId?: string;
+  produtoId?: string;
 }
 
 // ============================================================================
@@ -657,41 +705,35 @@ export interface SyncResponse {
   hasMore?: boolean;          // Indica se há mais registros a buscar (paginação)
   isStale?: boolean;          // Indica se o device está stale (>30 dias sem sync)
   changes?: {
-    clientes?: any[];
-    produtos?: any[];
-    locacoes?: any[];
-    cobrancas?: any[];
-    rotas?: any[];
-    usuarios?: any[];  // Sincronização de permissões
+    clientes?: Cliente[];
+    produtos?: Produto[];
+    locacoes?: Locacao[];
+    cobrancas?: HistoricoCobranca[];
+    rotas?: Rota[];
+    usuarios?: UsuarioSyncData[];
   };
   conflicts?: SyncConflict[];
   errors?: string[];
   updatedVersions?: UpdatedVersion[];  // Versões atualizadas no push para o mobile atualizar local
-  // Propriedades para mudanças remotas agrupadas por tipo (alternativa)
-  clientes?: any[];
-  produtos?: any[];
-  locacoes?: any[];
-  cobrancas?: any[];
-  rotas?: any[];
-  // Atributos de produto
-  tiposProduto?: any[];
-  descricoesProduto?: any[];
-  tamanhosProduto?: any[];
+  // Atributos de produto (não seguem o padrão de entidade sync)
+  tiposProduto?: TipoProduto[];
+  descricoesProduto?: DescricaoProduto[];
+  tamanhosProduto?: TamanhoProduto[];
 }
 
 export interface SyncSnapshotResponse {
   success: boolean;
   lastSyncAt: string;
   snapshot: {
-    clientes: any[];
-    produtos: any[];
-    locacoes: any[];
-    cobrancas: any[];
-    rotas: any[];
-    usuarios: any[];
-    tiposProduto: any[];
-    descricoesProduto: any[];
-    tamanhosProduto: any[];
+    clientes: Cliente[];
+    produtos: Produto[];
+    locacoes: Locacao[];
+    cobrancas: HistoricoCobranca[];
+    rotas: Rota[];
+    usuarios: UsuarioSyncData[];
+    tiposProduto: TipoProduto[];
+    descricoesProduto: DescricaoProduto[];
+    tamanhosProduto: TamanhoProduto[];
   };
 }
 
@@ -705,8 +747,8 @@ export interface RefreshTokenResponse {
     role: string;
     tipoPermissao: string;
     permissoes: {
-      web: any;
-      mobile: any;
+      web: PermissoesWeb;
+      mobile: PermissoesMobile;
     };
     rotasPermitidas: string[];
     status: string;
@@ -732,10 +774,10 @@ export interface CobrancaPendente {
 // ============================================================================
 
 export interface SyncChangesResponse {
-  clientes?: any[];
-  produtos?: any[];
-  locacoes?: any[];
-  cobrancas?: any[];
-  rotas?: any[];
+  clientes?: Cliente[];
+  produtos?: Produto[];
+  locacoes?: Locacao[];
+  cobrancas?: HistoricoCobranca[];
+  rotas?: Rota[];
   lastSyncAt: string;
 }
