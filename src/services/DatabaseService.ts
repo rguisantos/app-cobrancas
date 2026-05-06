@@ -40,6 +40,7 @@ const TABLES = {
   TAMANHOS_PRODUTO: 'tamanhos_produto',
   MANUTENCOES: 'manutencoes',
   ESTABELECIMENTOS: 'estabelecimentos',
+  METAS: 'metas',
   CHANGE_LOG: 'change_log',
   SYNC_METADATA: 'sync_metadata',
 };
@@ -272,12 +273,12 @@ class DatabaseService {
         dataInicio TEXT,
         dataFim TEXT,
         dataPagamento TEXT,
-        relogioAnterior INTEGER,
-        relogioAtual INTEGER,
-        fichasRodadas INTEGER,
+        relogioAnterior REAL,
+        relogioAtual REAL,
+        fichasRodadas REAL,
         valorFicha REAL,
         totalBruto REAL,
-        descontoPartidasQtd INTEGER,
+        descontoPartidasQtd REAL,
         descontoPartidasValor REAL,
         descontoDinheiro REAL,
         percentualEmpresa REAL,
@@ -289,6 +290,7 @@ class DatabaseService {
         status TEXT,
         dataVencimento TEXT,
         observacao TEXT,
+        trocaPano INTEGER DEFAULT 0,
         
         -- Controle de sincronização
         syncStatus TEXT,
@@ -389,6 +391,8 @@ class DatabaseService {
       `CREATE TABLE IF NOT EXISTS ${TABLES.ESTABELECIMENTOS} (
         id TEXT PRIMARY KEY,
         nome TEXT NOT NULL,
+        endereco TEXT,
+        observacao TEXT,
         syncStatus TEXT,
         lastSyncedAt TEXT,
         needsSync INTEGER,
@@ -444,12 +448,46 @@ class DatabaseService {
         descricao TEXT,
         data TEXT NOT NULL,
         registradoPor TEXT,
+        -- Controle de sincronização
+        syncStatus TEXT,
+        lastSyncedAt TEXT,
+        needsSync INTEGER,
+        version INTEGER,
+        deviceId TEXT,
         createdAt TEXT,
         updatedAt TEXT,
         deletedAt TEXT
       )`,
       `CREATE INDEX IF NOT EXISTS idx_manutencoes_produto ON manutencoes(produtoId)`,
       `CREATE INDEX IF NOT EXISTS idx_manutencoes_data ON manutencoes(data)`,
+      `CREATE INDEX IF NOT EXISTS idx_manutencoes_sync ON manutencoes(syncStatus, needsSync)`,
+
+      // Tabela de Metas
+      `CREATE TABLE IF NOT EXISTS ${TABLES.METAS} (
+        id TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        tipo TEXT NOT NULL DEFAULT 'receita',
+        valorMeta REAL NOT NULL,
+        valorAtual REAL NOT NULL DEFAULT 0,
+        dataInicio TEXT NOT NULL,
+        dataFim TEXT NOT NULL,
+        rotaId TEXT,
+        status TEXT NOT NULL DEFAULT 'ativa',
+        criadoPor TEXT,
+        -- Controle de sincronização
+        syncStatus TEXT,
+        lastSyncedAt TEXT,
+        needsSync INTEGER,
+        version INTEGER,
+        deviceId TEXT,
+        createdAt TEXT,
+        updatedAt TEXT,
+        deletedAt TEXT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_metas_status ON ${TABLES.METAS}(status)`,
+      `CREATE INDEX IF NOT EXISTS idx_metas_periodo ON ${TABLES.METAS}(dataInicio, dataFim)`,
+      `CREATE INDEX IF NOT EXISTS idx_metas_rota ON ${TABLES.METAS}(rotaId)`,
+      `CREATE INDEX IF NOT EXISTS idx_metas_sync ON ${TABLES.METAS}(syncStatus, needsSync)`,
       `CREATE INDEX IF NOT EXISTS idx_locacoes_sync ON ${TABLES.LOCACOES}(syncStatus, needsSync)`,
       
       `CREATE INDEX IF NOT EXISTS idx_cobrancas_locacao ON ${TABLES.COBRANCAS}(locacaoId)`,
@@ -510,6 +548,41 @@ class DatabaseService {
       {
         name: 'add_observacao_to_rotas',
         sql: `ALTER TABLE ${TABLES.ROTAS} ADD COLUMN observacao TEXT`,
+      },
+      // Migration 3: Adicionar coluna trocaPano na tabela cobrancas
+      {
+        name: 'add_trocaPano_to_cobrancas',
+        sql: `ALTER TABLE ${TABLES.COBRANCAS} ADD COLUMN trocaPano INTEGER DEFAULT 0`,
+      },
+      // Migration 4: Adicionar sync fields na tabela manutencoes
+      {
+        name: 'add_syncStatus_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN syncStatus TEXT`,
+      },
+      {
+        name: 'add_lastSyncedAt_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN lastSyncedAt TEXT`,
+      },
+      {
+        name: 'add_needsSync_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN needsSync INTEGER DEFAULT 0`,
+      },
+      {
+        name: 'add_version_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN version INTEGER DEFAULT 1`,
+      },
+      {
+        name: 'add_deviceId_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN deviceId TEXT DEFAULT ''`,
+      },
+      // Migration 5: Adicionar campos enriquecidos em estabelecimentos
+      {
+        name: 'add_endereco_to_estabelecimentos',
+        sql: `ALTER TABLE ${TABLES.ESTABELECIMENTOS} ADD COLUMN endereco TEXT`,
+      },
+      {
+        name: 'add_observacao_to_estabelecimentos',
+        sql: `ALTER TABLE ${TABLES.ESTABELECIMENTOS} ADD COLUMN observacao TEXT`,
       },
     ];
     
@@ -918,7 +991,8 @@ class DatabaseService {
     if (ENV.DEBUG) {
       const total = (changes.clientes || []).length + (changes.produtos || []).length +
         (changes.locacoes || []).length + (changes.cobrancas || []).length +
-        (changes.rotas || []).length + (changes.usuarios || []).length;
+        (changes.rotas || []).length + (changes.usuarios || []).length +
+        (changes.manutencoes || []).length + (changes.metas || []).length;
       console.log(`[Database] Aplicando ${total} mudanças remotas`);
     }
 
@@ -954,6 +1028,18 @@ class DatabaseService {
       const usuarios = changes.usuarios || [];
       for (const usuario of usuarios) {
         await this.upsertUsuarioFromSync(usuario);
+      }
+
+      // Manutenções - sincronizar com o web
+      const manutencoes = changes.manutencoes || [];
+      for (const manutencao of manutencoes) {
+        await this.upsertManutencaoFromSync(manutencao);
+      }
+
+      // Metas - sincronizar com o web
+      const metas = changes.metas || [];
+      for (const meta of metas) {
+        await this.upsertMetaFromSync(meta);
       }
 
       // Tipos de Produto (atributos)
@@ -1275,6 +1361,144 @@ class DatabaseService {
   // ==========================================================================
 
   /**
+   * Upsert de manutenção recebida do servidor (SEM criar ChangeLog)
+   */
+  private async upsertManutencaoFromSync(manutencao: any): Promise<void> {
+    if (!this.db) return;
+
+    const existing = await this.getById<any>('manutencao' as EntityType, manutencao.id);
+    const now = new Date().toISOString();
+
+    if (existing) {
+      // UPDATE
+      const serialized = serializeForDB({
+        produtoId: manutencao.produtoId,
+        produtoIdentificador: manutencao.produtoIdentificador || null,
+        produtoTipo: manutencao.produtoTipo || null,
+        clienteId: manutencao.clienteId || null,
+        clienteNome: manutencao.clienteNome || null,
+        locacaoId: manutencao.locacaoId || null,
+        cobrancaId: manutencao.cobrancaId || null,
+        tipo: manutencao.tipo,
+        descricao: manutencao.descricao || null,
+        data: manutencao.data,
+        registradoPor: manutencao.registradoPor || null,
+        syncStatus: 'synced',
+        lastSyncedAt: manutencao.lastSyncedAt || now,
+        needsSync: 0,
+        version: manutencao.version || 1,
+        deviceId: manutencao.deviceId || '',
+        updatedAt: manutencao.updatedAt || now,
+        deletedAt: manutencao.deletedAt || null,
+      });
+      const fields = Object.keys(serialized);
+      const setClause = fields.map((field) => `${field} = ?`).join(', ');
+      const values = fields.map((field) => serialized[field]);
+
+      await this.db.runAsync(
+        `UPDATE ${TABLES.MANUTENCOES} SET ${setClause} WHERE id = ?`,
+        [...values, manutencao.id]
+      );
+    } else {
+      // INSERT
+      await this.db.runAsync(
+        `INSERT INTO ${TABLES.MANUTENCOES}
+         (id, produtoId, produtoIdentificador, produtoTipo, clienteId, clienteNome, locacaoId, cobrancaId, tipo, descricao, data, registradoPor, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
+        [
+          manutencao.id,
+          manutencao.produtoId,
+          manutencao.produtoIdentificador || null,
+          manutencao.produtoTipo || null,
+          manutencao.clienteId || null,
+          manutencao.clienteNome || null,
+          manutencao.locacaoId || null,
+          manutencao.cobrancaId || null,
+          manutencao.tipo,
+          manutencao.descricao || null,
+          manutencao.data,
+          manutencao.registradoPor || null,
+          manutencao.lastSyncedAt || now,
+          manutencao.version || 1,
+          manutencao.deviceId || '',
+          manutencao.createdAt || now,
+          manutencao.updatedAt || now,
+          manutencao.deletedAt || null,
+        ]
+      );
+    }
+  }
+
+  /**
+   * Upsert de meta recebida do servidor (SEM criar ChangeLog)
+   */
+  private async upsertMetaFromSync(meta: any): Promise<void> {
+    if (!this.db) return;
+
+    const existing = await this.getById<any>('meta' as EntityType, meta.id);
+    const now = new Date().toISOString();
+
+    if (existing) {
+      // UPDATE
+      const serialized = serializeForDB({
+        nome: meta.nome,
+        tipo: meta.tipo || 'receita',
+        valorMeta: meta.valorMeta,
+        valorAtual: meta.valorAtual || 0,
+        dataInicio: meta.dataInicio,
+        dataFim: meta.dataFim,
+        rotaId: meta.rotaId || null,
+        status: meta.status || 'ativa',
+        criadoPor: meta.criadoPor || null,
+        syncStatus: 'synced',
+        lastSyncedAt: meta.lastSyncedAt || now,
+        needsSync: 0,
+        version: meta.version || 1,
+        deviceId: meta.deviceId || '',
+        updatedAt: meta.updatedAt || now,
+        deletedAt: meta.deletedAt || null,
+      });
+      const fields = Object.keys(serialized);
+      const setClause = fields.map((field) => `${field} = ?`).join(', ');
+      const values = fields.map((field) => serialized[field]);
+
+      await this.db.runAsync(
+        `UPDATE ${TABLES.METAS} SET ${setClause} WHERE id = ?`,
+        [...values, meta.id]
+      );
+    } else {
+      // INSERT
+      await this.db.runAsync(
+        `INSERT INTO ${TABLES.METAS}
+         (id, nome, tipo, valorMeta, valorAtual, dataInicio, dataFim, rotaId, status, criadoPor, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
+        [
+          meta.id,
+          meta.nome,
+          meta.tipo || 'receita',
+          meta.valorMeta,
+          meta.valorAtual || 0,
+          meta.dataInicio,
+          meta.dataFim,
+          meta.rotaId || null,
+          meta.status || 'ativa',
+          meta.criadoPor || null,
+          meta.lastSyncedAt || now,
+          meta.version || 1,
+          meta.deviceId || '',
+          meta.createdAt || now,
+          meta.updatedAt || now,
+          meta.deletedAt || null,
+        ]
+      );
+    }
+  }
+
+  // ==========================================================================
+  // METADATA E UTILITÁRIOS
+  // ==========================================================================
+
+  /**
    * Busca metadata de sincronização
    */
   async getSyncMetadata(): Promise<SyncMetadata> {
@@ -1445,6 +1669,8 @@ class DatabaseService {
       cobranca: TABLES.COBRANCAS,
       rota: TABLES.ROTAS,
       usuario: TABLES.USUARIOS,
+      manutencao: TABLES.MANUTENCOES,
+      meta: TABLES.METAS,
     };
 
     return tableMap[entityType];

@@ -26,7 +26,7 @@ export type StatusPagamento = 'Pago' | 'Parcial' | 'Pendente' | 'Atrasado';
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'conflict' | 'error';
 export type SyncDirection = 'push' | 'pull' | 'bidirectional';
-export type EntityType = 'cliente' | 'produto' | 'locacao' | 'cobranca' | 'rota' | 'usuario';
+export type EntityType = 'cliente' | 'produto' | 'locacao' | 'cobranca' | 'rota' | 'usuario' | 'manutencao' | 'meta';
 export type ConflictResolutionStrategy = 'local' | 'remote' | 'newest' | 'manual';
 
 export interface SyncMetadata {
@@ -385,6 +385,7 @@ export interface HistoricoCobranca extends SyncableEntity {
   locacaoId: string;
   clienteId: string;
   clienteNome: string;
+  produtoId?: string;            // Vínculo opcional com produto
   produtoIdentificador: string;
   
   // Período da cobrança
@@ -420,6 +421,7 @@ export interface HistoricoCobranca extends SyncableEntity {
   status: StatusPagamento;
   dataVencimento?: string;
   observacao?: string;
+  trocaPano?: boolean;           // Indica se houve troca de pano nesta cobrança
 }
 
 // View auxiliar para tela de cobrança
@@ -447,6 +449,61 @@ export interface Manutencao {
   descricao?: string;
   data: string;
   registradoPor?: string;
+  // Campos de sincronização
+  syncStatus?: SyncStatus;
+  lastSyncedAt?: string;
+  needsSync?: boolean;
+  version?: number;
+  deviceId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string;
+}
+
+// ============================================================================
+// 🏢 ESTABELECIMENTOS — Locais de armazenamento
+// ============================================================================
+
+export interface Estabelecimento {
+  id: string;
+  nome: string;              // ex: "Barracão", "Depósito Central"
+  endereco?: string;        // Endereço do estabelecimento
+  observacao?: string;      // Anotações
+  // Campos de sincronização
+  syncStatus?: SyncStatus;
+  lastSyncedAt?: string;
+  needsSync?: boolean;
+  version?: number;
+  deviceId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string;
+}
+
+// ============================================================================
+// 🎯 METAS — Metas de arrecadação por período
+// ============================================================================
+
+export type StatusMeta = 'ativa' | 'atingida' | 'expirada';
+export type TipoMeta = 'receita' | 'cobrancas' | 'adimplencia';
+
+export interface Meta {
+  id: string;
+  nome: string;              // ex: "Meta Janeiro 2024"
+  tipo: TipoMeta;
+  valorMeta: number;         // Valor alvo
+  valorAtual: number;        // Valor alcançado
+  dataInicio: string;        // Início do período
+  dataFim: string;           // Fim do período
+  rotaId?: string;           // Se null, meta é global
+  status: StatusMeta;
+  criadoPor?: string;        // ID do usuário que criou
+  // Campos de sincronização
+  syncStatus?: SyncStatus;
+  lastSyncedAt?: string;
+  needsSync?: boolean;
+  version?: number;
+  deviceId?: string;
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string;
@@ -711,6 +768,8 @@ export interface SyncResponse {
     cobrancas?: HistoricoCobranca[];
     rotas?: Rota[];
     usuarios?: UsuarioSyncData[];
+    manutencoes?: Manutencao[];
+    metas?: Meta[];
   };
   conflicts?: SyncConflict[];
   errors?: string[];
@@ -734,6 +793,8 @@ export interface SyncSnapshotResponse {
     tiposProduto: TipoProduto[];
     descricoesProduto: DescricaoProduto[];
     tamanhosProduto: TamanhoProduto[];
+    manutencoes: Manutencao[];
+    metas: Meta[];
   };
 }
 

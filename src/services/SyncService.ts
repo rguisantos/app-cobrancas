@@ -498,6 +498,8 @@ class SyncService {
       cobranca: 'cobrancas',
       rota: 'rotas',
       usuario: 'usuarios',
+      manutencao: 'manutencoes',
+      meta: 'metas',
     };
     return tableMap[entityType];
   }
