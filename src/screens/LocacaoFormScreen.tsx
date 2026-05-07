@@ -323,7 +323,6 @@ export default function LocacaoFormScreen() {
       if (modo === 'criar') {
         const locacao = await criarLocacao({
           ...typedData,
-          status:               'Ativa',
           dataUltimaManutencao: form.trocaPano ? new Date().toISOString() : undefined,
         });
 

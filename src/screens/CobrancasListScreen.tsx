@@ -137,7 +137,7 @@ export default function CobrancasListScreen() {
       await ExportService.exportCSV(
         filteredCobrancas,
         'cobrancas',
-        ExportService.constructor.COBRANCA_COLUMNS || ExportService['COBRANCA_COLUMNS'] || [
+        [
           { key: 'clienteNome', header: 'Cliente' },
           { key: 'produtoIdentificador', header: 'Produto' },
           { key: 'dataInicio', header: 'Data Início' },
@@ -145,7 +145,7 @@ export default function CobrancasListScreen() {
           { key: 'totalClientePaga', header: 'Total', format: (v: number) => formatarMoeda(v) },
           { key: 'valorRecebido', header: 'Recebido', format: (v: number) => formatarMoeda(v) },
           { key: 'status', header: 'Status' },
-        ],
+        ] as any,
         { title: 'Relatório de Cobranças' }
       );
     } catch (error) {

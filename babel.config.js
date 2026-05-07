@@ -20,6 +20,7 @@ module.exports = function (api) {
             '@utils': './src/utils',
             '@config': './src/config',
             '@assets': './assets',
+            '@cobrancas/shared': './shared',
           },
         },
       ],

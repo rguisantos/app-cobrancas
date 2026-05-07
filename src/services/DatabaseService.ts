@@ -711,7 +711,7 @@ class DatabaseService {
 
         if (existing) {
           // UPDATE
-          await this.update(entityType, { ...entity, updatedAt: now });
+          await this.update(entityType, { ...entity, updatedAt: now }, true);
         } else {
           // INSERT
           const newEntity = {
@@ -730,7 +730,7 @@ class DatabaseService {
           entityId: entity.id,
           entityType,
           operation: existing ? 'update' : 'create',
-          changes: entity,
+          changes: entity as any,
           timestamp: now,
           deviceId: await this.getDeviceId(),
           synced: false,
@@ -810,7 +810,8 @@ class DatabaseService {
    */
   async update<T extends SyncableEntity>(
     entityType: EntityType,
-    entity: T
+    entity: T,
+    skipLog: boolean = false
   ): Promise<void> {
     if (!this.isReady()) {
       await this.waitForReady();
@@ -849,17 +850,19 @@ class DatabaseService {
         [...values, entity.id]
       );
 
-      // Log mudança
-      await this.logChange({
-        id: `${entityType}_${entity.id}_${now}`,
-        entityId: entity.id,
-        entityType,
-        operation: 'update',
-        changes: entity,
-        timestamp: now,
-        deviceId: await this.getDeviceId(),
-        synced: false,
-      });
+      if (!skipLog) {
+        // Log mudança
+        await this.logChange({
+          id: `${entityType}_${entity.id}_${now}`,
+          entityId: entity.id,
+          entityType,
+          operation: 'update',
+          changes: entity as any,
+          timestamp: now,
+          deviceId: await this.getDeviceId(),
+          synced: false,
+        });
+      }
 
       console.log(`[Database] ${entityType} atualizado: ${entity.id}`);
     } catch (error) {
@@ -1726,7 +1729,7 @@ class DatabaseService {
 
     await this.db.runAsync(
       `INSERT INTO ${tableName} (${fields.join(', ')}) VALUES (${placeholders})`,
-      values
+      values as any[]
     );
 
   }

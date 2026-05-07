@@ -135,7 +135,7 @@ export default function ProdutosListScreen() {
       await ExportService.exportCSV(
         filteredProdutos,
         'produtos',
-        ExportService.constructor.PRODUTO_COLUMNS || ExportService['PRODUTO_COLUMNS'] || [
+        [
           { key: 'identificador', header: 'Identificador' },
           { key: 'tipoNome', header: 'Tipo' },
           { key: 'descricaoNome', header: 'Descrição' },
@@ -143,7 +143,7 @@ export default function ProdutosListScreen() {
           { key: 'numeroRelogio', header: 'Relógio' },
           { key: 'conservacao', header: 'Conservação' },
           { key: 'statusProduto', header: 'Status' },
-        ],
+        ] as any,
         { title: 'Relatório de Produtos' }
       );
     } catch (error) {

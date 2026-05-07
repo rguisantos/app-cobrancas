@@ -4,8 +4,8 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { HistoricoCobranca, CobrancaFilters } from '../types';
-import { NovaCobrancaData } from '../repositories/CobrancaRepository';
+import { HistoricoCobranca } from '../types';
+import { CobrancaFilters, NovaCobrancaData } from '../repositories/CobrancaRepository';
 import { cobrancaRepository } from '../repositories/CobrancaRepository';
 import { useDatabase } from './DatabaseContext';
 

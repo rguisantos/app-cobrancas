@@ -187,7 +187,11 @@ export default function ClienteDetailScreen() {
   }
 
   // Verificar permissão de acesso à rota
-  if (user?.tipoPermissao !== 'Administrador' && !canAccessRota(clienteSelecionado.rotaId)) {
+  if (
+    user?.tipoPermissao !== 'Administrador' &&
+    clienteSelecionado.rotaId &&
+    !canAccessRota(String(clienteSelecionado.rotaId))
+  ) {
     return (
       <View style={styles.errorContainer}>
         <Ionicons name="lock-closed-outline" size={64} color="#CBD5E1" />

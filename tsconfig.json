@@ -27,7 +27,9 @@
       "@types/*": ["src/types/*"],
       "@utils/*": ["src/utils/*"],
       "@config/*": ["src/config/*"],
-      "@assets/*": ["assets/*"]
+      "@assets/*": ["assets/*"],
+      "@cobrancas/shared": ["shared/index.ts"],
+      "@cobrancas/shared/*": ["shared/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "App.tsx", "index.ts"],

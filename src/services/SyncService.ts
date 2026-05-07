@@ -4,7 +4,6 @@
  * Arquitetura: Offline-first com SQLite local + PostgreSQL remoto
  */
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   SyncMetadata, 
   ChangeLog, 
@@ -359,7 +358,7 @@ class SyncService {
           'Dados podem estar incompletos — usando snapshot para resync completo.'
         );
         this.notify({
-          phase: 'pull',
+          phase: 'pulling',
           total: pulled,
           current: pulled,
           message: 'Dispositivo desatualizado — sincronizando snapshot completo...',
@@ -398,23 +397,12 @@ class SyncService {
     try {
       const metadata = await databaseService.getSyncMetadata();
       
-      // Se já tem deviceId e deviceKey no SyncMetadata, verificar se ainda é válido
+      // Fonte única de verdade: sync_metadata local (SQLite)
       if (metadata.deviceId && metadata.deviceKey) {
         return true;
       }
 
-      // Verificar se existe deviceKey no AsyncStorage (salvo pelo DeviceActivationScreen)
-      const savedDeviceKey = await AsyncStorage.getItem('@device:key');
-      const savedDeviceId = await AsyncStorage.getItem('@device:id');
-      const savedDeviceName = await AsyncStorage.getItem('@device:name');
-      
-      if (savedDeviceId && savedDeviceKey) {
-        // Salvar no SyncMetadata para uso futuro
-        await databaseService.setDeviceId(savedDeviceId, savedDeviceName || 'Dispositivo', savedDeviceKey);
-        return true;
-      }
-
-      // Se não tem deviceKey em nenhum lugar, precisa de ativação
+      // Sem metadados locais completos: precisa de ativação
       logger.warn('[Sync] Dispositivo não registrado. Precisa de ativação via PIN.');
       return false;
     } catch (error) {

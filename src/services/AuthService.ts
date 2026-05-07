@@ -247,8 +247,7 @@ class AuthService {
 
   /**
    * Gera um token local seguro para autenticação offline.
-   * Formato JWT-like (header.payload.signature) para não revelar que é token local.
-   * O prefixo "ey" imita o header base64 de um JWT real.
+   * O prefixo local evita confundir sessão offline com JWT real do backend.
    */
   private async gerarTokenLocal(usuarioId: string): Promise<string> {
     const randomPart = Array.from(crypto.getRandomValues(new Uint8Array(32)))
@@ -256,15 +255,18 @@ class AuthService {
       .join('');
     const timestamp = Date.now().toString(36);
     const userIdHash = usuarioId.slice(0, 8);
-    // Format: ey<header-like>.<payload>.<signature> — looks like a JWT
-    return `ey${timestamp}.${userIdHash}${randomPart.slice(0, 16)}.${randomPart}`;
+    return `local.${timestamp}.${userIdHash}${randomPart.slice(0, 16)}.${randomPart}`;
   }
 
   /**
-   * Verifica se o token foi gerado localmente (offline) pelo formato JWT-like.
+   * Verifica se o token foi gerado localmente (offline).
+   * Compatibilidade: tokens locais antigos começavam com "ey", mas JWTs reais
+   * também começam assim. JWTs válidos do backend normalmente iniciam por "eyJ"
+   * (header JSON base64url); tokens locais antigos não.
    */
   private isLocalToken(token: string): boolean {
-    return token.startsWith('ey') && token.split('.').length === 3;
+    if (token.startsWith('local.')) return true;
+    return token.startsWith('ey') && token.split('.').length === 3 && !token.startsWith('eyJ');
   }
 
   /**
@@ -449,38 +451,32 @@ class AuthService {
     }
 
     try {
-      const response = await fetch(`${ENV.API_URL}/api/mobile/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: storedRefreshToken }),
-      });
+      const response = await apiService.refreshToken(storedRefreshToken);
 
-      if (!response.ok) {
+      if (!response.success || !response.data?.token) {
         // Refresh token inválido ou expirado — limpar e forçar re-login
-        await secureStorage.clearAuthData();
+        if (response.statusCode === 401 || response.statusCode === 400) {
+          await secureStorage.clearAuthData();
+        }
         throw new Error('Sessão expirada. Faça login novamente.');
       }
 
-      const data = await response.json();
+      const data = response.data;
 
-      if (data.success && data.token) {
-        // Salvar novos tokens
-        await secureStorage.saveAccessToken(data.token);
-        if (data.refreshToken) {
-          await secureStorage.saveRefreshToken(data.refreshToken);
-        }
-        apiService.setToken(data.token);
+      // Salvar novos tokens
+      await secureStorage.saveAccessToken(data.token);
+      if (data.refreshToken) {
+        await secureStorage.saveRefreshToken(data.refreshToken);
+      }
+      apiService.setToken(data.token);
 
-        // Atualizar dados do usuário se retornados
-        if (data.user) {
-          await secureStorage.saveUser(JSON.stringify(data.user));
-        }
-
-        logger.info('[Auth] Token renovado com sucesso via refresh');
-        return data.token;
+      // Atualizar dados do usuário se retornados
+      if (data.user) {
+        await secureStorage.saveUser(JSON.stringify(data.user));
       }
 
-      throw new Error('Falha ao renovar sessão. Faça login novamente.');
+      logger.info('[Auth] Token renovado com sucesso via refresh');
+      return data.token;
     } catch (error) {
       if (error instanceof TypeError) {
         // Erro de rede — não podemos renovar, mas a sessão local ainda é válida

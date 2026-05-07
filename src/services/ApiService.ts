@@ -309,7 +309,7 @@ class ApiService {
   /**
    * Requisição POST
    */
-  private async post<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
+  async post<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
     return this.requestWithRetry<T>(endpoint, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -361,6 +361,9 @@ class ApiService {
           locacoes: [],
           cobrancas: [],
           rotas: [],
+          usuarios: [],
+          manutencoes: [],
+          metas: [],
         },
         conflicts: [],
         errors: [response.error || 'Falha ao enviar mudanças'],
@@ -390,9 +393,15 @@ class ApiService {
         locacoes: [],
         cobrancas: [],
         rotas: [],
+        usuarios: [],
+        manutencoes: [],
+        metas: [],
       },
       conflicts: [],
       errors: [],
+      tiposProduto: [],
+      descricoesProduto: [],
+      tamanhosProduto: [],
     };
 
     let currentLastSyncAt = payload.lastSyncAt;
@@ -422,6 +431,9 @@ class ApiService {
             locacoes: [],
             cobrancas: [],
             rotas: [],
+            usuarios: [],
+            manutencoes: [],
+            metas: [],
           },
           conflicts: [],
           errors: [response.error || 'Falha ao buscar mudanças'],
@@ -439,7 +451,21 @@ class ApiService {
       allCh.cobrancas = [...(allCh.cobrancas || []), ...(changes.cobrancas || [])];
       allCh.rotas = [...(allCh.rotas || []), ...(changes.rotas || [])];
       allCh.usuarios = [...(allCh.usuarios || []), ...(changes.usuarios || [])];
+      allCh.manutencoes = [...(allCh.manutencoes || []), ...(changes.manutencoes || [])];
+      allCh.metas = [...(allCh.metas || []), ...(changes.metas || [])];
       allChanges.changes = allCh;
+      allChanges.tiposProduto = [
+        ...(allChanges.tiposProduto || []),
+        ...(data.tiposProduto || []),
+      ];
+      allChanges.descricoesProduto = [
+        ...(allChanges.descricoesProduto || []),
+        ...(data.descricoesProduto || []),
+      ];
+      allChanges.tamanhosProduto = [
+        ...(allChanges.tamanhosProduto || []),
+        ...(data.tamanhosProduto || []),
+      ];
       allChanges.lastSyncAt = data.lastSyncAt;
       allChanges.conflicts = [...(allChanges.conflicts || []), ...(data.conflicts || [])];
       allChanges.errors = [...(allChanges.errors || []), ...(data.errors || [])];
@@ -453,7 +479,12 @@ class ApiService {
     if (ENV.DEBUG) {
       const changes = allChanges.changes || {};
       const total = (changes.clientes?.length || 0) + (changes.produtos?.length || 0) +
-        (changes.locacoes?.length || 0) + (changes.cobrancas?.length || 0) + (changes.rotas?.length || 0);
+        (changes.locacoes?.length || 0) + (changes.cobrancas?.length || 0) +
+        (changes.rotas?.length || 0) + (changes.usuarios?.length || 0) +
+        (changes.manutencoes?.length || 0) + (changes.metas?.length || 0) +
+        (allChanges.tiposProduto?.length || 0) +
+        (allChanges.descricoesProduto?.length || 0) +
+        (allChanges.tamanhosProduto?.length || 0);
       console.log(`[API:SYNC:PULL] OK — ${pullRound} rounds, ${total} entidades`);
     }
     return allChanges;
@@ -660,7 +691,8 @@ class ApiService {
    * NOTA: Usa /api/mobile/auth/login para evitar interceptação pelo NextAuth
    */
   async login(email: string, senha: string): Promise<ApiResponse<{ token: string; refreshToken?: string; user: any }>> {
-    return this.post('/api/mobile/auth/login', { email, password: senha });
+    // Compatibilidade: backend novo usa `senha`; legado pode aceitar `password`.
+    return this.post('/api/mobile/auth/login', { email, senha, password: senha });
   }
 
   /**

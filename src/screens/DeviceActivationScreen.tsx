@@ -9,7 +9,7 @@
  * 4. Dispositivo é ativado e pode sincronizar
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -23,7 +23,6 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
 import * as Updates from 'expo-updates';
 
@@ -42,29 +41,12 @@ export default function DeviceActivationScreen() {
   const [senha, setSenha] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [deviceKey, setDeviceKey] = useState<string | null>(null);
   
   // Refs para os inputs
   const inputRefs = useRef<(TextInput | null)[]>([]);
   
   // Animação
   const shakeAnim = useRef(new Animated.Value(0)).current;
-  
-  // Carregar deviceKey salvo
-  useEffect(() => {
-    const loadDeviceKey = async () => {
-      try {
-        const savedKey = await AsyncStorage.getItem('@device:key');
-        if (savedKey) {
-          setDeviceKey(savedKey);
-          console.log('[DeviceActivation] DeviceKey carregado:', savedKey.substring(0, 20) + '...');
-        }
-      } catch (error) {
-        console.error('[DeviceActivation] Erro ao carregar deviceKey:', error);
-      }
-    };
-    loadDeviceKey();
-  }, []);
   
   // Gerar chave única do dispositivo
   const generateDeviceKey = async (): Promise<string> => {
@@ -162,8 +144,8 @@ export default function DeviceActivationScreen() {
     setErro(null);
     
     try {
-      // Usar deviceKey existente ou gerar novo
-      const finalDeviceKey = deviceKey || await generateDeviceKey();
+      // Gerar chave única para ativação deste dispositivo
+      const finalDeviceKey = await generateDeviceKey();
       const deviceName = getDeviceName();
       
       console.log('[DeviceActivation] Tentando ativar dispositivo:', {
@@ -183,14 +165,7 @@ export default function DeviceActivationScreen() {
       console.log('[DeviceActivation] Resposta:', response);
       
       if (response.success && response.data?.success) {
-        // Salvar informacoes do dispositivo localmente (AsyncStorage para o AppNavigator)
-        await AsyncStorage.setItem('@device:id', dispositivoId.trim());
-        await AsyncStorage.setItem('@device:key', finalDeviceKey);
-        await AsyncStorage.setItem('@device:name', deviceName);
-        await AsyncStorage.setItem('@device:activated', 'true');
-        
-        // IMPORTANTE: Salvar também no SyncMetadata (SQLite) para o SyncService
-        // O SyncService usa databaseService.getSyncMetadata() para obter a deviceKey
+        // Fonte única de verdade: SyncMetadata (SQLite) para todo o app
         await databaseService.setDeviceId(dispositivoId.trim(), deviceName, finalDeviceKey);
         
         console.log('[DeviceActivation] ========================================');
@@ -199,13 +174,6 @@ export default function DeviceActivationScreen() {
         console.log('[DeviceActivation] deviceKey:', finalDeviceKey);
         console.log('[DeviceActivation] deviceName:', deviceName);
         console.log('[DeviceActivation] ========================================');
-        
-        // Verificar se foi salvo corretamente
-        const verifyActivated = await AsyncStorage.getItem('@device:activated');
-        const verifyKey = await AsyncStorage.getItem('@device:key');
-        console.log('[DeviceActivation] Verificação AsyncStorage:');
-        console.log('[DeviceActivation]   @device:activated =', verifyActivated);
-        console.log('[DeviceActivation]   @device:key =', verifyKey);
         
         Alert.alert(
           'Sucesso!',

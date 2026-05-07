@@ -20,6 +20,7 @@ import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navig
 import { locacaoRepository }   from '../repositories/LocacaoRepository';
 import { cobrancaRepository }  from '../repositories/CobrancaRepository';
 import { cobrancaService }     from '../services/CobrancaService';
+import { databaseService }     from '../services/DatabaseService';
 import { masks }               from '../utils/masks';
 import { formatarMoeda }       from '../utils/currency';
 import { Locacao }             from '../types';
@@ -85,7 +86,7 @@ export default function CobrancaClienteScreen() {
       if (lista.length > 0) {
         const ids = lista.map(l => String(l.id));
         const placeholders = ids.map(() => '?').join(', ');
-        const rows = await databaseService.getAllAsync<{ locacaoId: string; saldo: number }>(
+        const rows = await databaseService.getAllAsync<{ locacaoId: string; saldo: number; rn: number }>(
           `SELECT locacaoId,
                   saldoDevedorGerado AS saldo,
                   ROW_NUMBER() OVER (PARTITION BY locacaoId ORDER BY updatedAt DESC, createdAt DESC) AS rn

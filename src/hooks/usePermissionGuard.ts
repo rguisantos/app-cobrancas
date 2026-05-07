@@ -41,7 +41,7 @@ const ENTITY_PERMISSION_MAP: Record<PermissionEntity, MobilePermissionKey> = {
 // ============================================================================
 
 export function usePermissionGuard() {
-  const { user, permissoesAtivas } = useAuth();
+  const { user } = useAuth();
 
   /**
    * Verifica se o usuário tem permissão para acessar uma entidade
@@ -60,9 +60,9 @@ export function usePermissionGuard() {
       const permissionKey = ENTITY_PERMISSION_MAP[entity];
       if (!permissionKey) return false;
 
-      return permissoesAtivas?.[permissionKey] ?? false;
+      return user.permissoes?.mobile?.[permissionKey] ?? false;
     },
-    [user, permissoesAtivas]
+    [user]
   );
 
   /**

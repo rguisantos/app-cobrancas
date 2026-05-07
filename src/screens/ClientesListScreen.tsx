@@ -120,7 +120,15 @@ export default function ClientesListScreen() {
       await ExportService.exportCSV(
         paginatedClientes,
         'clientes',
-        ExportService.constructor.CLIENTE_COLUMNS || ExportService.CLIENTE_COLUMNS,
+        [
+          { key: 'identificador', header: 'Identificador' },
+          { key: 'nomeExibicao', header: 'Nome' },
+          { key: 'cpfCnpj', header: 'CPF/CNPJ' },
+          { key: 'telefonePrincipal', header: 'Telefone' },
+          { key: 'cidade', header: 'Cidade' },
+          { key: 'rotaNome', header: 'Rota' },
+          { key: 'status', header: 'Status' },
+        ] as any,
         { title: 'Relatório de Clientes' }
       );
       await AuditService.logAction('gerar_relatorio', 'cliente', undefined, {

@@ -37,7 +37,7 @@ export default function HistoricoCobrancaScreen() {
     // Filtrar por locacaoId no repositório quando disponível,
     // evitando carregar todas as cobranças do cliente só para filtrar localmente
     if (produtoId) {
-      // produtoId aqui é na verdade o produtoIdentificador — buscar por locação específica
+      // produtoId aqui representa o identificador de produto no histórico
       await carregarCobrancas({ clienteId, produtoIdentificador: produtoId });
     } else {
       await carregarCobrancas({ clienteId });

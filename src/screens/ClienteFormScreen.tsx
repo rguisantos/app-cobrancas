@@ -359,7 +359,7 @@ export default function ClienteFormScreen() {
     } catch (error) {
       Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao salvar cliente');
     }
-  }, [modo, clienteId, validatedData, salvarCliente, atualizarCliente, navigation, canDo, validateAndGet]);
+  }, [modo, clienteId, salvarCliente, atualizarCliente, navigation, canDo, validateAndGet]);
 
   // ==========================================================================
   // RENDERIZAÇÃO DE CAMPOS

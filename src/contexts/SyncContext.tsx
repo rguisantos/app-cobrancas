@@ -6,7 +6,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   SyncMetadata, 
   SyncStatus, 
@@ -20,10 +19,8 @@ import {
 import { databaseService } from '../services/DatabaseService';
 import { apiService } from '../services/ApiService';
 import { syncService } from '../services/SyncService';
+import { secureStorage } from '../services/SecureStorage';
 import logger from '../utils/logger';
-
-// Chave do token no AsyncStorage (mesma do AuthContext)
-const TOKEN_KEY = '@cobrancas:token';
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -79,7 +76,6 @@ export interface SyncContextData extends SyncState {
   syncNow: () => Promise<void>; // Alias para sincronizar
   
   // Dispositivo
-  registrarDispositivo: (nome: string, chave: string) => Promise<boolean>;
   atualizarDispositivo: (dados: Partial<Equipamento>) => Promise<void>;
   ativarDispositivo: (dispositivoId: string, senhaNumerica: string) => Promise<boolean>;
   verificarAtivacao: () => Promise<void>;
@@ -239,32 +235,6 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   }
   }, [syncConfig.syncOnAppStart]);
 
-  // Sync automático ao voltar do background (AppState: background → active)
-  useEffect(() => {
-    if (!syncConfig.syncOnAppResume) return;
-
-    const appStateRef = { current: AppState.currentState };
-
-    const subscription = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
-      const prev = appStateRef.current;
-      appStateRef.current = nextState;
-
-      // Só sincroniza quando voltar para foreground (background/inactive → active)
-      if ((prev === 'background' || prev === 'inactive') && nextState === 'active') {
-        // BUG FIX: Verificar se há token antes de sincronizar
-        const token = await AsyncStorage.getItem(TOKEN_KEY);
-        if (!token) {
-          logger.info('[SyncContext] App voltou ao foreground mas sem token — ignorando sync');
-          return;
-        }
-        logger.info('[SyncContext] App voltou ao foreground — iniciando sync');
-        sincronizar();
-      }
-    });
-
-    return () => subscription.remove();
-  }, [syncConfig.syncOnAppResume, sincronizar]);
-
   // ==========================================================================
   // SINCRONIZAÇÃO
   // ==========================================================================
@@ -289,13 +259,13 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
 
     try {
       // IMPORTANTE: Sincronizar token do AsyncStorage com ApiService
-      const savedToken = await AsyncStorage.getItem(TOKEN_KEY);
+      const savedToken = await secureStorage.getAccessToken();
       if (savedToken) {
         apiService.setToken(savedToken);
       } else {
         console.warn('[SyncContext] Nenhum token encontrado — abortando sync');
         setIsSyncing(false);
-        setStatus('idle');
+        setStatus('pending');
         return;
       }
 
@@ -384,57 +354,6 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   // ==========================================================================
   // DISPOSITIVO
   // ==========================================================================
-
-  /**
-   * Registra dispositivo no servidor
-   */
-  const registrarDispositivo = useCallback(async (nome: string, chave: string): Promise<boolean> => {
-    try {
-      setLastSyncMessage('Registrando dispositivo...');
-
-      // Gerar ID único para o dispositivo
-      const deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Registrar no servidor
-      const response = await apiService.registrarEquipamento({
-        id: deviceId,
-        nome,
-        chave,
-        tipo: 'Celular',
-        dataCadastro: new Date().toISOString(),
-      });
-
-      if (!response.success) {
-        throw new Error(response.error || 'Falha ao registrar dispositivo');
-    
-  }
-
-      // Salvar metadata local
-      await databaseService.setDeviceId(deviceId, nome, chave);
-
-      // Atualizar estado
-      setDispositivo({
-        id: deviceId,
-        nome,
-        chave,
-        registrado: true,
-      });
-
-      setLastSyncMessage('Dispositivo registrado com sucesso');
-      setStatus('synced');
-
-      console.log('[SyncContext] Dispositivo registrado:', deviceId);
-      return true;
-    } catch (error) {
-      const mensagem = error instanceof Error ? error.message : 'Erro ao registrar dispositivo';
-      setErro(mensagem);
-      setUltimoErro(mensagem);
-      setLastSyncMessage(mensagem);
-      console.error('[SyncContext] Erro ao registrar dispositivo:', error);
-      return false;
-  
-  }
-  }, []);
 
   /**
    * Atualiza informações do dispositivo
@@ -547,14 +466,6 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
         deviceKey
       );
       
-      // BUG FIX: Persistir @device:activated e @device:key no AsyncStorage
-      // Isso garante que a ativação persista entre logins
-      await AsyncStorage.multiSet([
-        ['@device:activated', 'true'],
-        ['@device:id', dispositivoId],
-        ['@device:key', deviceKey]
-      ]);
-      
       // Atualizar estado
       setDispositivo({
         id: dispositivoId,
@@ -605,8 +516,10 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
           versaoFinal = conflito.remoteVersion;
           break;
         case 'newest':
-          const localDate = new Date(conflito.localVersion.updatedAt);
-          const remoteDate = new Date(conflito.remoteVersion.updatedAt);
+          const localUpdatedAt = String((conflito.localVersion as any)?.updatedAt || 0);
+          const remoteUpdatedAt = String((conflito.remoteVersion as any)?.updatedAt || 0);
+          const localDate = new Date(localUpdatedAt);
+          const remoteDate = new Date(remoteUpdatedAt);
           versaoFinal = localDate > remoteDate ? conflito.localVersion : conflito.remoteVersion;
           break;
         case 'manual':
@@ -782,6 +695,30 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     }
   }, [syncConfig.autoSyncEnabled, dispositivo?.registrado, ativarAutoSync]);
 
+  // Sync automático ao voltar do background (AppState: background → active)
+  useEffect(() => {
+    if (!syncConfig.syncOnAppResume) return;
+
+    const appStateRef = { current: AppState.currentState };
+
+    const subscription = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
+      const prev = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if ((prev === 'background' || prev === 'inactive') && nextState === 'active') {
+        const token = await secureStorage.getAccessToken();
+        if (!token) {
+          logger.info('[SyncContext] App voltou ao foreground mas sem token — ignorando sync');
+          return;
+        }
+        logger.info('[SyncContext] App voltou ao foreground — iniciando sync');
+        sincronizar();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [syncConfig.syncOnAppResume, sincronizar]);
+
   // ==========================================================================
   // ESTADO DO CONTEXT
   // ==========================================================================
@@ -812,7 +749,6 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     syncNow: () => sincronizar(true),
 
     // Dispositivo
-    registrarDispositivo,
     atualizarDispositivo,
     ativarDispositivo,
     verificarAtivacao,
