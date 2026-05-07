@@ -797,21 +797,6 @@ class ApiService {
   }
 
   // ==========================================================================
-  // HISTÓRICO DE RELÓGIO
-  // ==========================================================================
-
-  /**
-   * Cria um registro de alteração de relógio no backend.
-   * O backend cria o HistoricoRelogio E atualiza o numeroRelogio do produto
-   * em uma única transação.
-   *
-   * @param dados - { produtoId, relogioNovo, motivo }
-   */
-  async criarHistoricoRelogio(dados: { produtoId: string; relogioNovo: string; motivo: string }): Promise<ApiResponse<any>> {
-    return this.post('/api/historico-relogio', dados);
-  }
-
-  // ==========================================================================
   // UTILITÁRIOS
   // ==========================================================================
 

@@ -492,23 +492,6 @@ class ProdutoRepository {
         console.warn('[ProdutoRepository] Não foi possível salvar histórico localmente (tabela pode não existir):', dbError);
       }
 
-      // Tentar enviar histórico para o backend via API
-      try {
-        const { apiService } = await import('../services/ApiService');
-        const result = await apiService.criarHistoricoRelogio({
-          produtoId,
-          relogioNovo: novoNumeroRelogio,
-          motivo,
-        });
-        if (result.success) {
-          console.log('[ProdutoRepository] Histórico de relógio sincronizado com o backend');
-        } else {
-          console.warn('[ProdutoRepository] Falha ao sincronizar histórico com o backend:', result.error);
-        }
-      } catch (apiError) {
-        console.warn('[ProdutoRepository] Não foi possível enviar histórico via API (offline?):', apiError);
-      }
-
       console.log('[ProdutoRepository] Número do relógio atualizado:', produtoId);
       return true;
     } catch (error) {

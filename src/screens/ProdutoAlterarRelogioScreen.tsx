@@ -91,7 +91,7 @@ export default function ProdutoAlterarRelogioScreen({ route, navigation }: Props
       );
 
       if (sucesso) {
-        Alert.alert('Sucesso', 'Número do relógio alterado com sucesso', [
+        Alert.alert('Sucesso', 'Número do relógio alterado. A mudança será enviada na próxima sincronização.', [
           { text: 'OK', onPress: () => navigation.goBack() }
         ]);
       } else {
