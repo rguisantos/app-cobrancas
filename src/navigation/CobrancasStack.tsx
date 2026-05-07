@@ -32,6 +32,7 @@ export interface DadosCobrancaParam {
   clienteNome:           string;
   rotaId:                string;
   rotaNome?:             string; // nome da rota para navegação
+  produtoId?:            string; // Vínculo opcional com produto
   produtoIdentificador:  string;
   produtoTipo:           string;
   formaPagamento:        string;

@@ -12,8 +12,8 @@ import { SafeAreaView }  from 'react-native-safe-area-context';
 import { Ionicons }      from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 
-import { manutencaoRepository, RegistroManutencao } from '../repositories/ManutencaoRepository';
-import { formatarMoeda } from '../utils/currency';
+import { manutencaoRepository } from '../repositories/ManutencaoRepository';
+import { Manutencao } from '../types';
 
 const TIPO_LABEL: Record<string, string> = {
   trocaPano:  'Troca de Pano',
@@ -23,6 +23,14 @@ const TIPO_LABEL: Record<string, string> = {
 const TIPO_COLOR: Record<string, string> = {
   trocaPano:  '#2563EB',
   manutencao: '#EA580C',
+};
+
+const SYNC_STATUS_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
+  synced:   { label: 'Sincronizado', color: '#16A34A', icon: 'checkmark-circle' },
+  pending:  { label: 'Pendente',     color: '#F59E0B', icon: 'cloud-upload' },
+  syncing:  { label: 'Enviando',     color: '#2563EB', icon: 'sync' },
+  conflict: { label: 'Conflito',     color: '#DC2626', icon: 'alert' },
+  error:    { label: 'Erro',         color: '#DC2626', icon: 'close-circle' },
 };
 
 function formatData(iso: string) {
@@ -35,8 +43,8 @@ function formatData(iso: string) {
 }
 
 export default function RelatorioManutencaoScreen() {
-  const [registros,    setRegistros]    = useState<RegistroManutencao[]>([]);
-  const [filtrados,    setFiltrados]    = useState<RegistroManutencao[]>([]);
+  const [registros,    setRegistros]    = useState<Manutencao[]>([]);
+  const [filtrados,    setFiltrados]    = useState<Manutencao[]>([]);
   const [carregando,   setCarregando]   = useState(true);
   const [busca,        setBusca]        = useState('');
   const [filtroTipo,   setFiltroTipo]   = useState<'todos' | 'trocaPano' | 'manutencao'>('todos');
@@ -56,7 +64,7 @@ export default function RelatorioManutencaoScreen() {
 
   useFocusEffect(useCallback(() => { carregar(); }, [carregar]));
 
-  const applyFilters = (lista: RegistroManutencao[], q: string, tipo: string) => {
+  const applyFilters = (lista: Manutencao[], q: string, tipo: string) => {
     let result = lista;
     if (tipo !== 'todos') result = result.filter(r => r.tipo === tipo);
     if (q.trim()) {
@@ -81,57 +89,71 @@ export default function RelatorioManutencaoScreen() {
   };
 
   const totalTrocas = registros.filter(r => r.tipo === 'trocaPano').length;
+  const pendentesSync = registros.filter(r => r.needsSync || r.syncStatus === 'pending' || r.syncStatus === 'error').length;
 
-  const renderItem = ({ item }: { item: RegistroManutencao }) => (
-    <View style={s.card}>
-      <View style={s.cardHeader}>
-        <View style={[s.tipoBadge, { backgroundColor: `${TIPO_COLOR[item.tipo]}15` }]}>
-          <Ionicons
-            name={item.tipo === 'trocaPano' ? 'color-wand' : 'construct'}
-            size={14}
-            color={TIPO_COLOR[item.tipo]}
-          />
-          <Text style={[s.tipoBadgeText, { color: TIPO_COLOR[item.tipo] }]}>
-            {TIPO_LABEL[item.tipo] ?? item.tipo}
-          </Text>
-        </View>
-        <Text style={s.dataText}>{formatData(item.data)}</Text>
-      </View>
+  const renderItem = ({ item }: { item: Manutencao }) => {
+    const syncCfg = SYNC_STATUS_CONFIG[item.syncStatus || 'pending'] || SYNC_STATUS_CONFIG.pending;
 
-      <View style={s.cardBody}>
-        <View style={s.produtoRow}>
-          <Ionicons name="cube" size={16} color="#2563EB" />
-          <Text style={s.produtoText}>
-            {item.produtoTipo} N° {item.produtoIdentificador}
-          </Text>
+    return (
+      <View style={s.card}>
+        <View style={s.cardHeader}>
+          <View style={[s.tipoBadge, { backgroundColor: `${TIPO_COLOR[item.tipo]}15` }]}>
+            <Ionicons
+              name={item.tipo === 'trocaPano' ? 'color-wand' : 'construct'}
+              size={14}
+              color={TIPO_COLOR[item.tipo]}
+            />
+            <Text style={[s.tipoBadgeText, { color: TIPO_COLOR[item.tipo] }]}>
+              {TIPO_LABEL[item.tipo] ?? item.tipo}
+            </Text>
+          </View>
+          <Text style={s.dataText}>{formatData(item.data)}</Text>
         </View>
 
-        {item.clienteNome && (
-          <View style={s.infoRow}>
-            <Ionicons name="person-outline" size={14} color="#94A3B8" />
-            <Text style={s.infoText}>{item.clienteNome}</Text>
+        <View style={s.cardBody}>
+          <View style={s.produtoRow}>
+            <Ionicons name="cube" size={16} color="#2563EB" />
+            <Text style={s.produtoText}>
+              {item.produtoTipo} N° {item.produtoIdentificador}
+            </Text>
           </View>
-        )}
 
-        {item.descricao && (
-          <Text style={s.descricao}>{item.descricao}</Text>
-        )}
+          {item.clienteNome && (
+            <View style={s.infoRow}>
+              <Ionicons name="person-outline" size={14} color="#94A3B8" />
+              <Text style={s.infoText}>{item.clienteNome}</Text>
+            </View>
+          )}
 
-        {item.cobrancaId && (
-          <View style={s.infoRow}>
-            <Ionicons name="cash-outline" size={14} color="#94A3B8" />
-            <Text style={s.infoText}>Durante cobrança</Text>
+          {item.descricao && (
+            <Text style={s.descricao}>{item.descricao}</Text>
+          )}
+
+          {item.cobrancaId && (
+            <View style={s.infoRow}>
+              <Ionicons name="cash-outline" size={14} color="#94A3B8" />
+              <Text style={s.infoText}>Durante cobrança</Text>
+            </View>
+          )}
+          {item.locacaoId && !item.cobrancaId && (
+            <View style={s.infoRow}>
+              <Ionicons name="key-outline" size={14} color="#94A3B8" />
+              <Text style={s.infoText}>Na criação da locação</Text>
+            </View>
+          )}
+
+          {/* Indicador de sincronização */}
+          <View style={[s.syncRow, { borderLeftColor: syncCfg.color }]}>
+            <Ionicons name={syncCfg.icon as any} size={12} color={syncCfg.color} />
+            <Text style={[s.syncText, { color: syncCfg.color }]}>{syncCfg.label}</Text>
+            {item.version != null && (
+              <Text style={s.versionText}>v{item.version}</Text>
+            )}
           </View>
-        )}
-        {item.locacaoId && !item.cobrancaId && (
-          <View style={s.infoRow}>
-            <Ionicons name="key-outline" size={14} color="#94A3B8" />
-            <Text style={s.infoText}>Na criação da locação</Text>
-          </View>
-        )}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
@@ -149,6 +171,12 @@ export default function RelatorioManutencaoScreen() {
           <Text style={[s.statNum, { color: '#EA580C' }]}>{registros.length - totalTrocas}</Text>
           <Text style={s.statLabel}>Manutenções</Text>
         </View>
+        {pendentesSync > 0 && (
+          <View style={s.statBox}>
+            <Text style={[s.statNum, { color: '#F59E0B' }]}>{pendentesSync}</Text>
+            <Text style={s.statLabel}>Pend. Sync</Text>
+          </View>
+        )}
       </View>
 
       {/* busca */}
@@ -243,6 +271,11 @@ const s = StyleSheet.create({
   infoRow:    { flexDirection: 'row', alignItems: 'center', gap: 5 },
   infoText:   { fontSize: 13, color: '#64748B' },
   descricao:  { fontSize: 12, color: '#94A3B8', fontStyle: 'italic', marginTop: 2 },
+
+  // sync status row
+  syncRow:    { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#F59E0B' },
+  syncText:   { fontSize: 11, fontWeight: '600' },
+  versionText:{ fontSize: 10, color: '#94A3B8', marginLeft: 'auto' },
 
   empty:      { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64, gap: 8 },
   emptyTitle: { fontSize: 17, fontWeight: '600', color: '#334155' },

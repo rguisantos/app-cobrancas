@@ -39,6 +39,9 @@ import { ProdutosStackParamList } from '../navigation/ProdutosStack';
 // Components
 import { useProdutoNavigate } from '../navigation/ProdutosStack';
 
+// Utils
+import { dateISOtoBR } from '../utils/database';
+
 // ============================================================================
 // TIPOS DE ROTA
 // ============================================================================
@@ -316,6 +319,12 @@ export default function ProdutoDetailScreen() {
                 <Text style={styles.infoValue}>{produtoSelecionado.codigoABLF}</Text>
               </View>
             )}
+            {produtoSelecionado.estabelecimento && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Estabelecimento</Text>
+                <Text style={styles.infoValue}>{produtoSelecionado.estabelecimento}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -344,7 +353,7 @@ export default function ProdutoDetailScreen() {
         {/* ========================================================================== */}
         {/* MANUTENÇÃO */}
         {/* ========================================================================== */}
-        {(produtoSelecionado.dataUltimaManutencao || produtoSelecionado.observacao) && (
+        {(produtoSelecionado.dataUltimaManutencao || produtoSelecionado.dataFabricacao || produtoSelecionado.dataAvaliacao || produtoSelecionado.observacao) && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Manutenção</Text>
             <View style={styles.sectionCard}>
@@ -352,14 +361,15 @@ export default function ProdutoDetailScreen() {
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Última Manutenção</Text>
                   <Text style={styles.infoValue}>
-                    {new Date(produtoSelecionado.dataUltimaManutencao).toLocaleDateString('pt-BR')}
+                    {dateISOtoBR(produtoSelecionado.dataUltimaManutencao) || new Date(produtoSelecionado.dataUltimaManutencao).toLocaleDateString('pt-BR')}
                   </Text>
                 </View>
               )}
               {produtoSelecionado.dataFabricacao && (
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Data de Fabricação</Text>
-                  <Text style={styles.infoValue}>                    {new Date(produtoSelecionado.dataFabricacao).toLocaleDateString('pt-BR')}
+                  <Text style={styles.infoValue}>
+                    {dateISOtoBR(produtoSelecionado.dataFabricacao) || new Date(produtoSelecionado.dataFabricacao).toLocaleDateString('pt-BR')}
                   </Text>
                 </View>
               )}
@@ -367,6 +377,14 @@ export default function ProdutoDetailScreen() {
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Relatório</Text>
                   <Text style={styles.infoValue}>{produtoSelecionado.relatorioUltimaManutencao}</Text>
+                </View>
+              )}
+              {produtoSelecionado.dataAvaliacao && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Data de Avaliação</Text>
+                  <Text style={styles.infoValue}>
+                    {dateISOtoBR(produtoSelecionado.dataAvaliacao) || new Date(produtoSelecionado.dataAvaliacao).toLocaleDateString('pt-BR')}
+                  </Text>
                 </View>
               )}
             </View>

@@ -85,9 +85,9 @@ export default function CobrancaConfirmScreen() {
   useEffect(() => {
     if (locacaoSelecionada) {
       setRelogioAnterior(
-        parseInt(
+        parseFloat(
           locacaoSelecionada.ultimaLeituraRelogio?.toString() ||
-          locacaoSelecionada.numeroRelogio || '0', 10
+          locacaoSelecionada.numeroRelogio || '0'
         )
       );
     }
@@ -107,14 +107,14 @@ export default function CobrancaConfirmScreen() {
       return;
     }
     if (!relogioAtual) { setCalculo(null); setValidacao(null); return; }
-    const atual = parseInt(relogioAtual.replace(/\D/g, ''), 10);
+    const atual = parseFloat(relogioAtual.replace(/\D/g, ''));
     if (isNaN(atual)) { setCalculo(null); return; }
     const input = {
       relogioAnterior,
       relogioAtual: atual,
       valorFicha:        locacaoSelecionada.precoFicha || 0,
       percentualEmpresa: locacaoSelecionada.percentualEmpresa || 50,
-      descontoPartidasQtd: parseInt(descontoPartidas.replace(/\D/g, ''), 10) || 0,
+      descontoPartidasQtd: parseFloat(descontoPartidas.replace(/\D/g, '')) || 0,
       descontoDinheiro:    parseFloat(descontoDinheiro.replace(',', '.')) || 0,
       formaPagamento:      locacaoSelecionada.formaPagamento,
     };
@@ -147,19 +147,20 @@ export default function CobrancaConfirmScreen() {
       return;
     }
 
-    const relogioAtualNum = parseInt(relogioAtual.replace(/\D/g, ''), 10);
+    const relogioAtualNum = parseFloat(relogioAtual.replace(/\D/g, ''));
 
     // Validate with Zod schema
     const cobrancaData = {
       locacaoId:             String(locacaoSelecionada.id),
       clienteId:             String(locacaoSelecionada.clienteId),
       clienteNome:           locacaoSelecionada.clienteNome || '',
+      produtoId:             locacaoSelecionada.produtoId || undefined,
       produtoIdentificador:  locacaoSelecionada.produtoIdentificador || '',
       dataInicio:            locacaoSelecionada.dataUltimaCobranca || locacaoSelecionada.dataLocacao || new Date().toISOString(),
       dataFim:               new Date().toISOString(),
       relogioAnterior,
       relogioAtual:          relogioAtualNum,
-      descontoPartidasQtd:   parseInt(descontoPartidas.replace(/\D/g, ''), 10) || 0,
+      descontoPartidasQtd:   parseFloat(descontoPartidas.replace(/\D/g, '')) || 0,
       descontoPartidasValor: calculo.descontoPartidasValor,
       descontoDinheiro:      calculo.descontoDinheiroValor,
       observacao:            observacao || undefined,
@@ -185,6 +186,7 @@ export default function CobrancaConfirmScreen() {
         locacaoId:             String(locacaoSelecionada.id),
         clienteId:             String(locacaoSelecionada.clienteId),
         clienteNome:           locacaoSelecionada.clienteNome || '',
+        produtoId:             locacaoSelecionada.produtoId || undefined,
         produtoIdentificador:  locacaoSelecionada.produtoIdentificador || '',
         dataInicio:            locacaoSelecionada.dataUltimaCobranca || locacaoSelecionada.dataLocacao || new Date().toISOString(),
         dataFim:               new Date().toISOString(),
@@ -193,7 +195,7 @@ export default function CobrancaConfirmScreen() {
         fichasRodadas:         calculo.fichasRodadas,
         valorFicha:            locacaoSelecionada.precoFicha || 3,
         totalBruto:            calculo.totalBruto,
-        descontoPartidasQtd:   parseInt(descontoPartidas.replace(/\D/g, ''), 10) || 0,
+        descontoPartidasQtd:   parseFloat(descontoPartidas.replace(/\D/g, '')) || 0,
         descontoPartidasValor: calculo.descontoPartidasValor,
         descontoDinheiro:      calculo.descontoDinheiroValor,
         percentualEmpresa:     locacaoSelecionada.percentualEmpresa || 50,
@@ -203,6 +205,7 @@ export default function CobrancaConfirmScreen() {
         valorRecebido:         valorRecebidoNum,
         saldoAnterior,                               // Saldo devedor pendente acumulado
         formaPagamento:        locacaoSelecionada.formaPagamento, // Para cálculo correto
+        trocaPano,                                   // Troca de pano / manutenção
         observacao,
       });
 
@@ -299,7 +302,7 @@ export default function CobrancaConfirmScreen() {
                   <View style={[s.relogioBox, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE', borderWidth: 1.5 }]}>
                     <Text style={s.relogioBoxLabel}>Atual</Text>
                     <Text style={[s.relogioBoxValue, { color: '#2563EB' }]}>
-                      {formatarNumero(parseInt(relogioAtual.replace(/\D/g, ''), 10) || 0)}
+                      {formatarNumero(parseFloat(relogioAtual.replace(/\D/g, '')) || 0)}
                     </Text>
                   </View>
                   <View style={[s.relogioBox, { backgroundColor: '#F0FDF4' }]}>

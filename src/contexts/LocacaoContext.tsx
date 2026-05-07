@@ -92,6 +92,8 @@ export interface RelocacaoData {
   dataPrimeiraCobranca?: string;
   motivoRelocacao: string;
   observacao?: string;
+  trocaPano?: boolean;
+  dataUltimaManutencao?: string;
 }
 
 export interface EnviarEstoqueData {
@@ -376,7 +378,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       
       if (resultado.novaLocacao || resultado.locacaoAntigaFinalizada) {
         // Se marcou troca de pano
-        if ((dados as any).trocaPano && resultado.novaLocacao?.produtoId) {
+        if (dados.trocaPano && resultado.novaLocacao?.produtoId) {
           try {
             const now = new Date().toISOString();
             await produtoRepository.update({

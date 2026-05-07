@@ -55,6 +55,7 @@ import { ProdutosStackParamList } from '../navigation/ProdutosStack';
 
 // Utils
 import { masks } from '../utils/masks';
+import { dateISOtoBR, dateBRtoISO } from '../utils/database';
 
 // ============================================================================
 // TIPOS DE ROTA
@@ -104,6 +105,10 @@ export default function ProdutoFormScreen() {
     statusProduto: 'Ativo' as StatusProduto,
     codigoCH: '',
     codigoABLF: '',
+    dataFabricacao: '',
+    dataUltimaManutencao: '',
+    relatorioUltimaManutencao: '',
+    estabelecimento: '',
     observacao: '',
   });
   const [showTipoPicker, setShowTipoPicker] = useState(false);
@@ -162,6 +167,9 @@ export default function ProdutoFormScreen() {
               tipoId: produtoSelecionado.tipoId?.toString() || '',
               descricaoId: produtoSelecionado.descricaoId?.toString() || '',
               tamanhoId: produtoSelecionado.tamanhoId?.toString() || '',
+              dataFabricacao: dateISOtoBR(produtoSelecionado.dataFabricacao),
+              dataUltimaManutencao: dateISOtoBR(produtoSelecionado.dataUltimaManutencao),
+              dataAvaliacao: dateISOtoBR(produtoSelecionado.dataAvaliacao),
             } as any);
           } else {
             // Carregar o produto do repositório
@@ -186,6 +194,9 @@ export default function ProdutoFormScreen() {
         tipoId: produtoSelecionado.tipoId?.toString() || '',
         descricaoId: produtoSelecionado.descricaoId?.toString() || '',
         tamanhoId: produtoSelecionado.tamanhoId?.toString() || '',
+        dataFabricacao: dateISOtoBR(produtoSelecionado.dataFabricacao),
+        dataUltimaManutencao: dateISOtoBR(produtoSelecionado.dataUltimaManutencao),
+        dataAvaliacao: dateISOtoBR(produtoSelecionado.dataAvaliacao),
       } as any);
     }
   }, [produtoSelecionado, modo, produtoId]);
@@ -243,9 +254,19 @@ export default function ProdutoFormScreen() {
       return;
     }
 
+    // Convert date fields from DD/MM/AAAA to ISO for backend compatibility
+    const dataToSave = {
+      ...validatedData,
+      dataFabricacao: dateBRtoISO(validatedData.dataFabricacao),
+      dataUltimaManutencao: dateBRtoISO(validatedData.dataUltimaManutencao),
+      dataAvaliacao: dateBRtoISO((validatedData as any).dataAvaliacao),
+      dataCadastro: modo === 'criar' ? new Date().toISOString() : undefined,
+      dataUltimaAlteracao: new Date().toISOString(),
+    };
+
     try {
       if (modo === 'criar') {
-        const produto = await salvarProduto(validatedData as any);
+        const produto = await salvarProduto(dataToSave as any);
         if (produto) {
           // Audit log
           await AuditService.logAction('criar_produto', 'produto', String(produto.id), {
@@ -259,7 +280,7 @@ export default function ProdutoFormScreen() {
           Alert.alert('Erro', 'Não foi possível cadastrar o produto');
         }
       } else {
-        const sucesso = await atualizarProduto({ ...validatedData, id: produtoId! } as any);
+        const sucesso = await atualizarProduto({ ...dataToSave, id: produtoId! } as any);
         if (sucesso) {
           // Audit log
           await AuditService.logAction('editar_produto', 'produto', produtoId, {

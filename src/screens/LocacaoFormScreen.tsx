@@ -57,6 +57,31 @@ type LocacaoFormRouteProp = RouteProp<ClientesStackParamList, 'LocacaoForm'>;
 // ─── constantes ─────────────────────────────────────────────────────────────
 const PERIODICIDADES = ['Mensal', 'Semanal', 'Quinzenal', 'Diária'];
 
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+/** Converte data DD/MM/AAAA → ISO string (para compatibilidade com backend DateTime) */
+function dateBrToISO(dateBr: string): string | undefined {
+  if (!dateBr || dateBr.length < 10) return undefined;
+  const [day, month, year] = dateBr.split('/');
+  if (!day || !month || !year) return undefined;
+  const d = new Date(Number(year), Number(month) - 1, Number(day));
+  if (isNaN(d.getTime())) return undefined;
+  return d.toISOString();
+}
+
+/** Converte ISO string → DD/MM/AAAA (para exibição no input de data) */
+function isoToDateBr(iso: string | undefined): string {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const day   = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year  = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  } catch { return ''; }
+}
+
 const FORMA_OPTS = [
   { value: 'PercentualReceber', label: '% Receber', icon: 'trending-up'   },
   { value: 'PercentualPagar',  label: '% Pagar',   icon: 'trending-down'  },
@@ -162,7 +187,9 @@ export default function LocacaoFormScreen() {
           percentualEmpresa:    locacao.percentualEmpresa ? String(locacao.percentualEmpresa) : '50',
           periodicidade:        locacao.periodicidade || '',
           valorFixo:            locacao.valorFixo ? String(locacao.valorFixo) : '',
+          dataPrimeiraCobranca: isoToDateBr(locacao.dataPrimeiraCobranca),
           observacao:           locacao.observacao || '',
+          trocaPano:            locacao.trocaPano || false,
         }));
       }).catch(() => Alert.alert('Erro', 'Não foi possível carregar a locação'))
         .finally(() => setCarregandoInit(false));
@@ -265,7 +292,7 @@ export default function LocacaoFormScreen() {
       percentualCliente,
       periodicidade:        form.periodicidade as any || undefined,
       valorFixo:            form.valorFixo ? parseFloat(form.valorFixo) : undefined,
-      dataPrimeiraCobranca: form.dataPrimeiraCobranca || undefined,
+      dataPrimeiraCobranca: dateBrToISO(form.dataPrimeiraCobranca) || undefined,
       observacao:           form.observacao || undefined,
       trocaPano:            form.trocaPano || false,
     };
@@ -298,7 +325,7 @@ export default function LocacaoFormScreen() {
           ...typedData,
           status:               'Ativa',
           dataUltimaManutencao: form.trocaPano ? new Date().toISOString() : undefined,
-        } as any);
+        });
 
         if (locacao) {
           // Audit log
@@ -324,8 +351,11 @@ export default function LocacaoFormScreen() {
           percentualCliente,
           periodicidade:     form.periodicidade as any || undefined,
           valorFixo:         form.valorFixo ? parseFloat(form.valorFixo) : undefined,
+          dataPrimeiraCobranca: dateBrToISO(form.dataPrimeiraCobranca) || undefined,
           observacao:        form.observacao || undefined,
-        } as any);
+          trocaPano:         form.trocaPano || false,
+          dataUltimaManutencao: form.trocaPano ? new Date().toISOString() : undefined,
+        });
 
         if (ok) {
           // Audit log
@@ -354,11 +384,12 @@ export default function LocacaoFormScreen() {
           percentualCliente,
           periodicidade:        form.periodicidade || undefined,
           valorFixo:            form.valorFixo ? parseFloat(form.valorFixo) : undefined,
-          dataPrimeiraCobranca: form.dataPrimeiraCobranca || undefined,
+          dataPrimeiraCobranca: dateBrToISO(form.dataPrimeiraCobranca) || undefined,
           motivoRelocacao:      form.motivoRelocacao,
           observacao:           form.observacao || undefined,
+          trocaPano:            form.trocaPano || false,
+          dataUltimaManutencao: form.trocaPano ? new Date().toISOString() : undefined,
         });
-        // trocaPano handled separately via produtoRepository in realizarRelocacao
 
         if (ok) {
           // Audit log

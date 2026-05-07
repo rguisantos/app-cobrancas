@@ -73,6 +73,10 @@ export interface NovaLocacaoData {
   periodicidade?: string;
   valorFixo?: number;
   dataPrimeiraCobranca?: string;
+
+  // Manutenção
+  trocaPano?: boolean;
+  dataUltimaManutencao?: string;
 }
 
 export interface RelocacaoData {
@@ -96,6 +100,10 @@ export interface RelocacaoData {
   
   motivoRelocacao: string;
   observacao?: string;
+
+  // Manutenção
+  trocaPano?: boolean;
+  dataUltimaManutencao?: string;
 }
 
 export interface EnviarEstoqueData {
@@ -365,6 +373,10 @@ class LocacaoRepository {
         dataPrimeiraCobranca: data.dataPrimeiraCobranca,
         
         status: 'Ativa',
+
+        // Manutenção
+        trocaPano: data.trocaPano ?? false,
+        dataUltimaManutencao: data.dataUltimaManutencao,
       };
 
       const locacao = await this.save(novaLocacao);
@@ -425,6 +437,10 @@ class LocacaoRepository {
           
           status: 'Ativa',
           ultimaLeituraRelogio: locacaoAtual.ultimaLeituraRelogio,
+
+          // Manutenção
+          trocaPano: data.trocaPano ?? false,
+          dataUltimaManutencao: data.dataUltimaManutencao,
         };
 
         novaLocacao = await this.save(novaLocacaoData);

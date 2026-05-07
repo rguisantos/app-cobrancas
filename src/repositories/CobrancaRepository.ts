@@ -50,6 +50,7 @@ export interface CobrancaPendente {
 export interface NovaCobrancaData {
   locacaoId: string;  clienteId: string;
   clienteNome: string;
+  produtoId?: string;             // Vínculo opcional com produto
   produtoIdentificador: string;
   
   dataInicio: string;
@@ -76,6 +77,7 @@ export interface NovaCobrancaData {
   saldoAnterior?: number;  // Saldo devedor de cobranças anteriores
   formaPagamento?: string; // Forma de pagamento (Periodo, PercentualReceber, PercentualPagar)
   
+  trocaPano?: boolean;           // Indica se houve troca de pano nesta cobrança
   observacao?: string;
 }
 
@@ -298,6 +300,7 @@ class CobrancaRepository {
         locacaoId: data.locacaoId,
         clienteId: data.clienteId,
         clienteNome: data.clienteNome,
+        produtoId: data.produtoId,
         produtoIdentificador: data.produtoIdentificador,
         
         dataInicio: data.dataInicio,
@@ -325,6 +328,7 @@ class CobrancaRepository {
         
         status,
         dataVencimento: data.dataVencimento,
+        trocaPano: data.trocaPano,
         observacao: data.observacao,
       };
 

@@ -191,6 +191,7 @@ export default function HomeScreen() {
   const miniMetrics: MiniMetric[] = [
     { label: 'Clientes', value: metricas?.totalClientes || 0, icon: 'people', color: '#2563EB' },
     { label: 'Pendentes', value: metricas?.cobrancasPendentes || 0, icon: 'time', color: '#DC2626' },
+    { label: 'A Receber', value: metricas?.totalAReceber ? formatarMoeda(metricas.totalAReceber) : 'R$ 0', icon: 'wallet', color: '#0891B2' },
     { label: 'Produtos', value: metricas?.totalProdutos || 0, icon: 'cube', color: '#9333EA' },
   ];
 
@@ -326,10 +327,17 @@ export default function HomeScreen() {
         </View>
 
         {/* ── MÉTRICAS RÁPIDAS ─────────────────────────────────────────── */}
-        <View style={s.metricsRow}>
-          {miniMetrics.map((metric, idx) => (
-            <MiniCard key={idx} metric={metric} />
-          ))}
+        <View style={s.metricsGrid}>
+          <View style={s.metricsRow}>
+            {miniMetrics.slice(0, 2).map((metric, idx) => (
+              <MiniCard key={idx} metric={metric} />
+            ))}
+          </View>
+          <View style={s.metricsRow}>
+            {miniMetrics.slice(2, 4).map((metric, idx) => (
+              <MiniCard key={idx} metric={metric} />
+            ))}
+          </View>
         </View>
 
         {/* ── AÇÕES RÁPIDAS ───────────────────────────────────────────── */}
@@ -469,11 +477,14 @@ const s = StyleSheet.create({
   dot:              { width: 8, height: 8, borderRadius: 4, backgroundColor: '#CBD5E1' },
   dotActive:        { backgroundColor: '#2563EB', width: 24, borderRadius: 4 },
 
-  // mini metrics row
+  // mini metrics grid
+  metricsGrid: {
+    marginBottom: 20,
+    gap: 8,
+  },
   metricsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
     gap: 8,
   },
   miniCard: {

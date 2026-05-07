@@ -707,7 +707,7 @@ class ApiService {
   /**
    * Busca dados do dashboard mobile
    */
-  async getDashboardMobile(): Promise<ApiResponse<any>> {
+  async getDashboardMobile(): Promise<ApiResponse<import('../types').DashboardMobileData>> {
     return this.get('/api/dashboard/mobile');
   }
 
@@ -734,6 +734,21 @@ class ApiService {
    */
   async getRelatorioProdutos(status?: string): Promise<ApiResponse<any>> {
     return this.get('/api/relatorios/produtos', { status });
+  }
+
+  // ==========================================================================
+  // HISTÓRICO DE RELÓGIO
+  // ==========================================================================
+
+  /**
+   * Cria um registro de alteração de relógio no backend.
+   * O backend cria o HistoricoRelogio E atualiza o numeroRelogio do produto
+   * em uma única transação.
+   *
+   * @param dados - { produtoId, relogioNovo, motivo }
+   */
+  async criarHistoricoRelogio(dados: { produtoId: string; relogioNovo: string; motivo: string }): Promise<ApiResponse<any>> {
+    return this.post('/api/historico-relogio', dados);
   }
 
   // ==========================================================================

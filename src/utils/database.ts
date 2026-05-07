@@ -108,3 +108,54 @@ export function serializeForDB(
   }
   return result;
 }
+
+// ============================================================================
+// DATE CONVERSION (DD/MM/AAAA <-> ISO)
+// ============================================================================
+
+/**
+ * Convert a DD/MM/AAAA date string to an ISO 8601 string.
+ * Returns undefined if the input is empty/invalid.
+ *
+ * The backend (Prisma DateTime?) expects ISO strings.
+ * The mobile form uses DD/MM/AAAA for user input.
+ *
+ * @example "15/03/2024" → "2024-03-15T00:00:00.000Z"
+ */
+export function dateBRtoISO(value: string | undefined | null): string | undefined {
+  if (!value || !value.trim()) return undefined;
+  const match = value.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) {
+    // Already ISO? Pass through
+    if (/^\d{4}-\d{2}-\d{2}/.test(value.trim())) return value.trim();
+    return undefined;
+  }
+  const [, day, month, year] = match;
+  const iso = `${year}-${month}-${day}T00:00:00.000Z`;
+  // Validate it's a real date
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return undefined;
+  return iso;
+}
+
+/**
+ * Convert an ISO 8601 date string to DD/MM/AAAA format for display.
+ * Returns empty string if the input is empty/invalid.
+ *
+ * @example "2024-03-15T00:00:00.000Z" → "15/03/2024"
+ */
+export function dateISOtoBR(value: string | undefined | null): string {
+  if (!value) return '';
+  // Already DD/MM/AAAA? Pass through
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(value.trim())) return value.trim();
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return '';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  } catch {
+    return '';
+  }
+}

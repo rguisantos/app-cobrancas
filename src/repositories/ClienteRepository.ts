@@ -14,6 +14,19 @@ import {
 import { generateId, parseJSON } from '../utils/database';
 
 // ============================================================================
+// HELPERS
+// ============================================================================
+
+/**
+ * Remove caracteres não-numéricos de um documento (CPF/CNPJ).
+ * Usado para o campo `identificador` (busca rápida e unicidade) e para
+ * garantir compatibilidade com o backend que espera dígitos limpos.
+ */
+function cleanDocument(doc: string): string {
+  return doc.replace(/\D/g, '');
+}
+
+// ============================================================================
 // INTERFACES E TIPOS
 // ============================================================================
 
@@ -75,10 +88,10 @@ class ClienteRepository {
   }
 
       if (filters?.termoBusca) {
-        // Busca por nome, CPF ou CNPJ (colunas separadas) ou telefone
-        whereClauses.push('(nomeExibicao LIKE ? OR cpf LIKE ? OR cnpj LIKE ? OR telefonePrincipal LIKE ?)');
+        // Busca por nome, identificador (dígitos limpos), CPF, CNPJ ou telefone
+        whereClauses.push('(nomeExibicao LIKE ? OR identificador LIKE ? OR cpf LIKE ? OR cnpj LIKE ? OR telefonePrincipal LIKE ?)');
         const termo = `%${filters.termoBusca}%`;
-        params.push(termo, termo, termo, termo);
+        params.push(termo, termo, termo, termo, termo);
       }
 
       const where = whereClauses.length > 0 ? whereClauses.join(' AND ') : undefined;
@@ -151,11 +164,16 @@ class ClienteRepository {
       const rg = cliente.tipoPessoa === 'Fisica' ? ((cliente as any).rgIe || cliente.rg || '') : '';
       const inscricaoEstadual = cliente.tipoPessoa === 'Juridica' ? ((cliente as any).rgIe || cliente.inscricaoEstadual || '') : '';
       
+      // identificador: dígitos limpos para busca rápida e unicidade (backend usa DateTime + unique)
+      const identificador = cleanDocument(
+        cliente.tipoPessoa === 'Fisica' ? cpf : cnpj
+      );
+      
       const clienteCompleto: any = {
         id,
         tipo: this.entityType,
-        tipoPessoa: cliente.tipoPessoa,
-        identificador: cliente.tipoPessoa === 'Fisica' ? cpf : cnpj,
+        tipoPessoa: cliente.tipoPessoa || 'Fisica', // Garantir default
+        identificador,
         cpf,
         cnpj,
         rg,
@@ -174,9 +192,13 @@ class ClienteRepository {
         bairro: cliente.bairro || '',
         cidade: cliente.cidade || '',
         estado: cliente.estado || '',
+        latitude: cliente.latitude ?? null,
+        longitude: cliente.longitude ?? null,
         rotaId: cliente.rotaId || '',
         rotaNome: cliente.rotaNome || '',
         status: cliente.status || 'Ativo',
+        dataCadastro: cliente.dataCadastro || now, // ISO DateTime compatível com backend
+        dataUltimaAlteracao: now, // ISO DateTime compatível com backend
         observacao: cliente.observacao || '',
         syncStatus: 'pending',
         lastSyncedAt: null,
@@ -221,24 +243,36 @@ class ClienteRepository {
       const rgAtualizado = rgIe && tipoPessoa === 'Fisica' ? rgIe : (clienteSemCamposVirtuais.rg || existingSemVirtuais.rg);
       const inscricaoEstadualAtualizada = rgIe && tipoPessoa === 'Juridica' ? rgIe : (clienteSemCamposVirtuais.inscricaoEstadual || existingSemVirtuais.inscricaoEstadual);
 
+      const now = new Date().toISOString();
+
       const clienteAtualizado: any = {
         ...existingSemVirtuais,
         ...clienteSemCamposVirtuais,
+        tipoPessoa, // Garantir que tipoPessoa esteja sempre presente
         cpf: cpfAtualizado,
         cnpj: cnpjAtualizado,
         rg: rgAtualizado,
         inscricaoEstadual: inscricaoEstadualAtualizada,
-        identificador: tipoPessoa === 'Fisica' ? cpfAtualizado : cnpjAtualizado,
+        // identificador: dígitos limpos para busca rápida e unicidade
+        identificador: cleanDocument(
+          tipoPessoa === 'Fisica' ? cpfAtualizado : cnpjAtualizado
+        ),
         // Sincronizar nomeExibicao com nomeCompleto (PF) ou razaoSocial (PJ)
         nomeCompleto: tipoPessoa === 'Fisica' ? (clienteSemCamposVirtuais.nomeExibicao || existingSemVirtuais.nomeExibicao) : '',
         razaoSocial: tipoPessoa === 'Juridica' ? (clienteSemCamposVirtuais.nomeExibicao || existingSemVirtuais.nomeExibicao) : '',
-        updatedAt: new Date().toISOString(),
+        dataUltimaAlteracao: now, // ISO DateTime — compatível com backend
+        updatedAt: now,
         version: (existing.version || 0) + 1,
       };
 
-      // Serializar contatos se fornecido
+      // Serializar contatos para JSON (sempre, para evitar array em SQLite)
+      // - Se o update inclui novos contatos: serializar os novos
+      // - Se o update NÃO inclui contatos: existingSemVirtuais.contatos já é um array
+      //   (vindo de parseCliente), precisamos re-serializar para string JSON
       if (clienteSemCamposVirtuais.contatos) {
         clienteAtualizado.contatos = JSON.stringify(clienteSemCamposVirtuais.contatos);
+      } else if (existingSemVirtuais.contatos && typeof existingSemVirtuais.contatos !== 'string') {
+        clienteAtualizado.contatos = JSON.stringify(existingSemVirtuais.contatos);
       }
 
       await databaseService.update(this.entityType, clienteAtualizado);
@@ -305,13 +339,17 @@ class ClienteRepository {
 
   /**
    * Busca cliente por CPF/CNPJ
+   * Compatível com documentos mascarados (formulário mobile) e limpos (backend API)
    */
   async getByDocumento(documento: string): Promise<Cliente | null> {
     try {
+      const cleanDoc = cleanDocument(documento);
+      // Buscar por identificador (dígitos limpos), cpf/cnpj (pode estar mascarado ou limpo),
+      // ou pelos dígitos limpos do cpf/cnpj
       const clientes = await databaseService.getAll<Cliente>(
         this.entityType,
-        '(cpf = ? OR cnpj = ?)',
-        [documento, documento]
+        '(identificador = ? OR cpf = ? OR cnpj = ? OR REPLACE(REPLACE(REPLACE(REPLACE(cpf, ".", ""), "-", ""), "/", ""), " ", "") = ? OR REPLACE(REPLACE(REPLACE(REPLACE(cnpj, ".", ""), "-", ""), "/", ""), " ", "") = ?)',
+        [cleanDoc, documento, documento, cleanDoc, cleanDoc]
       );
       return clientes.length > 0 ? this.parseCliente(clientes[0]) : null;
     } catch (error) {
@@ -362,7 +400,8 @@ class ClienteRepository {
            c.nomeCompleto, c.razaoSocial, c.nomeFantasia, c.cpf, c.cnpj,
            c.rg, c.inscricaoEstadual, c.email, c.telefonePrincipal,
            c.contatos, c.cep, c.logradouro, c.numero, c.complemento,
-           c.bairro, c.cidade, c.estado, c.rotaId, c.rotaNome,
+           c.bairro, c.cidade, c.estado, c.latitude, c.longitude,
+           c.rotaId, c.rotaNome,
            c.status, c.observacao, c.dataCadastro, c.dataUltimaAlteracao,
            c.syncStatus, c.lastSyncedAt, c.needsSync, c.version,
            c.deviceId, c.createdAt, c.updatedAt, c.deletedAt,
@@ -422,6 +461,7 @@ class ClienteRepository {
   /**
    * Parseia dados do banco para objeto Cliente
    * Converte campos JSON de volta para objetos/arrays
+   * Garante compatibilidade com o backend (DateTime como ISO string, contatos como array)
    */
   private parseCliente(data: any): Cliente {
     return {
@@ -429,6 +469,12 @@ class ClienteRepository {
       cpfCnpj: data.cpfCnpj || data.cpf || data.cnpj || '',
       rgIe: data.rgIe || data.rg || data.inscricaoEstadual || '',
       contatos: parseJSON(data.contatos, []),
+      // Garantir que campos numéricos venham como number (SQLite pode retornar null)
+      latitude: data.latitude != null ? Number(data.latitude) : undefined,
+      longitude: data.longitude != null ? Number(data.longitude) : undefined,
+      // Garantir que date fields estejam em formato ISO string (backend usa DateTime)
+      dataCadastro: data.dataCadastro || undefined,
+      dataUltimaAlteracao: data.dataUltimaAlteracao || undefined,
     };
   }
 

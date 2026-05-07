@@ -41,6 +41,7 @@ const TABLES = {
   MANUTENCOES: 'manutencoes',
   ESTABELECIMENTOS: 'estabelecimentos',
   METAS: 'metas',
+  HISTORICO_RELOGIO: 'historico_relogio',
   CHANGE_LOG: 'change_log',
   SYNC_METADATA: 'sync_metadata',
 };
@@ -416,6 +417,18 @@ class DatabaseService {
         syncedAt TEXT
       )`,
 
+      // Histórico de alteração de relógio
+      `CREATE TABLE IF NOT EXISTS ${TABLES.HISTORICO_RELOGIO} (
+        id TEXT PRIMARY KEY,
+        produtoId TEXT NOT NULL,
+        relogioAnterior TEXT,
+        relogioNovo TEXT,
+        motivo TEXT,
+        dataAlteracao TEXT,
+        usuarioResponsavel TEXT,
+        needsSync INTEGER DEFAULT 1
+      )`,
+
       // Sync Metadata
       `CREATE TABLE IF NOT EXISTS ${TABLES.SYNC_METADATA} (
         key TEXT PRIMARY KEY,
@@ -461,6 +474,10 @@ class DatabaseService {
       `CREATE INDEX IF NOT EXISTS idx_manutencoes_produto ON manutencoes(produtoId)`,
       `CREATE INDEX IF NOT EXISTS idx_manutencoes_data ON manutencoes(data)`,
       `CREATE INDEX IF NOT EXISTS idx_manutencoes_sync ON manutencoes(syncStatus, needsSync)`,
+
+      `CREATE INDEX IF NOT EXISTS idx_historico_relogio_produto ON ${TABLES.HISTORICO_RELOGIO}(produtoId)`,
+      `CREATE INDEX IF NOT EXISTS idx_historico_relogio_data ON ${TABLES.HISTORICO_RELOGIO}(dataAlteracao)`,
+      `CREATE INDEX IF NOT EXISTS idx_historico_relogio_sync ON ${TABLES.HISTORICO_RELOGIO}(needsSync)`,
 
       // Tabela de Metas
       `CREATE TABLE IF NOT EXISTS ${TABLES.METAS} (
@@ -583,6 +600,20 @@ class DatabaseService {
       {
         name: 'add_observacao_to_estabelecimentos',
         sql: `ALTER TABLE ${TABLES.ESTABELECIMENTOS} ADD COLUMN observacao TEXT`,
+      },
+      // Migration 6: Criar tabela historico_relogio para registro de alterações de relógio
+      {
+        name: 'create_historico_relogio_table',
+        sql: `CREATE TABLE IF NOT EXISTS ${TABLES.HISTORICO_RELOGIO} (
+          id TEXT PRIMARY KEY,
+          produtoId TEXT NOT NULL,
+          relogioAnterior TEXT,
+          relogioNovo TEXT,
+          motivo TEXT,
+          dataAlteracao TEXT,
+          usuarioResponsavel TEXT,
+          needsSync INTEGER DEFAULT 1
+        )`,
       },
     ];
     
@@ -1870,8 +1901,8 @@ class DatabaseService {
   async saveManutencao(registro: {
     id: string;
     produtoId: string;
-    produtoIdentificador: string;
-    produtoTipo: string;
+    produtoIdentificador?: string;
+    produtoTipo?: string;
     clienteId?: string;
     clienteNome?: string;
     locacaoId?: string;
@@ -1880,19 +1911,30 @@ class DatabaseService {
     descricao?: string;
     data: string;
     registradoPor?: string;
+    syncStatus?: string;
+    lastSyncedAt?: string;
+    needsSync?: boolean | number;
+    version?: number;
+    deviceId?: string;
+    createdAt?: string;
+    updatedAt?: string;
   }): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
     const now = new Date().toISOString();
     await this.db.runAsync(
       `INSERT OR REPLACE INTO manutencoes
         (id, produtoId, produtoIdentificador, produtoTipo, clienteId, clienteNome,
-         locacaoId, cobrancaId, tipo, descricao, data, registradoPor, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [registro.id, registro.produtoId, registro.produtoIdentificador, registro.produtoTipo,
+         locacaoId, cobrancaId, tipo, descricao, data, registradoPor,
+         syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [registro.id, registro.produtoId, registro.produtoIdentificador || null, registro.produtoTipo || null,
        registro.clienteId || null, registro.clienteNome || null,
        registro.locacaoId || null, registro.cobrancaId || null,
        registro.tipo, registro.descricao || null, registro.data,
-       registro.registradoPor || null, now, now]
+       registro.registradoPor || null,
+       registro.syncStatus || 'pending', registro.lastSyncedAt || null,
+       registro.needsSync ? 1 : 0, registro.version || 1,
+       registro.deviceId || '', registro.createdAt || now, registro.updatedAt || now]
     );
   }
 

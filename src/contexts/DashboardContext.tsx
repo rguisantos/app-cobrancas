@@ -299,37 +299,45 @@ export function DashboardProvider({
 
   /**
    * Carrega dashboard mobile
-   * IMPORTANTE: Sempre usa dados do SQLite local (offline-first)
+   * Estratégia: tenta API /api/dashboard/mobile primeiro (online);
+   * em caso de falha, calcula localmente do SQLite (offline-first fallback).
    */
   const carregarDashboardMobile = useCallback(async () => {
     setCarregando(true);
     setErro(null);
 
     try {
-      console.log('[DashboardContext] Carregando métricas do SQLite local...');
-      
-      // SEMPRE calcular métricas localmente do SQLite
-      // O dashboard deve refletir os dados que estão no dispositivo
-      const metricasCalculadas = await calcularMetricasMobile();
-      
-      console.log('[DashboardContext] Métricas calculadas:', metricasCalculadas);
-      
-      const dashboardMobile: DashboardMobileData = {
-        usuarioNome,
-        usuarioTipo,
-        saudacao: getSaudacao(),
-        metricas: metricasCalculadas,
-        dataAtualizacao: new Date().toISOString(),
-      };
+      // 1) Tentar buscar da API primeiro
+      const response = await apiService.getDashboardMobile();
 
-      setMobile(dashboardMobile);
-      setMetricas(metricasCalculadas);
+      if (response.success && response.data) {
+        const data = response.data as DashboardMobileData;
+        console.log('[DashboardContext] Dashboard mobile carregado da API');
 
-      setUltimaAtualizacao(new Date().toISOString());
-      console.log('[DashboardContext] Dashboard mobile carregado com dados locais');
+        setMobile(data);
+        setMetricas(data.metricas);
+        setUltimaAtualizacao(data.dataAtualizacao || new Date().toISOString());
+      } else {
+        // 2) Fallback: calcular métricas localmente do SQLite
+        console.log('[DashboardContext] API indisponível — calculando métricas do SQLite local...');
+        const metricasCalculadas = await calcularMetricasMobile();
+
+        const dashboardMobile: DashboardMobileData = {
+          usuarioNome,
+          usuarioTipo,
+          saudacao: getSaudacao(),
+          metricas: metricasCalculadas,
+          dataAtualizacao: new Date().toISOString(),
+        };
+
+        setMobile(dashboardMobile);
+        setMetricas(metricasCalculadas);
+        setUltimaAtualizacao(new Date().toISOString());
+        console.log('[DashboardContext] Dashboard mobile carregado com dados locais');
+      }
     } catch (error) {
       console.error('[DashboardContext] Erro ao carregar dashboard mobile:', error);
-      
+
       // Em caso de erro, definir métricas vazias
       const metricasVazias: DashboardMobileMetricas = {
         totalClientes: 0,
@@ -341,9 +349,9 @@ export function DashboardProvider({
         saldoDevedor: 0,
         cobrancasHoje: 0,
       };
-      
+
       setMetricas(metricasVazias);
-      
+
       const mensagem = error instanceof Error ? error.message : 'Erro ao carregar dashboard';
       setErro(mensagem);
     } finally {

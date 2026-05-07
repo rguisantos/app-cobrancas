@@ -209,6 +209,12 @@ export default function LocacaoDetailScreen({ route, navigation }: Props) {
           {locacao.dataFim && (
             <InfoRow label="Data Fim"      value={new Date(locacao.dataFim).toLocaleDateString('pt-BR')} />
           )}
+          {locacao.trocaPano && (
+            <InfoRow label="Troca de Pano"  value="Sim" destaque cor="#16A34A" />
+          )}
+          {locacao.dataUltimaManutencao && (
+            <InfoRow label="Última Manutenção" value={new Date(locacao.dataUltimaManutencao).toLocaleDateString('pt-BR')} />
+          )}
           {locacao.observacao ? (
             <View style={s.obsBox}>
               <Text style={s.obsText}>{locacao.observacao}</Text>

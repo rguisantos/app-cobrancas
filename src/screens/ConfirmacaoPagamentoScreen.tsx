@@ -120,6 +120,7 @@ export default function ConfirmacaoPagamentoScreen() {
         locacaoId:             dados.locacaoId,
         clienteId:             dados.clienteId,
         clienteNome:           dados.clienteNome,
+        produtoId:             dados.produtoId || undefined,
         produtoIdentificador:  dados.produtoIdentificador,
         dataInicio:            dados.dataInicio,
         dataFim:               new Date().toISOString(),
@@ -139,6 +140,7 @@ export default function ConfirmacaoPagamentoScreen() {
         valorRecebido:         dados.valorRecebido,
         saldoAnterior:         saldoAnterior,
         formaPagamento:        dados.formaPagamento, // Necessário para cálculo correto do saldo
+        trocaPano:             trocaPano,              // Indica se houve troca de pano
         observacao:            obsArr.join(' | ') || undefined,
       });
 

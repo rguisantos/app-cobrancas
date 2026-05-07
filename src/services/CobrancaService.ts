@@ -465,6 +465,7 @@ class CobrancaService {
       locacaoId: locacao.id,
       clienteId: locacao.clienteId,
       clienteNome: locacao.clienteNome,
+      produtoId: locacao.produtoId,
       produtoIdentificador: locacao.produtoIdentificador,
       
       dataInicio: locacao.dataUltimaCobranca || locacao.dataLocacao,
@@ -492,6 +493,7 @@ class CobrancaService {
       
       status,
       dataVencimento: undefined,
+      trocaPano: false,
       observacao,
     };
 

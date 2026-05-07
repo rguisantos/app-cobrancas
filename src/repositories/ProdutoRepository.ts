@@ -12,7 +12,7 @@ import {
   ProdutoHistoricoRelogio,
   StatusProduto
 } from '../types';
-import { generateId } from '../utils/database';
+import { generateId, dateBRtoISO } from '../utils/database';
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -204,6 +204,8 @@ class ProdutoRepository {
       // Remover campo de relacionamento antes de salvar
       const { locacaoAtiva, ...produtoSemRelacionamentos } = produto as any;
 
+      const now = new Date().toISOString();
+
       // Gerar ID único se não existir
       const produtoCompleto: Produto = {
         ...produtoSemRelacionamentos,
@@ -214,8 +216,10 @@ class ProdutoRepository {
         needsSync: 1, // Integer para SQLite
         version: 0,
         deviceId: await databaseService.getDeviceId(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        dataCadastro: produtoSemRelacionamentos.dataCadastro || now,
+        dataUltimaAlteracao: now,
+        createdAt: now,
+        updatedAt: now,
       };
 
       await databaseService.save(this.entityType, produtoCompleto);
@@ -245,6 +249,7 @@ class ProdutoRepository {
       const produtoAtualizado: Produto = {
         ...existing,
         ...produto,
+        dataUltimaAlteracao: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         version: (existing.version || 0) + 1,
       };
@@ -467,7 +472,7 @@ class ProdutoRepository {
       }
       
       const historico: ProdutoHistoricoRelogio = {
-        id: generateId('produto'),
+        id: generateId('historico_relogio'),
         produtoId,
         relogioAnterior: produto.numeroRelogio,
         relogioNovo: novoNumeroRelogio,
@@ -475,7 +480,34 @@ class ProdutoRepository {
         dataAlteracao: new Date().toISOString(),
         usuarioResponsavel,
       };
-      console.log('[ProdutoRepository] Histórico de relógio:', historico);
+
+      // Salvar histórico localmente na tabela historico_relogio
+      try {
+        await databaseService.runAsync(
+          `INSERT OR REPLACE INTO historico_relogio (id, produtoId, relogioAnterior, relogioNovo, motivo, dataAlteracao, usuarioResponsavel, needsSync) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+          [historico.id, historico.produtoId, historico.relogioAnterior, historico.relogioNovo, historico.motivo, historico.dataAlteracao, historico.usuarioResponsavel]
+        );
+        console.log('[ProdutoRepository] Histórico de relógio salvo localmente:', historico.id);
+      } catch (dbError) {
+        console.warn('[ProdutoRepository] Não foi possível salvar histórico localmente (tabela pode não existir):', dbError);
+      }
+
+      // Tentar enviar histórico para o backend via API
+      try {
+        const { apiService } = await import('../services/ApiService');
+        const result = await apiService.criarHistoricoRelogio({
+          produtoId,
+          relogioNovo: novoNumeroRelogio,
+          motivo,
+        });
+        if (result.success) {
+          console.log('[ProdutoRepository] Histórico de relógio sincronizado com o backend');
+        } else {
+          console.warn('[ProdutoRepository] Falha ao sincronizar histórico com o backend:', result.error);
+        }
+      } catch (apiError) {
+        console.warn('[ProdutoRepository] Não foi possível enviar histórico via API (offline?):', apiError);
+      }
 
       console.log('[ProdutoRepository] Número do relógio atualizado:', produtoId);
       return true;

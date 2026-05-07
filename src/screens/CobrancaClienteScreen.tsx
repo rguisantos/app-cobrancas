@@ -154,7 +154,7 @@ export default function CobrancaClienteScreen() {
   // 1. Se houver ultimaLeituraRelogio na locação, usa esse valor (foi atualizado na última cobrança)
   // 2. Senão, usa o numeroRelogio da locação (que é o relógio do produto no momento da locação)
   const relogioAnterior = locacao
-    ? (locacao.ultimaLeituraRelogio ?? parseInt(locacao.numeroRelogio || '0', 10))
+    ? (locacao.ultimaLeituraRelogio ?? parseFloat(locacao.numeroRelogio || '0'))
     : 0;
 
   const saldoAnterior = locacao ? (saldosPendentes[String(locacao.id)] ?? 0) : 0;
@@ -168,7 +168,7 @@ export default function CobrancaClienteScreen() {
     if (isPeriodo) {
       // Período: registrar relógio se informado, mas não bloquear
       if (relogioAtual.trim()) {
-        const atualP = parseInt(relogioAtual.replace(/\D/g, ''), 10);
+        const atualP = parseFloat(relogioAtual.replace(/\D/g, ''));
         if (!isNaN(atualP) && atualP < relogioAnterior) {
           setErroRelogio('Relógio atual não pode ser menor que o anterior');
         } else {
@@ -180,7 +180,7 @@ export default function CobrancaClienteScreen() {
       setCalculo(null); return;
     }
     if (!relogioAtual.trim()) { setCalculo(null); setErroRelogio(''); return; }
-    const atual = parseInt(relogioAtual.replace(/\D/g, ''), 10);
+    const atual = parseFloat(relogioAtual.replace(/\D/g, ''));
     if (isNaN(atual)) { setCalculo(null); return; }
     if (atual < relogioAnterior) {
       setErroRelogio('Relógio atual não pode ser menor que o anterior');
@@ -192,7 +192,7 @@ export default function CobrancaClienteScreen() {
       relogioAtual:        atual,
       valorFicha:          locacao.precoFicha || 0,
       percentualEmpresa:   locacao.percentualEmpresa || 0,
-      descontoPartidasQtd: parseInt(descontoPartidas.replace(/\D/g, ''), 10) || 0,
+      descontoPartidasQtd: parseFloat(descontoPartidas.replace(/\D/g, '')) || 0,
       descontoDinheiro:    parseFloat(descontoDinheiro.replace(',', '.')) || 0,
       bonificacao:         parseFloat(bonificacao.replace(',', '.')) || 0,
       formaPagamento:      forma,
@@ -252,7 +252,7 @@ export default function CobrancaClienteScreen() {
     if (erroRelogio) { Alert.alert('Valor inválido', erroRelogio); return; }
     if (!podeAvancar) { Alert.alert('Erro', 'Preencha os dados'); return; }
 
-    const atual       = parseInt(relogioAtual.replace(/\D/g, ''), 10) || 0;
+    const atual       = parseFloat(relogioAtual.replace(/\D/g, '')) || 0;
     const recebidoNum = parseFloat(valorRecebido.replace(',', '.')) || 0;
 
     const dados: DadosCobrancaParam = {
@@ -261,6 +261,7 @@ export default function CobrancaClienteScreen() {
       clienteNome,
       rotaId,
       rotaNome,
+      produtoId:             locacao.produtoId || undefined,
       produtoIdentificador:  locacao.produtoIdentificador,
       produtoTipo:           locacao.produtoTipo,
       formaPagamento:        forma,
@@ -271,7 +272,7 @@ export default function CobrancaClienteScreen() {
       fichasRodadas:         calculo?.fichasRodadas ?? (atual > 0 && relogioAnterior > 0 ? Math.max(0, atual - relogioAnterior) : 0),
       valorFicha:            locacao.precoFicha,
       totalBruto:            calculo?.totalBruto ?? 0,
-      descontoPartidasQtd:   parseInt(descontoPartidas.replace(/\D/g, ''), 10) || 0,
+      descontoPartidasQtd:   parseFloat(descontoPartidas.replace(/\D/g, '')) || 0,
       descontoPartidasValor: calculo?.descontoPartidasValor ?? 0,
       descontoDinheiro:      parseFloat(descontoDinheiro.replace(',', '.')) || 0,
       subtotalAposDescontos: calculo?.subtotalAposDescontoDinheiro ?? 0,
@@ -544,7 +545,7 @@ export default function CobrancaClienteScreen() {
                     />
                     {erroRelogio ? <Text style={s.inputError}>{erroRelogio}</Text> : null}
                     {relogioAtual.trim() && !erroRelogio && (() => {
-                      const a = parseInt(relogioAtual.replace(/\D/g, ''), 10);
+                      const a = parseFloat(relogioAtual.replace(/\D/g, ''));
                       const fichas = isNaN(a) ? 0 : Math.max(0, a - relogioAnterior);
                       return fichas > 0
                         ? <Text style={[s.calcLabel, { marginTop: 4 }]}>{fichas} fichas rodadas</Text>
