@@ -269,151 +269,93 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   // SINCRONIZAÇÃO
   // ==========================================================================
 
-  /**
-   * Executa sincronização completa (push + pull)   */
+/**
+   * Executa sincronização completa (push + pull)
+   * CORREÇÃO: Delega para SyncService.sync() que possui mutex, batch marking,
+   * version updates, paginação e snapshot recovery. Antes este método
+   * duplicava toda a lógica de push/pull diretamente via ApiService,
+   * causando race conditions e perda de dados.
+   */
   const sincronizar = useCallback(async (forca: boolean = false) => {
     if (isSyncing) {
       console.log('[SyncContext] Sincronização já em andamento');
       return;
-  
-  }
+    }
 
     setIsSyncing(true);
-    setStatus('pending');
+    setStatus('syncing');
     setErro(null);
     setLastSyncMessage('Iniciando sincronização...');
 
     try {
       // IMPORTANTE: Sincronizar token do AsyncStorage com ApiService
-      // Isso garante que o token de autenticação esteja disponível para as requisições
       const savedToken = await AsyncStorage.getItem(TOKEN_KEY);
       if (savedToken) {
         apiService.setToken(savedToken);
-        console.log('[SyncContext] Token sincronizado com ApiService');
       } else {
-        // BUG FIX: Abortar imediatamente se não houver token
-        console.warn('[SyncContext] ⚠️ Nenhum token encontrado no AsyncStorage — abortando sync');
+        console.warn('[SyncContext] Nenhum token encontrado — abortando sync');
         setIsSyncing(false);
         setStatus('idle');
         return;
       }
 
-      // Verificar/registrar dispositivo automaticamente
+      // Verificar dispositivo
       let deviceId = dispositivo?.id;
       let deviceKey = dispositivo?.chave;
-      
+
       if (!deviceId || !deviceKey) {
-        console.log('[SyncContext] Dispositivo não registrado, registrando automaticamente...');
         setLastSyncMessage('Registrando dispositivo...');
-        
         const registrado = await syncService.ensureDeviceRegistered();
         if (!registrado) {
           throw new Error('Falha ao registrar dispositivo');
         }
-        
-        // Recarregar metadata
         const metadata = await databaseService.getSyncMetadata();
         deviceId = metadata.deviceId;
         deviceKey = metadata.deviceKey;
-        
         setDispositivo({
           id: deviceId || '',
           nome: metadata.deviceName || '',
           chave: deviceKey || '',
           registrado: true,
         });
-        
-        console.log('[SyncContext] Dispositivo registrado:', deviceId);
       }
 
-      // 1. Push - Enviar mudanças locais
-      setProgress({
-        current: 0,
-        total: 2,
-        stage: 'push',
-        message: 'Enviando mudanças locais...',
-      });
+      // Delegar para SyncService.sync() que tem:
+      // - Mutex (evita sync concorrente)
+      // - Batch marking de changelogs
+      // - Version updates via updatedVersions
+      // - Paginação no pull
+      // - Snapshot recovery para stale devices
+      setProgress({ current: 0, total: 2, stage: 'push', message: 'Enviando mudanças locais...' });
 
-      const mudancasLocais = await databaseService.getPendingChanges();
-      
-      if (mudancasLocais.length > 0) {
-        console.log(`[SyncContext] Enviando ${mudancasLocais.length} mudanças...`);
-        
-        const pushResponse = await apiService.pushChanges({
-          deviceId: deviceId || '',
-          deviceKey: deviceKey || '',
-          lastSyncAt: lastSyncAt || new Date(0).toISOString(),
-          changes: mudancasLocais,
-        });
+      const result = await syncService.sync();
 
-        if (!pushResponse.success) {
-          throw new Error(pushResponse.errors?.[0] || 'Falha ao enviar mudanças');
-      
-  }
+      setProgress({ current: 2, total: 2, stage: 'complete', message: 'Sincronização concluída' });
 
-        // Marcar mudanças como sincronizadas
-        for (const change of mudancasLocais) {
-          await databaseService.markAsSynced(change.id);
-      
-  }
-
-        setLastSyncMessage(`${mudancasLocais.length} mudanças enviadas`);
+      // Processar resultado
+      if (result.conflicts.length > 0) {
+        setConflitosPendentes(result.conflicts);
+        setLastSyncMessage(`${result.conflicts.length} conflitos detectados`);
+        setStatus('conflict');
       } else {
-        setLastSyncMessage('Nenhuma mudança local para enviar');
-    
-  }
+        setLastSyncMessage(result.success
+          ? `Sincronização concluída: ${result.pushed} enviadas, ${result.pulled} recebidas`
+          : `Concluída com ${result.errors.length} erros`);
+        setStatus(result.success ? 'synced' : 'error');
+      }
 
-      // 2. Pull - Buscar mudanças remotas
-      setProgress({
-        current: 1,
-        total: 2,
-        stage: 'pull',
-        message: 'Baixando mudanças do servidor...',
-      });
+      if (result.errors.length > 0) {
+        setUltimoErro(result.errors[0]);
+      }
 
-      const pullResponse = await apiService.pullChanges({
-        deviceId: deviceId || '',
-        deviceKey: deviceKey || '',
-        lastSyncAt: lastSyncAt || new Date(0).toISOString(),
-      });
-
-      if (pullResponse.success) {
-        // Verificar conflitos
-        if (pullResponse.conflicts && pullResponse.conflicts.length > 0) {
-          setConflitosPendentes(pullResponse.conflicts);
-          setLastSyncMessage(`${pullResponse.conflicts.length} conflitos detectados`);
-          setStatus('conflict');
-        } else {
-          // Aplicar mudanças remotas
-          await databaseService.applyRemoteChanges(pullResponse);
-          setLastSyncMessage('Sincronização concluída com sucesso');
-          setStatus('synced');
-      
-  }
-
-        // Atualizar metadata
-        setLastSyncAt(pullResponse.lastSyncAt);
-        await databaseService.updateSyncMetadata({
-          lastSyncAt: pullResponse.lastSyncAt,
-          lastPullAt: new Date().toISOString(),
-        });
-    
-  }
-
-      // 3. Completar
-      setProgress({
-        current: 2,
-        total: 2,
-        stage: 'complete',
-        message: 'Sincronização concluída',
-      });
+      // Atualizar metadata local
+      setLastSyncAt(result.lastSyncAt);
 
       // Atualizar contagem de mudanças pendentes
       const restantes = await databaseService.getPendingChanges();
       setMudancasPendentes(restantes.length);
-      
-      // Atualizar contagem por tipo de entidade
       await atualizarPendingItems();
+
       // Limpar progresso após 2 segundos
       setTimeout(() => setProgress(null), 2000);
 
@@ -426,8 +368,7 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       logger.error('[SyncContext] Erro na sincronização:', error);
     } finally {
       setIsSyncing(false);
-  
-  }
+    }
   }, [isSyncing, dispositivo, lastSyncAt]);
 
   /**

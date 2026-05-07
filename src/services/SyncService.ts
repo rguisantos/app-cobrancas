@@ -534,7 +534,8 @@ class SyncService {
         (snapshot.cobrancas?.length || 0) +
         (snapshot.rotas?.length || 0);
 
-      // Aplicar como mudanças remotas
+      // CORREÇÃO: Aplicar como mudanças remotas incluindo TODAS as entidades
+      // Antes faltavam manutencoes e metas, causando perda de dados em snapshot recovery
       await databaseService.applyRemoteChanges({
         success: true,
         lastSyncAt: response.data.lastSyncAt,
@@ -545,6 +546,8 @@ class SyncService {
           cobrancas: snapshot.cobrancas || [],
           rotas: snapshot.rotas || [],
           usuarios: snapshot.usuarios || [],
+          manutencoes: snapshot.manutencoes || [],
+          metas: snapshot.metas || [],
         },
         tiposProduto: snapshot.tiposProduto || [],
         descricoesProduto: snapshot.descricoesProduto || [],

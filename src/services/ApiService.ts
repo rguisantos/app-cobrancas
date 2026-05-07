@@ -666,9 +666,10 @@ class ApiService {
   /**
    * CORREÇÃO: Renova token JWT via /api/mobile/auth/refresh
    * Deve ser chamado quando o token está próximo de expirar ou ao receber 401
+   * Envia o refreshToken armazenado para obter novos tokens (rotação).
    */
-  async refreshToken(): Promise<ApiResponse<{ token: string; user: any }>> {
-    return this.post('/api/mobile/auth/refresh', {});
+  async refreshToken(refreshToken: string): Promise<ApiResponse<{ token: string; refreshToken?: string; user: any }>> {
+    return this.post('/api/mobile/auth/refresh', { refreshToken });
   }
 
   /**
