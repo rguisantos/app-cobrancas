@@ -1,0 +1,54 @@
+name: Build APK (Free - Local Build)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        
+      - name: Install dependencies
+        run: npm ci
+        working-directory: app-cobrancas
+        
+      - name: Generate native project
+        run: npx expo prebuild --platform android
+        working-directory: app-cobrancas
+        
+      - name: Build APK
+        run: |
+          cd app-cobrancas/android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+          
+      - name: Rename APK
+        run: |
+          mv app-cobrancas/android/app/build/outputs/apk/release/app-release.apk app-cobrancas/app-cobrancas.apk || true
+          mv app-cobrancas/android/app/build/outputs/apk/release/*.apk app-cobrancas/app-cobrancas.apk || true
+          
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-cobrancas-apk
+          path: app-cobrancas/app-cobrancas.apk
+          retention-days: 30

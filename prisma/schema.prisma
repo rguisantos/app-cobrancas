@@ -1,0 +1,479 @@
+// Prisma Schema - Sistema de Gestão de Locação
+// Arquitetura: Sincronização bidirecional com app mobile (offline-first)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USUÁRIOS E PERMISSÕES
+// ============================================================================
+
+model Usuario {
+  id        String   @id @default(cuid())
+  nome      String
+  cpf       String   @unique
+  telefone  String?
+  email     String   @unique
+  senha     String
+  
+  tipoPermissao String // 'Administrador' | 'Secretario' | 'AcessoControlado'
+  
+  // Permissões Web
+  permissoesWebTodosCadastros     Boolean @default(false)
+  permissoesWebLocacaoRelocacao   Boolean @default(false)
+  permissoesWebRelatorios         Boolean @default(false)
+  
+  // Permissões Mobile
+  permissoesMobileTodosCadastros     Boolean @default(false)
+  permissoesMobileAlteracaoRelogio   Boolean @default(false)
+  permissoesMobileLocacaoRelocacao   Boolean @default(false)
+  permissoesMobileCobrancasFaturas   Boolean @default(false)
+  
+  // Rotas permitidas (JSON stringificado)
+  rotasPermitidas String @default("[]")
+  
+  status    String   @default("Ativo") // 'Ativo' | 'Inativo'
+  bloqueado Boolean  @default(false)
+  
+  dataUltimoAcesso         DateTime?
+  ultimoAcessoDispositivo  String? // 'Web' | 'Mobile'
+  
+  // Sincronização
+  version     Int      @default(0)
+  deviceId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  
+  // Relacionamentos
+  cobrancasRegistradas HistoricoCobranca[] @relation("CobrancasRegistrador")
+  
+  @@index([email])
+  @@index([cpf])
+  @@index([status])
+}
+
+// ============================================================================
+// EQUIPAMENTOS (Dispositivos Mobile)
+// ============================================================================
+
+model Equipamento {
+  id              String   @id @default(cuid())
+  nome            String
+  chave           String   @unique
+  senhaNumerica   String?  // Senha de 6 dígitos para primeiro acesso
+  tipo            String   @default("Celular") // 'Celular' | 'Tablet' | 'Outro'
+  status          String   @default("ativo") // 'ativo' | 'inativo' | 'nao_sincronizado'
+  
+  dataCadastro         DateTime @default(now())
+  ultimaSincronizacao  DateTime?
+  
+  // Sincronização
+  version     Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  
+  @@index([chave])
+  @@index([status])
+}
+
+// ============================================================================
+// ROTAS
+// ============================================================================
+
+model Rota {
+  id          String   @id @default(cuid())
+  descricao   String
+  status      String   @default("Ativo") // 'Ativo' | 'Inativo'
+  
+  // Sincronização
+  version     Int      @default(0)
+  deviceId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  
+  // Relacionamentos
+  clientes Cliente[]
+  
+  @@index([status])
+}
+
+// ============================================================================
+// CLIENTES
+// ============================================================================
+
+model Cliente {
+  id            String   @id @default(cuid())
+  tipoPessoa    String   @default("Fisica") // 'Fisica' | 'Juridica'
+  identificador String?  // ex: "10365" - para busca rápida
+  
+  // Pessoa Física
+  cpf           String?  @unique
+  rg            String?
+  nomeCompleto  String?
+  
+  // Pessoa Jurídica
+  cnpj          String?  @unique
+  razaoSocial   String?
+  nomeFantasia  String?
+  inscricaoEstadual String?
+  
+  // Campo unificado para exibição
+  nomeExibicao  String
+  
+  // Contatos
+  email             String?
+  telefonePrincipal String
+  contatosAdicionais String @default("[]") // JSON stringificado
+  
+  // Endereço
+  cep         String?
+  logradouro  String?
+  numero      String?
+  complemento String?
+  bairro      String?
+  cidade      String?
+  estado      String?
+  
+  // Vínculo com Rota
+  rotaId String?
+  rota   Rota?  @relation(fields: [rotaId], references: [id])
+  
+  // Sistema
+  status      String   @default("Ativo") // 'Ativo' | 'Inativo'
+  observacao  String?
+  
+  // Sincronização
+  version     Int      @default(0)
+  deviceId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  
+  // Relacionamentos
+  locacoes    Locacao[]
+  cobrancas   HistoricoCobranca[]
+  
+  @@index([cpf])
+  @@index([cnpj])
+  @@index([rotaId])
+  @@index([status])
+  @@index([identificador])
+}
+
+// ============================================================================
+// ATRIBUTOS DE PRODUTO
+// ============================================================================
+
+model TipoProduto {
+  id      String @id @default(cuid())
+  nome    String
+  
+  // Sincronização
+  version   Int       @default(0)
+  deviceId  String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  
+  // Relacionamentos
+  produtos Produto[]
+  
+  @@index([nome])
+}
+
+model DescricaoProduto {
+  id      String @id @default(cuid())
+  nome    String
+  
+  // Sincronização
+  version   Int       @default(0)
+  deviceId  String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  
+  // Relacionamentos
+  produtos Produto[]
+  
+  @@index([nome])
+}
+
+model TamanhoProduto {
+  id      String @id @default(cuid())
+  nome    String
+  
+  // Sincronização
+  version   Int       @default(0)
+  deviceId  String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  
+  // Relacionamentos
+  produtos Produto[]
+  
+  @@index([nome])
+}
+
+model Estabelecimento {
+  id      String @id @default(cuid())
+  nome    String
+  
+  // Sincronização
+  version   Int       @default(0)
+  deviceId  String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  
+  @@index([nome])
+}
+
+// ============================================================================
+// PRODUTOS
+// ============================================================================
+
+model Produto {
+  id            String   @id @default(cuid())
+  identificador String   @unique // ex: "515" - número da placa física
+  numeroRelogio String?  // ex: "8070" - contador mecânico
+  
+  // Características
+  tipoId       String?
+  tipo         TipoProduto?      @relation(fields: [tipoId], references: [id])
+  descricaoId  String?
+  descricao    DescricaoProduto? @relation(fields: [descricaoId], references: [id])
+  tamanhoId    String?
+  tamanho      TamanhoProduto?   @relation(fields: [tamanhoId], references: [id])
+  
+  // Códigos internos
+  codigoCH    String?
+  codigoABLF  String?
+  
+  // Estado do Produto
+  conservacao   String  @default("Boa") // 'Ótima' | 'Boa' | 'Regular' | 'Ruim' | 'Péssima'
+  statusProduto String  @default("Ativo") // 'Ativo' | 'Inativo' | 'Manutenção'
+  
+  // Manutenção
+  dataFabricacao         DateTime?
+  dataUltimaManutencao   DateTime?
+  relatorioUltimaManutencao String?
+  dataAvaliacao          DateTime?
+  aprovacao              String?
+  
+  // Localização/Situação
+  estabelecimento String?
+  observacao      String?
+  
+  // Sincronização
+  version     Int      @default(0)
+  deviceId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  
+  // Relacionamentos
+  locacoes    Locacao[]
+  manutencoes Manutencao[]
+  
+  @@index([identificador])
+  @@index([statusProduto])
+  @@index([tipoId])
+}
+
+// ============================================================================
+// LOCAÇÕES
+// ============================================================================
+
+model Locacao {
+  id        String   @id @default(cuid())
+  
+  // Vínculos
+  clienteId String
+  cliente   Cliente  @relation(fields: [clienteId], references: [id])
+  produtoId String
+  produto   Produto  @relation(fields: [produtoId], references: [id])
+  
+  // Dados da Locação
+  dataLocacao DateTime
+  dataFim     DateTime?
+  observacao  String?
+  
+  // Forma de Pagamento
+  formaPagamento String // 'Periodo' | 'PercentualPagar' | 'PercentualReceber'
+  
+  // Dados do Contador
+  numeroRelogio String
+  precoFicha    Float   @default(0)
+  
+  // Percentuais
+  percentualEmpresa Float @default(50)
+  percentualCliente Float @default(50)
+  
+  // Para pagamento por Período
+  periodicidade       String? // 'Mensal' | 'Semanal' | 'Quinzenal' | 'Diária'
+  valorFixo           Float?
+  dataPrimeiraCobranca DateTime?
+  
+  // Status
+  status String @default("Ativa") // 'Ativa' | 'Finalizada' | 'Cancelada'
+  
+  // Controle de Cobrança
+  ultimaLeituraRelogio Int?
+  dataUltimaCobranca   DateTime?
+  
+  // Manutenção
+  trocaPano           Boolean @default(false)
+  dataUltimaManutencao DateTime?
+  
+  // Sincronização
+  version     Int      @default(0)
+  deviceId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  
+  // Relacionamentos
+  cobrancas HistoricoCobranca[]
+  
+  @@index([clienteId])
+  @@index([produtoId])
+  @@index([status])
+}
+
+// ============================================================================
+// COBRANÇAS
+// ============================================================================
+
+model HistoricoCobranca {
+  id        String   @id @default(cuid())
+  
+  // Vínculos
+  locacaoId String
+  locacao   Locacao  @relation(fields: [locacaoId], references: [id])
+  clienteId String
+  cliente   Cliente  @relation(fields: [clienteId], references: [id])
+  
+  // Período da cobrança
+  dataInicio    DateTime
+  dataFim       DateTime
+  dataPagamento DateTime?
+  
+  // Leitura do Contador
+  relogioAnterior Int   @default(0)
+  relogioAtual    Int   @default(0)
+  fichasRodadas   Int   @default(0)
+  
+  // Cálculos
+  valorFicha  Float @default(0)
+  totalBruto  Float @default(0)
+  
+  // Descontos
+  descontoPartidasQtd  Int?    @default(0)
+  descontoPartidasValor Float? @default(0)
+  descontoDinheiro      Float? @default(0)
+  
+  // Percentual
+  percentualEmpresa     Float @default(0)
+  subtotalAposDescontos Float @default(0)
+  valorPercentual       Float @default(0)
+  
+  // Totais
+  totalClientePaga   Float @default(0)
+  valorRecebido      Float @default(0)
+  saldoDevedorGerado Float @default(0)
+  
+  // Status
+  status        String   @default("Pendente") // 'Pago' | 'Parcial' | 'Pendente' | 'Atrasado'
+  dataVencimento DateTime?
+  observacao    String?
+  
+  // Registro
+  registradoPorId String?
+  registradoPor   Usuario? @relation("CobrancasRegistrador", fields: [registradoPorId], references: [id])
+  
+  // Sincronização
+  version     Int      @default(0)
+  deviceId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  
+  @@index([locacaoId])
+  @@index([clienteId])
+  @@index([status])
+  @@index([dataInicio])
+}
+
+// ============================================================================
+// MANUTENÇÕES
+// ============================================================================
+
+model Manutencao {
+  id        String   @id @default(cuid())
+  
+  // Vínculos
+  produtoId String
+  produto   Produto  @relation(fields: [produtoId], references: [id])
+  
+  // Dados
+  tipo        String // 'trocaPano' | 'manutencao'
+  descricao   String?
+  data        DateTime
+  
+  // Contexto (opcional)
+  clienteId   String?
+  locacaoId   String?
+  cobrancaId  String?
+  
+  // Registro
+  registradoPor String?
+  
+  // Sincronização
+  version     Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  
+  @@index([produtoId])
+  @@index([data])
+  @@index([tipo])
+}
+
+// ============================================================================
+// CHANGE LOG (Para Sincronização)
+// ============================================================================
+
+model ChangeLog {
+  id          String   @id @default(cuid())
+  entityId    String
+  entityType  String   // 'cliente' | 'produto' | 'locacao' | 'cobranca' | 'rota' | 'usuario' | 'tipoProduto' | 'descricaoProduto' | 'tamanhoProduto' | 'estabelecimento' | 'manutencao'
+  operation   String   // 'create' | 'update' | 'delete'
+  changes     String   // JSON stringificado
+  timestamp   DateTime @default(now())
+  deviceId    String
+  synced      Boolean  @default(false)
+  syncedAt    DateTime?
+  
+  @@index([entityId, entityType])
+  @@index([synced, timestamp])
+}
+
+// ============================================================================
+// SYNC METADATA
+// ============================================================================
+
+model SyncMetadata {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
