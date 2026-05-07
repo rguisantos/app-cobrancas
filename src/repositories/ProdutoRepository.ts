@@ -214,7 +214,7 @@ class ProdutoRepository {
         syncStatus: 'pending',
         lastSyncedAt: undefined,
         needsSync: 1, // Integer para SQLite
-        version: 0,
+        version: 1,
         deviceId: await databaseService.getDeviceId(),
         dataCadastro: produtoSemRelacionamentos.dataCadastro || now,
         dataUltimaAlteracao: now,
@@ -246,9 +246,12 @@ class ProdutoRepository {
     
   }
 
+      // Remover campos virtuais antes de atualizar (defense-in-depth)
+      const { locacaoAtiva, estaLocado, ...produtoSemRelacionamentos } = produto as any;
+
       const produtoAtualizado: Produto = {
         ...existing,
-        ...produto,
+        ...produtoSemRelacionamentos,
         dataUltimaAlteracao: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };

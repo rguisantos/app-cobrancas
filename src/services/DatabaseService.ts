@@ -1134,6 +1134,13 @@ class DatabaseService {
     const data = { ...entity };
     delete data.id;
 
+    // CORREÇÃO: Remover campos que não existem na tabela SQLite local.
+    // 'tipo' não existe na tabela 'rotas' — o servidor pode enviá-lo mas o SQLite não tem a coluna.
+    // Outras entidades usam 'tipo' como campo mas rotas não.
+    if (entityType === 'rota') {
+      delete data.tipo;
+    }
+
     // Verificar se existe
     const existing = await this.getById<any>(entityType, entity.id);
 

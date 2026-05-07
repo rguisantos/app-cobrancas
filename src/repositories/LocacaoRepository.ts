@@ -270,7 +270,7 @@ class LocacaoRepository {
         tipo: this.entityType,
         syncStatus: 'pending',
         lastSyncedAt: undefined,
-        needsSync: true,
+        needsSync: 1,
         version: 1,  // Iniciar em 1 — servidor começa em 1, evita falso conflito no primeiro push
         deviceId: await databaseService.getDeviceId(),
         createdAt: new Date().toISOString(),
@@ -372,6 +372,10 @@ class LocacaoRepository {
         dataPrimeiraCobranca: data.dataPrimeiraCobranca,
         
         status: 'Ativa',
+
+        // Datas de cadastro
+        dataCadastro: new Date().toISOString(),
+        dataUltimaAlteracao: new Date().toISOString(),
 
         // Manutenção
         trocaPano: data.trocaPano ?? false,

@@ -31,9 +31,9 @@ class ManutencaoRepository {
       // Campos de sincronização — registro novo precisa ser sincronizado
       syncStatus: 'pending' as SyncStatus,
       lastSyncedAt: undefined,
-      needsSync: true,
+      needsSync: 1,
       version: 1,
-      deviceId: '', // Será preenchido pelo SyncContext ao enviar
+      deviceId: await databaseService.getDeviceId(),
       createdAt: now,
       updatedAt: now,
     };

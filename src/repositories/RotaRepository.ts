@@ -126,14 +126,36 @@ class RotaRepository {
         throw new Error('Já existe uma rota com esta descrição');
       }
 
+      const deviceId = await databaseService.getDeviceId();
+      const now = new Date().toISOString();
+
+      // Criar via INSERT direto — rotas não seguem o fluxo genérico de save()
+      // pois a tabela não tem coluna 'tipo', mas registramos change_log manualmente
       await databaseService.runAsync(
         `INSERT OR REPLACE INTO rotas (id, descricao, status, cor, regiao, ordem, observacao, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, 1, 1, '', ?, ?, NULL)`,
-        [id, descricao, status, cor, regiao, ordem, observacao, new Date().toISOString(), new Date().toISOString()]
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, 1, 1, ?, ?, ?, NULL)`,
+        [id, descricao, status, cor, regiao, ordem, observacao, deviceId, now, now]
       );
-      
+
+      // Registrar no change_log para sincronização
+      const rotaParaSync = {
+        id, descricao, status, cor, regiao, ordem, observacao,
+        syncStatus: 'pending', needsSync: 1, version: 1, deviceId,
+        createdAt: now, updatedAt: now,
+      };
+      await databaseService.logChange({
+        id: `rota_${id}_${now}`,
+        entityId: id,
+        entityType: 'rota',
+        operation: 'create',
+        changes: rotaParaSync as any,
+        timestamp: now,
+        deviceId,
+        synced: false,
+      });
+
       console.log('[RotaRepository] Rota criada:', id, descricao);
-      
+
       return {
         id,
         descricao,
@@ -143,11 +165,11 @@ class RotaRepository {
         ordem,
         observacao: observacao || undefined,
         syncStatus: 'pending',
-        needsSync: true,
+        needsSync: 1 as unknown as boolean,
         version: 1,
-        deviceId: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        deviceId,
+        createdAt: now,
+        updatedAt: now,
       };
     } catch (error) {
       console.error('[RotaRepository] Erro ao criar rota:', error);
@@ -178,13 +200,33 @@ class RotaRepository {
         throw new Error('Já existe uma rota com esta descrição');
       }
 
+      const deviceId = await databaseService.getDeviceId();
+      const now = new Date().toISOString();
+
       await databaseService.runAsync(
-        `UPDATE rotas SET descricao = ?, status = ?, cor = ?, regiao = ?, ordem = ?, observacao = ?, updatedAt = ?, needsSync = 1, syncStatus = 'pending' WHERE id = ?`,
-        [descricao, status, cor, regiao ?? null, ordem, observacao ?? null, new Date().toISOString(), String(rota.id)]
+        `UPDATE rotas SET descricao = ?, status = ?, cor = ?, regiao = ?, ordem = ?, observacao = ?, updatedAt = ?, needsSync = 1, syncStatus = 'pending', version = version + 1 WHERE id = ?`,
+        [descricao, status, cor, regiao ?? null, ordem, observacao ?? null, now, String(rota.id)]
       );
-      
+
+      // Registrar no change_log para sincronização
+      const rotaParaSync = {
+        id: rota.id, descricao, status, cor, regiao, ordem, observacao,
+        syncStatus: 'pending', needsSync: 1, deviceId,
+        updatedAt: now,
+      };
+      await databaseService.logChange({
+        id: `rota_${rota.id}_${now}`,
+        entityId: rota.id,
+        entityType: 'rota',
+        operation: 'update',
+        changes: rotaParaSync as any,
+        timestamp: now,
+        deviceId,
+        synced: false,
+      });
+
       console.log('[RotaRepository] Rota atualizada:', rota.id);
-      
+
       return {
         ...existing,
         descricao,
@@ -193,9 +235,9 @@ class RotaRepository {
         regiao: regiao || undefined,
         ordem,
         observacao: observacao || undefined,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
         syncStatus: 'pending',
-        needsSync: true,
+        needsSync: 1 as unknown as boolean,
       };
     } catch (error) {
       console.error('[RotaRepository] Erro ao atualizar rota:', error);

@@ -186,7 +186,7 @@ class CobrancaRepository {
         tipo: this.entityType,
         syncStatus: 'pending',
         lastSyncedAt: undefined,
-        needsSync: true,
+        needsSync: 1,
         version: 1,  // Iniciar em 1 — servidor começa em 1, evita falso conflito no primeiro push
         deviceId: await databaseService.getDeviceId(),
         createdAt: new Date().toISOString(),

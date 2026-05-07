@@ -203,7 +203,7 @@ class ClienteRepository {
         syncStatus: 'pending',
         lastSyncedAt: null,
         needsSync: 1,
-        version: 0,
+        version: 1,
         deviceId: await databaseService.getDeviceId(),
         createdAt: now,
         updatedAt: now,
@@ -436,7 +436,6 @@ class ClienteRepository {
          ) saldo ON saldo.clienteId = c.id
          WHERE c.deletedAt IS NULL
            AND c.status = 'Ativo'
-           AND c.bloqueado != 1
            AND COALESCE(saldo.total, 0) > 0
          ORDER BY saldo.total DESC`,
         []
