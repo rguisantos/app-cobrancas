@@ -70,6 +70,8 @@ interface StoredUsuarioData {
   rotasPermitidas: string;
   status: 'Ativo' | 'Inativo';
   bloqueado: boolean | number;
+  tentativasLoginFalhas: number;
+  bloqueadoAte: string | null;
   syncStatus: string;
   needsSync: boolean | number;
   version: number;
@@ -174,10 +176,12 @@ class AuthService {
         if (apiResponse.statusCode === 423) {
           logger.warn('[Auth] Conta bloqueada por tentativas falhas');
           const lockoutError: Error & { lockoutInfo?: LockoutInfo } = new Error(
-            apiResponse.error || 'Conta temporariamente bloqueada'
+            typeof apiResponse.error === 'string' ? apiResponse.error : 'Conta temporariamente bloqueada'
           );
-          // Tentar extrair informações de lockout do erro
-          if (typeof apiResponse.error === 'string' && apiResponse.error.includes('minutos')) {
+          // Tentar extrair informações de lockout do erro estruturado ou da string
+          if ((apiResponse as any).data?.lockoutInfo) {
+            lockoutError.lockoutInfo = (apiResponse as any).data.lockoutInfo;
+          } else if (typeof apiResponse.error === 'string' && apiResponse.error.includes('minutos')) {
             const match = apiResponse.error.match(/(\d+)\s*minutos/);
             if (match) {
               lockoutError.lockoutInfo = { locked: true, minutosRestantes: parseInt(match[1]) };
@@ -301,6 +305,8 @@ class AuthService {
         rotasPermitidas: JSON.stringify(user.rotasPermitidas),
         status: user.status,
         bloqueado: false,
+        tentativasLoginFalhas: 0,
+        bloqueadoAte: null,
         syncStatus: 'synced',
         needsSync: false,
         version: usuarioExistente?.version || 1,

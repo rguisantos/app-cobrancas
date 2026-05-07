@@ -574,6 +574,9 @@ export interface Usuario extends SyncableEntity {
   status: 'Ativo' | 'Inativo';
   bloqueado?: boolean;
   
+  tentativasLoginFalhas?: number;
+  bloqueadoAte?: string;
+  
   dataUltimoAcesso?: string;
   ultimoAcessoDispositivo?: 'Web' | 'Mobile';
 }
@@ -701,6 +704,8 @@ export interface DeviceActivationResponse {
   dispositivo?: {
     id: string;
     nome: string;
+    chave?: string;
+    deviceKey?: string;
     status: string;
   };
   error?: string;

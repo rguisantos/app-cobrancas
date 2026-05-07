@@ -363,21 +363,17 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     if (!dispositivo) return;
 
     try {
-      await apiService.atualizarEquipamento({
-        ...dispositivo,
-        ...dados,
-      });
-
+      // Atualizar apenas o estado local — a API não possui mais atualizarEquipamento
+      // O dispositivo será sincronizado via fluxo de ativação
       setDispositivo({
         ...dispositivo,
         ...dados,
       });
 
-      console.log('[SyncContext] Dispositivo atualizado');
+      console.log('[SyncContext] Dispositivo atualizado (local)');
     } catch (error) {
       console.error('[SyncContext] Erro ao atualizar dispositivo:', error);
-  
-  }
+    }
   }, [dispositivo]);
 
   // ==========================================================================
@@ -458,6 +454,13 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
         setAtivacaoErro(errorMsg);
         console.error('[SyncContext] Erro na ativação:', errorMsg);
         return false;
+      }
+      
+      // Capturar chave e deviceKey do servidor se retornados
+      if (response.data?.dispositivo?.chave) {
+        await databaseService.updateSyncMetadata({
+          deviceKey: response.data.dispositivo.chave,
+        } as any);
       }
       
       // Salvar informações do dispositivo localmente

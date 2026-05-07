@@ -24,6 +24,8 @@ import { ClienteProvider } from '../contexts/ClienteContext';
 import { ProdutoProvider } from '../contexts/ProdutoContext';
 import { CobrancaProvider } from '../contexts/CobrancaContext';
 import { RotaProvider } from '../contexts/RotaContext';
+import { ManutencaoProvider } from '../contexts/ManutencaoContext';
+import { MetaProvider } from '../contexts/MetaContext';
 
 // Config
 import { ENV } from '../config/env';
@@ -92,7 +94,11 @@ export function AppProviders({ children }: { children: ReactNode }) {
               <ProdutoProvider>
                 <CobrancaProvider>
                   <RotaProvider>
-                    {children}
+                    <ManutencaoProvider>
+                      <MetaProvider>
+                        {children}
+                      </MetaProvider>
+                    </ManutencaoProvider>
                   </RotaProvider>
                 </CobrancaProvider>
               </ProdutoProvider>

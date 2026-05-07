@@ -257,10 +257,11 @@ class RotaRepository {
       }
 
       const now = new Date().toISOString();
+      const deviceId = await databaseService.getDeviceId();
 
       // Soft delete da rota
       await databaseService.runAsync(
-        `UPDATE rotas SET deletedAt = ?, updatedAt = ?, needsSync = 1, syncStatus = 'pending' WHERE id = ?`,
+        `UPDATE rotas SET deletedAt = ?, status = 'Inativo', updatedAt = ?, needsSync = 1, syncStatus = 'pending', version = version + 1 WHERE id = ?`,
         [now, now, String(id)]
       );
 
@@ -269,6 +270,27 @@ class RotaRepository {
         `UPDATE clientes SET rotaId = NULL, rotaNome = NULL, updatedAt = ?, needsSync = 1 WHERE rotaId = ? AND deletedAt IS NULL`,
         [now, String(id)]
       );
+
+      // Registrar no change_log para sincronização (BUG FIX: antes não registrava)
+      await databaseService.logChange({
+        id: `rota_${id}_${now}`,
+        entityId: id,
+        entityType: 'rota',
+        operation: 'delete',
+        changes: {
+          id,
+          descricao: existing.descricao,
+          status: 'Inativo',
+          deletedAt: now,
+          updatedAt: now,
+          syncStatus: 'pending',
+          needsSync: 1,
+          deviceId,
+        } as any,
+        timestamp: now,
+        deviceId,
+        synced: false,
+      });
 
       console.log('[RotaRepository] Rota removida e clientes desvinculados:', id);
       return true;

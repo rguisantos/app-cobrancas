@@ -247,7 +247,7 @@ class DatabaseService {
         valorFixo REAL,
         dataPrimeiraCobranca TEXT,
         status TEXT,
-        ultimaLeituraRelogio INTEGER,
+        ultimaLeituraRelogio REAL,
         dataUltimaCobranca TEXT,
         trocaPano INTEGER DEFAULT 0,
         dataUltimaManutencao TEXT,
@@ -309,6 +309,10 @@ class DatabaseService {
         id TEXT PRIMARY KEY,
         descricao TEXT,
         status TEXT,
+        cor TEXT DEFAULT '#2563EB',
+        regiao TEXT,
+        ordem INTEGER DEFAULT 0,
+        observacao TEXT,
         syncStatus TEXT,
         lastSyncedAt TEXT,
         needsSync INTEGER,
@@ -336,6 +340,8 @@ class DatabaseService {
         bloqueado INTEGER,
         dataUltimoAcesso TEXT,
         ultimoAcessoDispositivo TEXT,
+        tentativasLoginFalhas INTEGER DEFAULT 0,
+        bloqueadoAte TEXT,
         syncStatus TEXT,
         lastSyncedAt TEXT,
         needsSync INTEGER,
@@ -614,6 +620,21 @@ class DatabaseService {
           usuarioResponsavel TEXT,
           needsSync INTEGER DEFAULT 1
         )`,
+      },
+      // Migration 7: Corrigir tipo de ultimaLeituraRelogio de INTEGER para REAL
+      {
+        name: 'fix_ultimaLeituraRelogio_to_real',
+        sql: `ALTER TABLE ${TABLES.LOCACOES} ADD COLUMN ultimaLeituraRelogio REAL`,
+      },
+      // Migration 8: Adicionar tentativasLoginFalhas na tabela usuarios
+      {
+        name: 'add_tentativasLoginFalhas_to_usuarios',
+        sql: `ALTER TABLE ${TABLES.USUARIOS} ADD COLUMN tentativasLoginFalhas INTEGER DEFAULT 0`,
+      },
+      // Migration 9: Adicionar bloqueadoAte na tabela usuarios
+      {
+        name: 'add_bloqueadoAte_to_usuarios',
+        sql: `ALTER TABLE ${TABLES.USUARIOS} ADD COLUMN bloqueadoAte TEXT`,
       },
     ];
     

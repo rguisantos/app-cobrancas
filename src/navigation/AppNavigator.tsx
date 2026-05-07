@@ -60,10 +60,22 @@ import SettingsScreen from '../screens/SettingsScreen';
 import RotasGerenciarScreen from '../screens/RotasGerenciarScreen';
 import AtributosProdutoGerenciarScreen from '../screens/AtributosProdutoGerenciarScreen';
 import RelatorioManutencaoScreen       from '../screens/RelatorioManutencaoScreen';
+import ManutencoesListScreen from '../screens/ManutencoesListScreen';
+import ManutencaoFormScreen from '../screens/ManutencaoFormScreen';
 import RelatorioCobrancasScreen         from '../screens/RelatorioCobrancasScreen';
 import RelatorioSaldoDevedorScreen      from '../screens/RelatorioSaldoDevedorScreen';
+import RelatorioInadimplenciaScreen     from '../screens/RelatorioInadimplenciaScreen';
+import RelatorioEstoqueScreen           from '../screens/RelatorioEstoqueScreen';
+import RelatorioRecebimentosScreen      from '../screens/RelatorioRecebimentosScreen';
+import BuscaGlobalScreen                from '../screens/BuscaGlobalScreen';
 import UsuariosGerenciarScreen from '../screens/UsuariosGerenciarScreen';
 import DeviceActivationScreen from '../screens/DeviceActivationScreen';
+import NotificacoesScreen       from '../screens/NotificacoesScreen';
+import AgendaScreen             from '../screens/AgendaScreen';
+import HistoricoPagamentoScreen from '../screens/HistoricoPagamentoScreen';
+import MetasListScreen from '../screens/MetasListScreen';
+import MetaFormScreen from '../screens/MetaFormScreen';
+import EstabelecimentosListScreen from '../screens/EstabelecimentosListScreen';
 
 // ============================================================================
 // CONFIGURAÇÃO DE TEMAS
@@ -136,6 +148,18 @@ export type ModalStackParamList = {
   RelatorioManutencao:     undefined;
   RelatorioCobrancas:      undefined;
   RelatorioSaldoDevedor:   undefined;
+  RelatorioInadimplencia:  undefined;
+  RelatorioEstoque:        undefined;
+  RelatorioRecebimentos:   undefined;
+  BuscaGlobal:             undefined;
+  ManutencoesList: undefined;
+  ManutencaoForm: { modo: 'criar'; produtoId?: string };
+  MetasList: undefined;
+  MetaForm: { modo: 'criar' | 'editar'; metaId?: string };
+  EstabelecimentosList: undefined;
+  Notificacoes: undefined;
+  Agenda: undefined;
+  HistoricoPagamento: { cobrancaId: string; clienteNome?: string };
 };
 
 // Root Stack (gerencia auth state)
@@ -409,6 +433,78 @@ function ModalNavigator() {
         name="RelatorioSaldoDevedor"
         component={RelatorioSaldoDevedorScreen}
         options={{ title: 'Saldo Devedor' }}
+      />
+      <ModalStack.Screen
+        name="RelatorioInadimplencia"
+        component={RelatorioInadimplenciaScreen}
+        options={{ title: 'Inadimplência' }}
+      />
+      <ModalStack.Screen
+        name="RelatorioEstoque"
+        component={RelatorioEstoqueScreen}
+        options={{ title: 'Estoque' }}
+      />
+      <ModalStack.Screen
+        name="RelatorioRecebimentos"
+        component={RelatorioRecebimentosScreen}
+        options={{ title: 'Recebimentos' }}
+      />
+      <ModalStack.Screen
+        name="BuscaGlobal"
+        component={BuscaGlobalScreen}
+        options={{ title: 'Busca Global' }}
+      />
+
+      {/* Manutenções */}
+      <ModalStack.Screen
+        name="ManutencoesList"
+        component={ManutencoesListScreen}
+        options={{ title: 'Manutenções' }}
+      />
+      <ModalStack.Screen
+        name="ManutencaoForm"
+        component={ManutencaoFormScreen}
+        options={({ route }) => ({
+          title: 'Nova Manutenção',
+        })}
+      />
+
+      {/* Metas */}
+      <ModalStack.Screen
+        name="MetasList"
+        component={MetasListScreen}
+        options={{ title: 'Metas' }}
+      />
+      <ModalStack.Screen
+        name="MetaForm"
+        component={MetaFormScreen}
+        options={({ route }) => ({
+          title: route.params.modo === 'criar' ? 'Nova Meta' : 'Editar Meta',
+        })}
+      />
+
+      {/* Estabelecimentos */}
+      <ModalStack.Screen
+        name="EstabelecimentosList"
+        component={EstabelecimentosListScreen}
+        options={{ title: 'Estabelecimentos' }}
+      />
+
+      {/* Notificações, Agenda e Histórico de Pagamentos */}
+      <ModalStack.Screen
+        name="Notificacoes"
+        component={NotificacoesScreen}
+        options={{ title: 'Notificações' }}
+      />
+      <ModalStack.Screen
+        name="Agenda"
+        component={AgendaScreen}
+        options={{ title: 'Agenda' }}
+      />
+      <ModalStack.Screen
+        name="HistoricoPagamento"
+        component={HistoricoPagamentoScreen}
+        options={{ title: 'Histórico de Pagamentos' }}
       />
     </ModalStack.Navigator>
   );

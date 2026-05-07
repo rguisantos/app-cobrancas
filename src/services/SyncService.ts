@@ -346,6 +346,7 @@ class SyncService {
   async pullChanges(): Promise<{ pulled: number; errors: string[] }> {
     const errors: string[] = [];
     let pulled = 0;
+    const MAX_PULL_ROUNDS = 10;
 
     try {
       const metadata = await databaseService.getSyncMetadata();
@@ -356,27 +357,78 @@ class SyncService {
         lastSyncAt: metadata.lastSyncAt || new Date(0).toISOString(),
       };
 
-      const response = await apiService.pullChanges(payload);
+      // PULL com paginação — continua enquanto hasMore=true
+      let currentLastSyncAt = payload.lastSyncAt;
+      const allChanges: any = {
+        clientes: [], produtos: [], locacoes: [], cobrancas: [],
+        rotas: [], usuarios: [], manutencoes: [], metas: [],
+      };
+      const allTiposProduto: any[] = [];
+      const allDescricoesProduto: any[] = [];
+      const allTamanhosProduto: any[] = [];
+      const allEstabelecimentos: any[] = [];
+      let round = 0;
+      let hasMore = false;
+      let isStale = false;
+      let finalLastSyncAt = '';
 
-      if (!response.success) {
-        errors.push(...(response.errors || ['Falha ao receber mudanças']));
-        return { pulled: 0, errors };
-      }
+      do {
+        round++;
+        const pullPayload = {
+          deviceId: metadata.deviceId,
+          deviceKey: metadata.deviceKey,
+          lastSyncAt: currentLastSyncAt,
+        };
 
-      // Contar mudanças recebidas
-      const changes = response.changes || {};
+        const response = await apiService.pullChanges(pullPayload);
+
+        if (!response.success) {
+          errors.push(...(response.errors || ['Falha ao receber mudanças']));
+          break;
+        }
+
+        const changes = response.changes || {};
+        
+        // Acumular mudanças de cada entidade
+        const changeKeys = ['clientes', 'produtos', 'locacoes', 'cobrancas', 'rotas', 'usuarios', 'manutencoes', 'metas'] as const;
+        for (const key of changeKeys) {
+          if (changes[key] && Array.isArray(changes[key])) {
+            allChanges[key].push(...changes[key]!);
+          }
+        }
+
+        // Acumular dados auxiliares
+        if (response.tiposProduto) allTiposProduto.push(...response.tiposProduto);
+        if (response.descricoesProduto) allDescricoesProduto.push(...response.descricoesProduto);
+        if (response.tamanhosProduto) allTamanhosProduto.push(...response.tamanhosProduto);
+        if (response.estabelecimentos) allEstabelecimentos.push(...response.estabelecimentos);
+
+        // Atualizar cursor para próxima página
+        finalLastSyncAt = response.lastSyncAt || finalLastSyncAt;
+        hasMore = response.hasMore || false;
+        isStale = response.isStale || isStale;
+        currentLastSyncAt = finalLastSyncAt;
+
+        if (round >= MAX_PULL_ROUNDS && hasMore) {
+          logger.warn(`[Sync/Pull] Atingido limite de ${MAX_PULL_ROUNDS} rodadas — hasMore=true mas parando para evitar loop infinito`);
+          errors.push(`Sincronização parcial: ${MAX_PULL_ROUNDS} rodadas atingidas, dados restantes serão sincronizados na próxima vez`);
+          break;
+        }
+      } while (hasMore);
+
+      // Contar total de mudanças
       pulled =
-        (changes.clientes?.length || 0) +
-        (changes.produtos?.length || 0) +
-        (changes.locacoes?.length || 0) +
-        (changes.cobrancas?.length || 0) +
-        (changes.rotas?.length || 0) +
-        (changes.usuarios?.length || 0) +
-        (changes.manutencoes?.length || 0) +
-        (changes.metas?.length || 0);
+        allChanges.clientes.length +
+        allChanges.produtos.length +
+        allChanges.locacoes.length +
+        allChanges.cobrancas.length +
+        allChanges.rotas.length +
+        allChanges.usuarios.length +
+        allChanges.manutencoes.length +
+        allChanges.metas.length;
 
-      // Avisar se o dispositivo está muito tempo sem sync (servidor truncou o payload)
-      if (response.isStale) {
+      // Avisar se o dispositivo está muito tempo sem sync
+      if (isStale) {
         logger.warn(
           '[Sync/Pull] AVISO: dispositivo sem sync há mais de 30 dias. ' +
           'Dados podem estar incompletos — usando snapshot para resync completo.'
@@ -388,18 +440,26 @@ class SyncService {
           message: 'Dispositivo desatualizado — sincronizando snapshot completo...',
           errors: [],
         });
-        // CORREÇÃO: Buscar snapshot completo para device estale
         const snapshotResult = await this.syncFromSnapshot();
         if (snapshotResult) {
           pulled += snapshotResult;
         }
       }
 
+      // Aplicar mudanças acumuladas se houver
       if (pulled > 0) {
-        await databaseService.applyRemoteChanges(response);
+        await databaseService.applyRemoteChanges({
+          success: true,
+          lastSyncAt: finalLastSyncAt,
+          changes: allChanges,
+          tiposProduto: allTiposProduto,
+          descricoesProduto: allDescricoesProduto,
+          tamanhosProduto: allTamanhosProduto,
+          estabelecimentos: allEstabelecimentos,
+        });
       }
 
-      logger.info('[Sync/Pull] Mudanças recebidas', { pulled });
+      logger.info('[Sync/Pull] Mudanças recebidas', { pulled, rounds: round });
 
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Erro no pull';
@@ -544,7 +604,10 @@ class SyncService {
         (snapshot.produtos?.length || 0) +
         (snapshot.locacoes?.length || 0) +
         (snapshot.cobrancas?.length || 0) +
-        (snapshot.rotas?.length || 0);
+        (snapshot.rotas?.length || 0) +
+        (snapshot.usuarios?.length || 0) +
+        (snapshot.manutencoes?.length || 0) +
+        (snapshot.metas?.length || 0);
 
       // CORREÇÃO: Aplicar como mudanças remotas incluindo TODAS as entidades
       // Antes faltavam manutencoes e metas, causando perda de dados em snapshot recovery

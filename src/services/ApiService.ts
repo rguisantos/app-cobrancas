@@ -346,7 +346,7 @@ class ApiService {
   /**
    * Requisição PUT
    */
-  private async put<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
+  async put<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
     return this.requestWithRetry<T>(endpoint, {
       method: 'PUT',
       body: JSON.stringify(body),
@@ -537,46 +537,6 @@ class ApiService {
     }
 
     return response.data || { ok: false, timestamp: new Date().toISOString() };
-  }
-
-  // ==========================================================================
-  // EQUIPAMENTOS (DEPRECATED)
-  // ==========================================================================
-
-  /**
-   * @deprecated Use fluxo de ativação com PIN (ativarDispositivo) em vez de registro automático.
-   * O admin deve criar o dispositivo no painel web, e o mobile ativa com PIN.
-   * Este endpoint legado ainda funciona mas será removido em versão futura.
-   */
-  async registrarEquipamento(dados: { id: string; nome: string; chave: string; tipo: 'Celular' | 'Tablet' | 'Outro'; dataCadastro: string }): Promise<ApiResponse<{ success: boolean; id: string; _deprecated?: boolean }>> {
-    const response = await this.post<{ success: boolean; id: string; _deprecated?: boolean }>('/api/equipamentos', dados);
-
-    if (ENV.DEBUG) {
-      console.log(`[DEVICE:REGISTER] DEPRECATED — ${response.success ? 'OK' : response.error}`);
-    }
-
-    return response;
-  }
-
-  /**
-   * @deprecated Fluxo de equipamentos legado. Use ativação com PIN.
-   */
-  async atualizarEquipamento(dados: Partial<Equipamento> & { id: string }): Promise<ApiResponse<{ success: boolean }>> {
-    return this.put(`/api/equipamentos/${dados.id}`, dados);
-  }
-
-  /**
-   * @deprecated Fluxo de equipamentos legado. Use ativação com PIN.
-   */
-  async getEquipamentos(): Promise<ApiResponse<Equipamento[]>> {
-    return this.get('/api/equipamentos');
-  }
-
-  /**
-   * @deprecated Fluxo de equipamentos legado. Use ativação com PIN.
-   */
-  async removerEquipamento(id: string): Promise<ApiResponse<{ success: boolean }>> {
-    return this.delete(`/api/equipamentos/${id}`);
   }
 
   // ==========================================================================
@@ -800,6 +760,90 @@ class ApiService {
    */
   async getRelatorioProdutos(status?: string): Promise<ApiResponse<any>> {
     return this.get('/api/relatorios/produtos', { status });
+  }
+
+  // ==========================================================================
+  // RELATÓRIOS EXPANDIDOS
+  // ==========================================================================
+
+  /**
+   * Relatório de inadimplência — clientes com cobranças atrasadas
+   */
+  async getRelatorioInadimplencia(filters?: { rotaId?: string }): Promise<ApiResponse<any>> {
+    const params = new URLSearchParams();
+    if (filters?.rotaId) params.set('rotaId', filters.rotaId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.get(`/api/relatorios/inadimplencia${query}`);
+  }
+
+  /**
+   * Relatório de estoque — produtos disponíveis (não locados)
+   */
+  async getRelatorioEstoque(filters?: { tipoId?: string; estabelecimento?: string }): Promise<ApiResponse<any>> {
+    const params = new URLSearchParams();
+    if (filters?.tipoId) params.set('tipoId', filters.tipoId);
+    if (filters?.estabelecimento) params.set('estabelecimento', filters.estabelecimento);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.get(`/api/relatorios/estoque${query}`);
+  }
+
+  /**
+   * Relatório de recebimentos — cobranças pagas em um período
+   */
+  async getRelatorioRecebimentos(dataInicio: string, dataFim: string): Promise<ApiResponse<any>> {
+    return this.get(`/api/relatorios/recebimentos?dataInicio=${dataInicio}&dataFim=${dataFim}`);
+  }
+
+  // ==========================================================================
+  // BUSCA GLOBAL
+  // ==========================================================================
+
+  /**
+   * Busca global em todas as entidades
+   */
+  async buscaGlobal(termo: string): Promise<ApiResponse<any>> {
+    return this.get(`/api/busca-global?q=${encodeURIComponent(termo)}`);
+  }
+
+  // ==========================================================================
+  // NOTIFICAÇÕES
+  // ==========================================================================
+
+  /**
+   * Busca notificações do usuário logado
+   */
+  async getNotificacoes(): Promise<ApiResponse<any[]>> {
+    return this.get('/api/notificacoes');
+  }
+
+  /**
+   * Marca notificação como lida
+   */
+  async marcarNotificacaoLida(id: string): Promise<ApiResponse<any>> {
+    return this.put(`/api/notificacoes/${id}`, { lida: true });
+  }
+
+  // ==========================================================================
+  // AGENDA
+  // ==========================================================================
+
+  /**
+   * Busca agenda de cobranças por data
+   */
+  async getAgenda(data?: string): Promise<ApiResponse<any>> {
+    const query = data ? `?data=${data}` : '';
+    return this.get(`/api/agenda${query}`);
+  }
+
+  // ==========================================================================
+  // HISTÓRICO DE PAGAMENTOS
+  // ==========================================================================
+
+  /**
+   * Busca histórico de pagamentos de uma cobrança
+   */
+  async getHistoricoPagamentos(cobrancaId: string): Promise<ApiResponse<any[]>> {
+    return this.get(`/api/historico-pagamentos?cobrancaId=${cobrancaId}`);
   }
 
   // ==========================================================================

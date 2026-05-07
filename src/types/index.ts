@@ -16,3 +16,14 @@ export * from '../../shared'
 // The shared SyncResponse is now the canonical type with proper typing.
 // UpdatedVersion is also properly typed in shared/types.ts.
 // No more duplicate declarations needed.
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOBILE-SPECIFIC EXTENSIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ManutencaoFilters {
+  produtoId?: string;
+  tipo?: 'trocaPano' | 'manutencao';
+  dataInicio?: string;
+  dataFim?: string;
+}

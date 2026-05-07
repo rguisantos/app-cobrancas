@@ -137,6 +137,8 @@ class UsuarioRepository {
         rotasPermitidas: JSON.stringify(usuario.rotasPermitidas || []),
         status: usuario.status || 'Ativo',
         bloqueado: usuario.bloqueado ? 1 : 0, // Integer para SQLite
+        tentativasLoginFalhas: existing?.tentativasLoginFalhas || 0,
+        bloqueadoAte: existing?.bloqueadoAte || null,
         syncStatus: 'pending',
         needsSync: 1, // Integer para SQLite
         version: existing?.version || 1,
@@ -184,6 +186,8 @@ class UsuarioRepository {
         tipoPermissao: usuario.tipoPermissao !== undefined ? usuario.tipoPermissao : existing.tipoPermissao,
         status: usuario.status !== undefined ? usuario.status : existing.status,
         bloqueado: usuario.bloqueado !== undefined ? (usuario.bloqueado ? 1 : 0) : (existing.bloqueado ? 1 : 0),
+        tentativasLoginFalhas: existing.tentativasLoginFalhas || 0,
+        bloqueadoAte: existing.bloqueadoAte || null,
         syncStatus: 'pending',
         lastSyncedAt: existing.lastSyncedAt,
         version: existing.version || 1,
@@ -272,6 +276,27 @@ class UsuarioRepository {
         return null;
       }
 
+      // Verificar se bloqueio temporário expirou
+      const bloqueadoAte = (result as any).bloqueadoAte;
+      if (bloqueadoAte) {
+        const dataBloqueio = new Date(bloqueadoAte);
+        if (dataBloqueio > new Date()) {
+          const minutosRestantes = Math.ceil((dataBloqueio.getTime() - Date.now()) / 60000);
+          console.log(`[UsuarioRepository] Usuário bloqueado temporariamente: ${minutosRestantes} min restantes`);
+          const error: Error & { lockoutInfo?: { locked: boolean; minutosRestantes: number } } = new Error(
+            `Conta temporariamente bloqueada. Tente novamente em ${minutosRestantes} minutos.`
+          );
+          error.lockoutInfo = { locked: true, minutosRestantes };
+          throw error;
+        } else {
+          // Bloqueio expirado — resetar contadores
+          await databaseService.runAsync(
+            `UPDATE usuarios SET bloqueado = 0, tentativasLoginFalhas = 0, bloqueadoAte = NULL, updatedAt = ? WHERE id = ?`,
+            [new Date().toISOString(), (result as any).id]
+          );
+        }
+      }
+
       const senhaArmazenada = (result as any).senha;
 
       // Comparar senha com bcrypt — apenas hash bcrypt é aceito
@@ -290,7 +315,13 @@ class UsuarioRepository {
 
       if (senhaOk) {
         logger.debug('[UsuarioRepository] Senha correta! Login autorizado.');
-        
+
+        // Resetar tentativas falhas após login bem-sucedido
+        await databaseService.runAsync(
+          `UPDATE usuarios SET tentativasLoginFalhas = 0, bloqueadoAte = NULL WHERE id = ?`,
+          [(result as any).id]
+        );
+
         // Atualizar último acesso
         await this.atualizarUltimoAcesso((result as any).id, 'Mobile');
         
@@ -317,7 +348,27 @@ class UsuarioRepository {
         };
       }
 
-      console.log('[UsuarioRepository] Senha incorreta para:', email);
+      // Incrementar tentativas falhas e aplicar bloqueio se necessário
+      const tentativasAtuais = (result as any).tentativasLoginFalhas || 0;
+      const novasTentativas = tentativasAtuais + 1;
+      const MAX_TENTATIVAS = 5;
+      const TEMPO_BLOQUEIO_MINUTOS = 15;
+
+      if (novasTentativas >= MAX_TENTATIVAS) {
+        const bloqueadoAte = new Date(Date.now() + TEMPO_BLOQUEIO_MINUTOS * 60000).toISOString();
+        await databaseService.runAsync(
+          `UPDATE usuarios SET tentativasLoginFalhas = ?, bloqueado = 1, bloqueadoAte = ?, updatedAt = ? WHERE id = ?`,
+          [novasTentativas, bloqueadoAte, new Date().toISOString(), (result as any).id]
+        );
+        console.log(`[UsuarioRepository] Conta bloqueada após ${novasTentativas} tentativas falhas`);
+      } else {
+        await databaseService.runAsync(
+          `UPDATE usuarios SET tentativasLoginFalhas = ?, updatedAt = ? WHERE id = ?`,
+          [novasTentativas, new Date().toISOString(), (result as any).id]
+        );
+      }
+
+      console.log('[UsuarioRepository] Senha incorreta para:', email, `(${novasTentativas}/${MAX_TENTATIVAS})`);
       return null;
     } catch (error) {
       console.error('[UsuarioRepository] Erro na autenticação:', error);

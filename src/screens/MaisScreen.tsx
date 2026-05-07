@@ -130,12 +130,21 @@ export default function MaisScreen() {
             <Sep />
             <MenuItem icon="cube"    iconBg="#DCFCE7" iconColor="#16A34A" title="Atributos de Produto"
               subtitle="Tipos, descrições e tamanhos" onPress={() => navModal('AtributosProdutoGerenciar')} />
-            <MenuItem icon="construct" iconBg="#F0FDF4" iconColor="#16A34A"
-              title="Relatório de Manutenções"
-              subtitle="Histórico de trocas de pano" onPress={() => navModal('RelatorioManutencao')} />
+            <Sep />
+            <MenuItem icon="construct" iconBg="#FEF3C7" iconColor="#D97706" title="Manutenções"
+              subtitle="Gerenciar manutenções" onPress={() => navModal('ManutencoesList')} />
+            <Sep />
+            <MenuItem icon="trophy" iconBg="#F3E8FF" iconColor="#8B5CF6" title="Metas"
+              subtitle="Metas e objetivos" onPress={() => navModal('MetasList')} />
+            <Sep />
+            <MenuItem icon="business" iconBg="#ECFDF5" iconColor="#059669" title="Estabelecimentos"
+              subtitle="Gerenciar estabelecimentos" onPress={() => navModal('EstabelecimentosList')} />
 
             {/* Relatórios */}
             <View style={{ height: 1, backgroundColor: '#F1F5F9', marginVertical: 4 }} />
+            <MenuItem icon="construct" iconBg="#F0FDF4" iconColor="#16A34A"
+              title="Relatório de Manutenções"
+              subtitle="Histórico de trocas de pano" onPress={() => navModal('RelatorioManutencao')} />
             <MenuItem
               icon="stats-chart"
               iconBg="#EFF6FF"
@@ -147,8 +156,40 @@ export default function MaisScreen() {
             <MenuItem icon="warning"          iconBg="#FEF2F2" iconColor="#DC2626"
               title="Saldo Devedor"
               subtitle="Clientes com pagamento em aberto" onPress={() => navModal('RelatorioSaldoDevedor')} />
+            <Sep />
+            <MenuItem icon="alert-circle"     iconBg="#FEF2F2" iconColor="#DC2626"
+              title="Inadimplência"
+              subtitle="Cobranças vencidas por cliente e rota" onPress={() => navModal('RelatorioInadimplencia')} />
+            <Sep />
+            <MenuItem icon="cube-outline"     iconBg="#DCFCE7" iconColor="#16A34A"
+              title="Estoque"
+              subtitle="Produtos disponíveis para locação" onPress={() => navModal('RelatorioEstoque')} />
+            <Sep />
+            <MenuItem icon="cash-outline"     iconBg="#F0FDF4" iconColor="#16A34A"
+              title="Recebimentos"
+              subtitle="Cobranças pagas por período" onPress={() => navModal('RelatorioRecebimentos')} />
           </MenuGroup>
         </>)}
+
+        {/* ── Busca Global (todos os usuários) ─────────── */}
+        <Text style={s.groupLabel}>BUSCA</Text>
+        <MenuGroup>
+          <MenuItem icon="search" iconBg="#EFF6FF" iconColor="#2563EB"
+            title="Busca Global"
+            subtitle="Pesquisar clientes, produtos, cobranças..."
+            onPress={() => navModal('BuscaGlobal')} />
+        </MenuGroup>
+
+        {/* ── Funcionalidades ─────────────────────────────── */}
+        <Text style={s.groupLabel}>FUNCIONALIDADES</Text>
+        <MenuGroup>
+          <MenuItem icon="notifications" iconBg="#DBEAFE" iconColor="#2563EB" title="Notificações"
+            subtitle="Central de notificações" badge={0}
+            onPress={() => navModal('Notificacoes')} />
+          <Sep />
+          <MenuItem icon="calendar" iconBg="#FEF3C7" iconColor="#D97706" title="Agenda"
+            subtitle="Agenda e compromissos" onPress={() => navModal('Agenda')} />
+        </MenuGroup>
 
         {/* ── Sincronização ───────────────────────────────── */}
         <Text style={s.groupLabel}>SINCRONIZAÇÃO</Text>
