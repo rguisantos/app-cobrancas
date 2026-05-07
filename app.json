@@ -1,0 +1,79 @@
+{
+  "expo": {
+    "name": "App Cobranças",
+    "slug": "app-cobrancas",
+    "version": "1.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2563EB"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.suaempresa.cobrancas",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Este app precisa de acesso à câmera para escanear códigos.",
+        "NSLocationWhenInUseUsageDescription": "Este app precisa de acesso à localização para mostrar endereços no mapa."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "backgroundColor": "#2563EB"
+      },
+      "package": "com.suaempresa.cobrancas",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "BLUETOOTH",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_SCAN"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-updates",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
+    ],
+    "updates": {
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 30000,
+      "url": "https://u.expo.dev/591a2817-9aed-4a61-81a0-588489597cb6"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "extra": {
+      "API_URL": "https://app-cobrancas-web.vercel.app",
+      "USE_MOCK": "false",
+      "APP_VERSION": "1.0.1",
+      "APP_NAME": "App Cobranças",
+      "DEBUG": "false",
+      "SYNC_INTERVAL": "15",
+      "MAX_RECORDS_PER_SYNC": "100",
+      "TIMEOUT": "30000",
+      "eas": {
+        "projectId": "591a2817-9aed-4a61-81a0-588489597cb6"
+      }
+    },
+    "owner": "rguisantoss"
+  }
+}
