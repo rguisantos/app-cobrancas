@@ -342,13 +342,15 @@ class SyncService {
 
       // Contar mudanças recebidas
       const changes = response.changes || {};
-      pulled = 
+      pulled =
         (changes.clientes?.length || 0) +
         (changes.produtos?.length || 0) +
         (changes.locacoes?.length || 0) +
         (changes.cobrancas?.length || 0) +
         (changes.rotas?.length || 0) +
-        (changes.usuarios?.length || 0);
+        (changes.usuarios?.length || 0) +
+        (changes.manutencoes?.length || 0) +
+        (changes.metas?.length || 0);
 
       // Avisar se o dispositivo está muito tempo sem sync (servidor truncou o payload)
       if (response.isStale) {

@@ -17,6 +17,8 @@ export const ENTITY_TYPES: EntityType[] = [
   'cobranca',
   'rota',
   'usuario',
+  'manutencao',
+  'meta',
 ]
 
 /** Estratégias de resolução de conflitos disponíveis */
@@ -44,16 +46,20 @@ export const ENTITY_TABLE_MAP: Record<EntityType, string> = {
   cobranca: 'cobrancas',
   rota: 'rotas',
   usuario: 'usuarios',
+  manutencao: 'manutencoes',
+  meta: 'metas',
 }
 
 /** Ordem de processamento por dependência (para sync push) */
 export const SYNC_PROCESSING_ORDER: EntityType[] = [
-  'rota',      // Sem dependências
-  'cliente',   // Sem dependências (exceto rota)
-  'produto',   // Sem dependências
-  'locacao',   // Depende de cliente e produto
-  'cobranca',  // Depende de locacao, cliente e produto
-  'usuario',   // Sem dependências
+  'rota',       // Sem dependências
+  'cliente',    // Sem dependências (exceto rota)
+  'produto',    // Sem dependências
+  'locacao',    // Depende de cliente e produto
+  'cobranca',   // Depende de locacao, cliente e produto
+  'usuario',    // Sem dependências
+  'manutencao', // Depende de produto e opcionalmente cliente/locacao
+  'meta',       // Sem dependências
 ]
 
 // ============================================================================

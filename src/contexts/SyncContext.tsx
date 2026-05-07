@@ -106,6 +106,8 @@ export interface SyncContextData extends SyncState {
     produtos: number;
     locacoes: number;
     cobrancas: number;
+    manutencoes: number;
+    metas: number;
   };
 }
 
@@ -167,6 +169,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     produtos: 0,
     locacoes: 0,
     cobrancas: 0,
+    manutencoes: 0,
+    metas: 0,
   });
   
   const [dispositivo, setDispositivo] = useState<SyncState['dispositivo']>(null);
@@ -764,6 +768,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
         produtos: counts['produto'] || 0,
         locacoes: counts['locacao'] || 0,
         cobrancas: counts['cobranca'] || 0,
+        manutencoes: counts['manutencao'] || 0,
+        metas: counts['meta'] || 0,
       });
     } catch (error) {
       console.error('[SyncContext] Erro ao contar pending items:', error);
