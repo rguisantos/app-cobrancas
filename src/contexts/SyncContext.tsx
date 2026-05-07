@@ -345,8 +345,9 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
    * Cancela sincronização em andamento
    */
   const cancelarSincronizacao = useCallback(() => {
-    // TODO: Implementar cancelamento via ApiService (AbortController)
+    syncService.cancelSync();
     setIsSyncing(false);
+    setStatus('pending');
     setProgress(null);
     setLastSyncMessage('Sincronização cancelada');
   }, []);
@@ -504,6 +505,7 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       if (!conflito) return;
 
       setLastSyncMessage(`Resolvendo conflito: ${estrategia}...`);
+      setErro(null);
 
       // Aplicar estratégia de resolução
       let versaoFinal: any;
@@ -523,24 +525,43 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
           versaoFinal = localDate > remoteDate ? conflito.localVersion : conflito.remoteVersion;
           break;
         case 'manual':
-          // TODO: Implementar tela de resolução manual
-          setErro('Resolução manual deve ser feita pela interface');
+          setErro('Resolução manual ainda não possui editor no mobile');
+          setStatus('conflict');
           return;
     
   }
 
-      // Salvar versão final no banco local
-      await databaseService.save(conflito.entityType, versaoFinal);
+      if (!versaoFinal?.id) {
+        versaoFinal = { ...versaoFinal, id: conflito.entityId };
+      }
+
+      const resolvido = await syncService.resolveConflict(
+        conflitoId,
+        estrategia,
+        versaoFinal
+      );
+
+      if (!resolvido) {
+        throw new Error('Servidor recusou a resolução do conflito');
+      }
+
+      await databaseService.applyRemoteChanges({
+        success: true,
+        lastSyncAt: new Date().toISOString(),
+        changes: {
+          clientes: conflito.entityType === 'cliente' ? [versaoFinal] : [],
+          produtos: conflito.entityType === 'produto' ? [versaoFinal] : [],
+          locacoes: conflito.entityType === 'locacao' ? [versaoFinal] : [],
+          cobrancas: conflito.entityType === 'cobranca' ? [versaoFinal] : [],
+          rotas: conflito.entityType === 'rota' ? [versaoFinal] : [],
+          usuarios: conflito.entityType === 'usuario' ? [versaoFinal] : [],
+          manutencoes: conflito.entityType === 'manutencao' ? [versaoFinal] : [],
+          metas: conflito.entityType === 'meta' ? [versaoFinal] : [],
+        },
+      });
 
       // Remover da lista de conflitos
       setConflitosPendentes(prev => prev.filter(c => c.entityId !== conflitoId));
-
-      // Sincronizar resolução com servidor
-      await apiService.resolverConflito({
-        conflitoId,
-        estrategia,
-        versaoFinal,
-      });
 
       setLastSyncMessage('Conflito resolvido');
       

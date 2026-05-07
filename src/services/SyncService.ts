@@ -48,6 +48,7 @@ class SyncService {
   private syncPromise: Promise<SyncResult> | null = null;
   private listeners: SyncEventListener[] = [];
   private autoSyncInterval: NodeJS.Timeout | null = null;
+  private cancellationRequested = false;
 
   // ==========================================================================
   // CONFIGURAÇÃO
@@ -112,6 +113,7 @@ class SyncService {
       return this.syncPromise;
     }
 
+    this.cancellationRequested = false;
     this.syncPromise = this._doSync();
     try {
       return await this.syncPromise;
@@ -149,6 +151,9 @@ class SyncService {
       });
 
       const pushResult = await this.pushChanges();
+      if (this.cancellationRequested) {
+        throw new Error('Sincronização cancelada');
+      }
       pushed = pushResult.pushed;
       conflicts = pushResult.conflicts;
       errors.push(...pushResult.errors);
@@ -163,6 +168,9 @@ class SyncService {
       });
 
       const pullResult = await this.pullChanges();
+      if (this.cancellationRequested) {
+        throw new Error('Sincronização cancelada');
+      }
       pulled = pullResult.pulled;
       errors.push(...pullResult.errors);
 
@@ -224,7 +232,23 @@ class SyncService {
       };
     } finally {
       this.syncInProgress = false;
+      this.cancellationRequested = false;
     }
+  }
+
+  /**
+   * Cancela a sincronização em andamento sem afetar outras chamadas da API.
+   */
+  cancelSync(): void {
+    this.cancellationRequested = true;
+    apiService.cancelScope('sync');
+    this.notify({
+      phase: 'error',
+      total: 0,
+      current: 0,
+      message: 'Sincronização cancelada',
+      errors: ['Sincronização cancelada'],
+    });
   }
 
   /**

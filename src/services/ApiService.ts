@@ -92,6 +92,7 @@ class ApiService {
   private token: string | null = null;
   /** Active AbortControllers keyed by requestId — allows per-request cancellation */
   private activeRequests: Map<string, AbortController> = new Map();
+  private requestScopes: Map<string, string> = new Map();
   /**
    * Callback chamado quando o servidor retorna 401 (token expirado/inválido).
    * Registrado pelo AuthContext para forçar logout automático.
@@ -136,13 +137,30 @@ class ApiService {
       if (controller) {
         controller.abort();
         this.activeRequests.delete(requestId);
+        this.requestScopes.delete(requestId);
       }
     } else {
       // Cancel all active requests
       for (const [id, controller] of this.activeRequests) {
         controller.abort();
+        this.requestScopes.delete(id);
       }
       this.activeRequests.clear();
+    }
+  }
+
+  /**
+   * Cancela todas as requisições associadas a um escopo lógico.
+   */
+  cancelScope(scope: string): void {
+    for (const [id, requestScope] of this.requestScopes) {
+      if (requestScope !== scope) continue;
+      const controller = this.activeRequests.get(id);
+      if (controller) {
+        controller.abort();
+      }
+      this.activeRequests.delete(id);
+      this.requestScopes.delete(id);
     }
   }
 
@@ -157,13 +175,17 @@ class ApiService {
   private async requestWithRetry<T>(
     endpoint: string,
     options: RequestInit = {},
-    retries: number = API_CONFIG.retries
+    retries: number = API_CONFIG.retries,
+    requestScope?: string
   ): Promise<ApiResponse<T>> {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const result = await this.request<T>(endpoint, options);
+        const result = await this.request<T>(endpoint, options, requestScope);
+        if (result.error === 'Requisição cancelada') {
+          return result;
+        }
         // If it's a network error (no statusCode), retry
         if (!result.success && !result.statusCode && attempt < retries) {
           if (ENV.DEBUG) {
@@ -195,7 +217,8 @@ class ApiService {
    */
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    requestScope?: string
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseURL}${endpoint}`;
     const requestId = `${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -215,6 +238,9 @@ class ApiService {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
     this.activeRequests.set(requestId, controller);
+    if (requestScope) {
+      this.requestScopes.set(requestId, requestScope);
+    }
 
     const startTime = Date.now();
 
@@ -289,13 +315,14 @@ class ApiService {
     } finally {
       clearTimeout(timeoutId);
       this.activeRequests.delete(requestId);
+      this.requestScopes.delete(requestId);
     }
   }
 
   /**
    * Requisição GET
    */
-  private async get<T>(endpoint: string, params?: Record<string, any>): Promise<ApiResponse<T>> {
+  private async get<T>(endpoint: string, params?: Record<string, any>, requestScope?: string): Promise<ApiResponse<T>> {
     let url = endpoint;
     
     if (params) {
@@ -303,17 +330,17 @@ class ApiService {
       url = `${endpoint}?${queryString}`;
     }
 
-    return this.requestWithRetry<T>(url, { method: 'GET' });
+    return this.requestWithRetry<T>(url, { method: 'GET' }, API_CONFIG.retries, requestScope);
   }
 
   /**
    * Requisição POST
    */
-  async post<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
+  async post<T>(endpoint: string, body: any, requestScope?: string): Promise<ApiResponse<T>> {
     return this.requestWithRetry<T>(endpoint, {
       method: 'POST',
       body: JSON.stringify(body),
-    });
+    }, API_CONFIG.retries, requestScope);
   }
 
   /**
@@ -346,7 +373,7 @@ class ApiService {
       console.log(`[API:SYNC:PUSH] ${payload.changes?.length || 0} changes, deviceId=${payload.deviceId}`);
     }
 
-    const response = await this.post<SyncResponse>('/api/sync/push', payload);
+    const response = await this.post<SyncResponse>('/api/sync/push', payload, 'sync');
 
     if (!response.success || !response.data) {
       if (ENV.DEBUG) {
@@ -414,7 +441,7 @@ class ApiService {
       const response = await this.post<SyncResponse>('/api/sync/pull', {
         ...payload,
         lastSyncAt: currentLastSyncAt,
-      });
+      }, 'sync');
 
       if (!response.success || !response.data) {
         // Se já temos dados de rounds anteriores, retornar o que temos
