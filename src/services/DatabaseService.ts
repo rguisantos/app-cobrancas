@@ -1739,7 +1739,7 @@ class DatabaseService {
   async clearLocalData(): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
 
-    const tables = Object.values(TABLES);
+    const tables = Object.values(TABLES).filter(table => table !== TABLES.SYNC_METADATA);
 
     await this.runTransaction(async () => {
       for (const table of tables) {

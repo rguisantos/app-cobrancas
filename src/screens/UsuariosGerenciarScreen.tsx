@@ -3,7 +3,7 @@
  * Tela para gerenciar usuários (criar, editar, excluir)
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,8 +20,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation , useFocusEffect} from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
-import { usuarioRepository, UsuarioLogin } from '../repositories/UsuarioRepository';
-import { TipoPermissaoUsuario, PermissoesUsuario } from '../types';
+import { usuarioRepository } from '../repositories/UsuarioRepository';
+import { TipoPermissaoUsuario, PermissoesUsuario, Usuario } from '../types';
 import bcrypt from 'bcryptjs';
 
 // Permissões padrão por tipo — usando PermissoesMobile/PermissoesWeb corretas
@@ -82,10 +82,10 @@ export default function UsuariosGerenciarScreen() {
   const navigation = useNavigation();
   const { user, isAdmin } = useAuth();
   
-  const [usuarios, setUsuarios] = useState<UsuarioLogin[]>([]);
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
-  const [editandoUsuario, setEditandoUsuario] = useState<UsuarioLogin | null>(null);
+  const [editandoUsuario, setEditandoUsuario] = useState<Usuario | null>(null);
   const [salvando, setSalvando] = useState(false);
   
   const [formData, setFormData] = useState<UsuarioFormData>({
@@ -105,15 +105,7 @@ export default function UsuariosGerenciarScreen() {
     setCarregando(true);
     try {
       const lista = await usuarioRepository.getAll();
-      setUsuarios(lista.map(u => ({
-        id: u.id,
-        email: u.email,
-        nome: u.nome,
-        tipoPermissao: u.tipoPermissao,
-        permissoes: u.permissoes,
-        rotasPermitidas: u.rotasPermitidas,
-        status: u.status,
-      })));
+      setUsuarios(lista);
     } catch (error) {
       console.error('Erro ao carregar usuários:', error);
       setUsuarios([]);
@@ -143,15 +135,15 @@ export default function UsuariosGerenciarScreen() {
     setModalVisible(true);
   };
 
-  const handleEditarUsuario = (usuario: UsuarioLogin) => {
+  const handleEditarUsuario = (usuario: Usuario) => {
     setEditandoUsuario(usuario);
     setFormData({
       id: usuario.id,
       nome: usuario.nome,
       email: usuario.email,
       senha: '',
-      cpf: '',
-      telefone: '',
+      cpf: usuario.cpf || '',
+      telefone: usuario.telefone || '',
       tipoPermissao: usuario.tipoPermissao,
       status: usuario.status,
     });
@@ -220,7 +212,7 @@ export default function UsuariosGerenciarScreen() {
     }
   };
 
-  const handleExcluir = (usuario: UsuarioLogin) => {
+  const handleExcluir = (usuario: Usuario) => {
     if (usuario.id === user?.id) {
       Alert.alert('Erro', 'Você não pode excluir seu próprio usuário');
       return;
@@ -248,7 +240,7 @@ export default function UsuariosGerenciarScreen() {
     );
   };
 
-  const handleToggleStatus = async (usuario: UsuarioLogin) => {
+  const handleToggleStatus = async (usuario: Usuario) => {
     if (usuario.id === user?.id) {
       Alert.alert('Erro', 'Você não pode desativar seu próprio usuário');
       return;
@@ -412,6 +404,30 @@ export default function UsuariosGerenciarScreen() {
                   onChangeText={(text) => setFormData({ ...formData, email: text })}
                   keyboardType="email-address"
                   autoCapitalize="none"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>CPF</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="000.000.000-00"
+                  placeholderTextColor="#94A3B8"
+                  value={formData.cpf}
+                  onChangeText={(text) => setFormData({ ...formData, cpf: text })}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Telefone</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="(00) 00000-0000"
+                  placeholderTextColor="#94A3B8"
+                  value={formData.telefone}
+                  onChangeText={(text) => setFormData({ ...formData, telefone: text })}
+                  keyboardType="phone-pad"
                 />
               </View>
 

@@ -85,8 +85,17 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              const pendentes = await databaseService.getPendingChanges();
+              if (pendentes.length > 0) {
+                Alert.alert(
+                  'Sincronização pendente',
+                  `Existem ${pendentes.length} alterações locais ainda não enviadas. Sincronize antes de limpar os dados.`
+                );
+                return;
+              }
+
               await databaseService.clearLocalData();
-              Alert.alert('Sucesso', 'Dados locais limpos com sucesso');
+              Alert.alert('Sucesso', 'Dados locais limpos. A ativação do dispositivo foi preservada.');
               logger.info('Dados locais limpos pelo usuário', undefined, 'Settings');
             } catch (error) {
               Alert.alert('Erro', 'Não foi possível limpar os dados');

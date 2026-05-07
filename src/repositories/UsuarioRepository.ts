@@ -13,7 +13,7 @@ import {
   EntityType 
 } from '../types';
 import logger from '../utils/logger';
-import { parseJSON } from '../utils/database';
+import { generateId, parseJSON } from '../utils/database';
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -116,7 +116,11 @@ class UsuarioRepository {
   async save(usuario: Omit<Usuario, 'createdAt' | 'updatedAt'> & { senha?: string }): Promise<Usuario> {
     try {
       const now = new Date().toISOString();
-      const id = usuario.id || `usr_${Date.now()}`;
+      const existingById = usuario.id ? await this.getById(usuario.id) : null;
+      const existingByEmail = await this.getByEmail(usuario.email);
+      const existing = existingById || existingByEmail;
+      const id = existing?.id || usuario.id || generateId('usuario');
+      const deviceId = existing?.deviceId || await databaseService.getDeviceId();
       
       // Campos que pertencem à tabela usuarios
       const usuarioData: any = {
@@ -126,7 +130,7 @@ class UsuarioRepository {
         cpf: usuario.cpf || '',
         telefone: usuario.telefone || '',
         email: usuario.email.toLowerCase().trim(),
-        senha: usuario.senha || '',
+        senha: usuario.senha || (existing as any)?.senha || '',
         tipoPermissao: usuario.tipoPermissao || 'AcessoControlado',
         permissoesWeb: JSON.stringify(usuario.permissoes?.web || {}),
         permissoesMobile: JSON.stringify(usuario.permissoes?.mobile || {}),
@@ -135,14 +139,11 @@ class UsuarioRepository {
         bloqueado: usuario.bloqueado ? 1 : 0, // Integer para SQLite
         syncStatus: 'pending',
         needsSync: 1, // Integer para SQLite
-        version: 1,
-        deviceId: '',
-        createdAt: now,
+        version: existing?.version || 1,
+        deviceId,
+        createdAt: existing?.createdAt || now,
         updatedAt: now,
       };
-
-      // Verificar se existe
-      const existing = await this.getByEmail(usuario.email);
       
       if (existing) {
         await databaseService.update(this.entityType, usuarioData);
@@ -170,17 +171,23 @@ class UsuarioRepository {
       }
 
       const now = new Date().toISOString();
+      const deviceId = existing.deviceId || await databaseService.getDeviceId();
       
       // Construir objeto de atualização com campos válidos
       const usuarioAtualizado: any = {
         id: usuario.id,
-        nome: usuario.nome || existing.nome,
-        email: usuario.email || existing.email,
-        telefone: usuario.telefone || existing.telefone,
-        cpf: usuario.cpf || existing.cpf,
-        tipoPermissao: usuario.tipoPermissao || existing.tipoPermissao,
-        status: usuario.status || existing.status,
+        tipo: 'usuario',
+        nome: usuario.nome !== undefined ? usuario.nome : existing.nome,
+        email: usuario.email !== undefined ? usuario.email.toLowerCase().trim() : existing.email,
+        telefone: usuario.telefone !== undefined ? usuario.telefone : existing.telefone,
+        cpf: usuario.cpf !== undefined ? usuario.cpf : existing.cpf,
+        tipoPermissao: usuario.tipoPermissao !== undefined ? usuario.tipoPermissao : existing.tipoPermissao,
+        status: usuario.status !== undefined ? usuario.status : existing.status,
         bloqueado: usuario.bloqueado !== undefined ? (usuario.bloqueado ? 1 : 0) : (existing.bloqueado ? 1 : 0),
+        syncStatus: 'pending',
+        lastSyncedAt: existing.lastSyncedAt,
+        version: existing.version || 1,
+        deviceId,
         updatedAt: now,
       };
 
