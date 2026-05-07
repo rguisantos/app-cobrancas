@@ -564,6 +564,7 @@ class SyncService {
         tiposProduto: snapshot.tiposProduto || [],
         descricoesProduto: snapshot.descricoesProduto || [],
         tamanhosProduto: snapshot.tamanhosProduto || [],
+        estabelecimentos: snapshot.estabelecimentos || [],
       });
 
       logger.info('[Sync/Snapshot] Snapshot aplicado', { total });

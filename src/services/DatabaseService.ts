@@ -1094,6 +1094,12 @@ class DatabaseService {
         await this.upsertTamanhoProdutoFromSync(tam);
       }
 
+      // Estabelecimentos
+      const estabelecimentos = response.estabelecimentos || [];
+      for (const est of estabelecimentos) {
+        await this.upsertEstabelecimentoFromSync(est);
+      }
+
       // Reconciliar IDs temporários (tmp_/novo_) criados offline com UUIDs reais do servidor
       // Deve rodar APÓS aplicar todos os atributos do pull
       await this.reconciliarAtributosTemporarios();
@@ -1289,6 +1295,59 @@ class DatabaseService {
        VALUES (?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
       [tam.id, tam.nome, tam.lastSyncedAt || new Date().toISOString(), tam.version || 1, tam.deviceId || '', tam.createdAt || new Date().toISOString(), tam.updatedAt || new Date().toISOString(), tam.deletedAt || null]
     );
+  }
+
+  /**
+   * Upsert de estabelecimento recebido do servidor (SEM criar ChangeLog)
+   */
+  private async upsertEstabelecimentoFromSync(est: any): Promise<void> {
+    if (!this.db) return;
+
+    const existing = await this.getById<any>('estabelecimento' as EntityType, est.id);
+    const now = new Date().toISOString();
+
+    if (existing) {
+      // UPDATE
+      const serialized = serializeForDB({
+        nome: est.nome,
+        endereco: est.endereco || null,
+        observacao: est.observacao || null,
+        syncStatus: 'synced',
+        lastSyncedAt: est.lastSyncedAt || now,
+        needsSync: 0,
+        version: est.version || 1,
+        deviceId: est.deviceId || '',
+        updatedAt: est.updatedAt || now,
+        deletedAt: est.deletedAt || null,
+      });
+      const fields = Object.keys(serialized);
+      const setClause = fields.map((field) => `${field} = ?`).join(', ');
+      const values = fields.map((field) => serialized[field]);
+
+      await this.db.runAsync(
+        `UPDATE ${TABLES.ESTABELECIMENTOS} SET ${setClause} WHERE id = ?`,
+        [...values, est.id]
+      );
+    } else {
+      // INSERT
+      await this.db.runAsync(
+        `INSERT INTO ${TABLES.ESTABELECIMENTOS}
+         (id, nome, endereco, observacao, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, ?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
+        [
+          est.id,
+          est.nome,
+          est.endereco || null,
+          est.observacao || null,
+          est.lastSyncedAt || now,
+          est.version || 1,
+          est.deviceId || '',
+          est.createdAt || now,
+          est.updatedAt || now,
+          est.deletedAt || null,
+        ]
+      );
+    }
   }
 
   /**

@@ -429,6 +429,7 @@ class ApiService {
       tiposProduto: [],
       descricoesProduto: [],
       tamanhosProduto: [],
+      estabelecimentos: [],
     };
 
     let currentLastSyncAt = payload.lastSyncAt;
@@ -493,6 +494,10 @@ class ApiService {
         ...(allChanges.tamanhosProduto || []),
         ...(data.tamanhosProduto || []),
       ];
+      allChanges.estabelecimentos = [
+        ...(allChanges.estabelecimentos || []),
+        ...(data.estabelecimentos || []),
+      ];
       allChanges.lastSyncAt = data.lastSyncAt;
       allChanges.conflicts = [...(allChanges.conflicts || []), ...(data.conflicts || [])];
       allChanges.errors = [...(allChanges.errors || []), ...(data.errors || [])];
@@ -511,7 +516,8 @@ class ApiService {
         (changes.manutencoes?.length || 0) + (changes.metas?.length || 0) +
         (allChanges.tiposProduto?.length || 0) +
         (allChanges.descricoesProduto?.length || 0) +
-        (allChanges.tamanhosProduto?.length || 0);
+        (allChanges.tamanhosProduto?.length || 0) +
+        (allChanges.estabelecimentos?.length || 0);
       console.log(`[API:SYNC:PULL] OK — ${pullRound} rounds, ${total} entidades`);
     }
     return allChanges;

@@ -778,6 +778,8 @@ export interface SyncResponse {
   tiposProduto?: TipoProduto[];
   descricoesProduto?: DescricaoProduto[];
   tamanhosProduto?: TamanhoProduto[];
+  // Estabelecimentos (entidade de apoio com sync fields)
+  estabelecimentos?: Estabelecimento[];
 }
 
 export interface SyncSnapshotResponse {
@@ -795,6 +797,7 @@ export interface SyncSnapshotResponse {
     tamanhosProduto: TamanhoProduto[];
     manutencoes: Manutencao[];
     metas: Meta[];
+    estabelecimentos: Estabelecimento[];
   };
 }
 
