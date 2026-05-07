@@ -251,7 +251,6 @@ class ProdutoRepository {
         ...produto,
         dataUltimaAlteracao: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        version: (existing.version || 0) + 1,
       };
 
       await databaseService.update(this.entityType, produtoAtualizado);

@@ -123,6 +123,7 @@ export default function CobrancaConfirmScreen() {
   }, [relogioAtual, relogioAnterior, descontoPartidas, descontoDinheiro, locacaoSelecionada]);
 
   const valorRecebidoNum = parseFloat(valorRecebido.replace(',', '.')) || 0;
+  // Preview (não inclui saldoAnterior porque ele só é conhecido no confirm)
   const saldoDevedor     = calculo ? Math.max(0, calculo.totalClientePaga - valorRecebidoNum) : 0;
   const troco            = calculo ? Math.max(0, valorRecebidoNum - calculo.totalClientePaga) : 0;
 
@@ -181,6 +182,11 @@ export default function CobrancaConfirmScreen() {
       const saldoAnterior = await cobrancaRepository.getSaldoPendenteByLocacao(
         String(locacaoSelecionada.id)
       );
+      const isPagar = locacaoSelecionada.formaPagamento === 'PercentualPagar';
+      const isPeriodoForma = locacaoSelecionada.formaPagamento === 'Periodo';
+      const totalComSaldo = calculo.totalClientePaga + (isPagar || isPeriodoForma ? 0 : saldoAnterior);
+      const saldoDevedorFinal = Math.max(0, totalComSaldo - valorRecebidoNum);
+      const trocoFinal = Math.max(0, valorRecebidoNum - totalComSaldo);
 
       const cobranca = await registrarCobranca({
         locacaoId:             String(locacaoSelecionada.id),
@@ -229,11 +235,11 @@ export default function CobrancaConfirmScreen() {
           'Cobrança Registrada! ✓',
           [
             `Fichas: ${calculo.fichasRodadas}`,
-            `Total: ${formatarMoeda(calculo.totalClientePaga)}`,
+            saldoAnterior > 0 ? `Total com saldo: ${formatarMoeda(totalComSaldo)}` : `Total: ${formatarMoeda(calculo.totalClientePaga)}`,
             `Empresa recebe: ${formatarMoeda(calculo.valorPercentual)}`,
             valorRecebidoNum > 0 ? `Recebido: ${formatarMoeda(valorRecebidoNum)}` : null,
-            saldoDevedor > 0 ? `Saldo devedor: ${formatarMoeda(saldoDevedor)}` : null,
-            troco > 0 ? `Troco: ${formatarMoeda(troco)}` : null,
+            saldoDevedorFinal > 0 ? `Saldo devedor: ${formatarMoeda(saldoDevedorFinal)}` : null,
+            trocoFinal > 0 ? `Troco: ${formatarMoeda(trocoFinal)}` : null,
           ].filter(Boolean).join('\n'),
           [
             {
@@ -255,7 +261,7 @@ export default function CobrancaConfirmScreen() {
       setIsSubmitting(false);
     }
   }, [calculo, locacaoSelecionada, relogioAtual, relogioAnterior, descontoPartidas, isSubmitting,
-      valorRecebidoNum, observacao, saldoDevedor, troco, registrarCobranca, atualizarLocacao, navigation, canDo]);
+      valorRecebidoNum, observacao, registrarCobranca, atualizarLocacao, navigation, canDo]);
 
   // ── loading ───────────────────────────────────────────────────────────────
   if (!locacaoSelecionada && locacaoId) {

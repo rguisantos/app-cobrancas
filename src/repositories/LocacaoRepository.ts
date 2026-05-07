@@ -305,7 +305,6 @@ class LocacaoRepository {
         ...existing,
         ...locacao,
         updatedAt: new Date().toISOString(),
-        version: (existing.version || 0) + 1,
       };
 
       await databaseService.update(this.entityType, locacaoAtualizada);

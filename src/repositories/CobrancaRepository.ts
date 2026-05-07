@@ -220,7 +220,6 @@ class CobrancaRepository {
         ...existing,
         ...cobranca,
         updatedAt: new Date().toISOString(),
-        version: (existing.version || 0) + 1,
       };
 
       console.log('[CobrancaRepository] Atualizando cobrança:', {
@@ -357,14 +356,21 @@ class CobrancaRepository {
         console.warn('[CobrancaRepository] Cobrança não encontrada:', cobrancaId);
         return null;
     
-  }
+      }
+
+      // totalClientePaga pode NÃO incluir saldo anterior; o total efetivo desta cobrança
+      // é o que foi originalmente devido: (valorRecebido + saldoDevedorGerado).
+      const totalEfetivo = Math.max(
+        cobranca.totalClientePaga,
+        (cobranca.valorRecebido || 0) + (cobranca.saldoDevedorGerado || 0)
+      );
 
       // Calcular novo saldo (nunca negativo — excesso é troco, não saldo)
-      const saldoDevedor = Math.max(0, cobranca.totalClientePaga - valorRecebido);
+      const saldoDevedor = Math.max(0, totalEfetivo - valorRecebido);
 
       // Determinar novo status
       let status: StatusPagamento = 'Pendente';
-      if (valorRecebido >= cobranca.totalClientePaga) {
+      if (valorRecebido >= totalEfetivo) {
         status = 'Pago';
       } else if (valorRecebido > 0) {
         status = 'Parcial';
