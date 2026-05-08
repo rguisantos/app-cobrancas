@@ -33,6 +33,7 @@ import { databaseService } from '../services/DatabaseService';
 
 const { width } = Dimensions.get('window');
 const DEVICE_ACTIVATED_KEY = '@cobrancas:deviceActivated';
+const SERVER_VALIDATION_KEY = '@cobrancas:serverDeviceValidation';
 
 export default function DeviceActivationScreen() {
   const { user, logout } = useAuth();
@@ -183,6 +184,9 @@ export default function DeviceActivationScreen() {
         // Persistir estado de ativação no AsyncStorage (sobrevive a reinícios do app)
         try {
           await AsyncStorage.setItem(DEVICE_ACTIVATED_KEY, JSON.stringify(true));
+          // CRUCIAL: Persistir validação do servidor como 'active' — isso evita
+          // que o AppNavigator tente re-validar offline e use o fallback errado
+          await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'active');
         } catch (e) {
           console.warn('[DeviceActivation] Falha ao persistir estado de ativação:', e);
         }

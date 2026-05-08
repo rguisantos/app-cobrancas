@@ -720,6 +720,7 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   }, [syncConfig.autoSyncEnabled, dispositivo?.registrado, ativarAutoSync]);
 
   // Sync automático ao voltar do background (AppState: background → active)
+  // IMPORTANTE: Não sincronizar se o dispositivo não está registrado/ativado
   useEffect(() => {
     if (!syncConfig.syncOnAppResume) return;
 
@@ -735,13 +736,18 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
           logger.info('[SyncContext] App voltou ao foreground mas sem token — ignorando sync');
           return;
         }
+        // Verificar se o dispositivo está registrado antes de sincronizar
+        if (!dispositivo?.registrado) {
+          logger.info('[SyncContext] App voltou ao foreground mas dispositivo não registrado — ignorando sync');
+          return;
+        }
         logger.info('[SyncContext] App voltou ao foreground — iniciando sync');
         sincronizar();
       }
     });
 
     return () => subscription.remove();
-  }, [syncConfig.syncOnAppResume, sincronizar]);
+  }, [syncConfig.syncOnAppResume, sincronizar, dispositivo?.registrado]);
 
   // ==========================================================================
   // ESTADO DO CONTEXT

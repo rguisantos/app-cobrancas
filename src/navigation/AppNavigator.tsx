@@ -614,35 +614,61 @@ export function AppNavigator() {
   const [checkingDevice, setCheckingDevice] = useState(true);
   const [deviceActivated, setDeviceActivated] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
+  // Trigger para forçar re-verificação (ex: ao voltar do background)
+  const [recheckTrigger, setRecheckTrigger] = useState(0);
 
   // Refs para controle de fluxo
   const lastAuthStateRef = useRef<string>('');
   const isCheckingRef = useRef(false);
-  // Rastreia se a verificação com servidor já foi feita nesta sessão
-  const serverValidatedRef = useRef<'active' | 'inactive' | null>(null);
-  const DEVICE_ACTIVATED_KEY = '@cobrancas:deviceActivated';
 
-  // Função para persistir estado de ativação
-  const persistActivationState = useCallback(async (activated: boolean) => {
-    try {
-      await AsyncStorage.setItem(DEVICE_ACTIVATED_KEY, JSON.stringify(activated));
-      logger.info(`[AppNavigator] Estado de ativação persistido: ${activated}`);
-    } catch (e) {
-      logger.warn('[AppNavigator] Falha ao persistir estado de ativação:', e);
-    }
+  // Chave para persistir validação do servidor (sobrevive a remounts e restarts)
+  const SERVER_VALIDATION_KEY = '@cobrancas:serverDeviceValidation';
+  // Ref para rastrear se já carregamos o estado persistido no mount
+  const didLoadPersistedRef = useRef(false);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // No mount: carregar validação persistida do servidor
+  // Se o servidor validou como 'active' numa sessão anterior, confiar
+  // otimisticamente até que a verificação com servidor complete.
+  // ═══════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const persisted = await AsyncStorage.getItem(SERVER_VALIDATION_KEY);
+        if (mounted && persisted === 'active') {
+          logger.info('[AppNavigator] Validação persistida: ativo — acesso otimista até re-verificação');
+          setDeviceActivated(true);
+        }
+      } catch (e) {
+        // Ignorar erro de leitura
+      }
+      if (mounted) didLoadPersistedRef.current = true;
+    })();
+    return () => { mounted = false; };
   }, []);
 
-  // Verificar se o dispositivo está ativado — rodar apenas uma vez por sessão autenticada
+  // ═══════════════════════════════════════════════════════════════════════
+  // Verificar ativação do dispositivo com o servidor
+  // REGRA FUNDAMENTAL: o servidor é a FONTE ÚNICA DE VERDADE.
+  // NUNCA setar deviceActivated=true baseado em dados locais.
+  // Se o servidor estiver indisponível, manter o estado atual.
+  // ═══════════════════════════════════════════════════════════════════════
   useEffect(() => {
     const currentAuthState = `${isAuthenticated}-${isSignout}`;
-    
-    // Evitar re-verificação se o estado de auth não mudou significativamente
-    if (currentAuthState === lastAuthStateRef.current) {
+
+    // Evitar re-verificação se o estado de auth não mudou E não há trigger
+    if (currentAuthState === lastAuthStateRef.current && recheckTrigger === 0) {
       return;
     }
-    lastAuthStateRef.current = currentAuthState;
+    // Para rechecks (trigger > 0), sempre permitir
+    if (currentAuthState === lastAuthStateRef.current) {
+      // Só re-check se o trigger mudou (não duplicar com mudança de auth)
+    } else {
+      lastAuthStateRef.current = currentAuthState;
+    }
 
-    // Evitar re-entrância (duas verificações rodando ao mesmo tempo)
+    // Evitar re-entrância
     if (isCheckingRef.current) {
       return;
     }
@@ -651,15 +677,14 @@ export function AppNavigator() {
       if (!isAuthenticated || isSignout) {
         setCheckingDevice(false);
         setDeviceActivated(false);
-        serverValidatedRef.current = null;
-        persistActivationState(false);
+        try { await AsyncStorage.removeItem(SERVER_VALIDATION_KEY); } catch {}
         return;
       }
 
       isCheckingRef.current = true;
-      
+
       logger.info('[AppNavigator] Verificando ativação do dispositivo...');
-      
+
       try {
         const metadata = await databaseService.getSyncMetadata();
         const savedDeviceKey = metadata.deviceKey;
@@ -674,91 +699,72 @@ export function AppNavigator() {
         if (!savedDeviceId || !savedDeviceKey) {
           logger.info('[AppNavigator] Sem metadados do dispositivo — precisa ativação');
           setDeviceActivated(false);
-          serverValidatedRef.current = 'inactive';
-          persistActivationState(false);
+          try { await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'inactive'); } catch {}
           setCheckingDevice(false);
           return;
         }
 
         // Com metadados locais: validar no servidor (fonte de verdade)
         logger.info('[AppNavigator] Dispositivo com metadados locais — verificando servidor...');
-          
+
         try {
           const response = await apiService.verificarStatusDispositivo(savedDeviceKey);
-          
+
           logger.info('[AppNavigator] Resposta do servidor:', response.data);
-          
+
           if (response.success && response.data?.needsActivation === true) {
             logger.warn('[AppNavigator] Dispositivo precisa ativação (servidor)');
             setDeviceActivated(false);
-            serverValidatedRef.current = 'inactive';
-            persistActivationState(false);
+            try { await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'inactive'); } catch {}
           } else {
             logger.info('[AppNavigator] Dispositivo confirmado ativo pelo servidor');
             setDeviceActivated(true);
-            serverValidatedRef.current = 'active';
-            persistActivationState(true);
+            try { await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'active'); } catch {}
           }
         } catch (serverError) {
-          // Erro de rede: se o servidor validou como ativo ANTES na sessão, manter
-          // Se nunca validou nesta sessão, usar metadados locais como fallback
-          if (serverValidatedRef.current === 'active') {
-            logger.info('[AppNavigator] Erro de rede mas servidor já validou nesta sessão — mantendo ativo');
-            setDeviceActivated(true);
-          } else if (serverValidatedRef.current === 'inactive') {
-            logger.info('[AppNavigator] Erro de rede mas servidor já invalidou nesta sessão — mantendo inativo');
-            setDeviceActivated(false);
-          } else {
-            // Primeira verificação e servidor indisponível — offline-first
-            logger.warn('[AppNavigator] Servidor indisponível — usando metadados locais como fallback');
-            setDeviceActivated(true);
-            persistActivationState(true);
-          }
+          // ══════════════════════════════════════════════════════════════
+          // SERVIDOR INDISPONÍVEL — NÃO mudar deviceActivated!
+          // Manter o estado atual (se veio do persisted ou de verificação anterior).
+          // Isso evita que a tela de ativação desapareça por causa de um
+          // fallback para dados locais (o bug original).
+          // ══════════════════════════════════════════════════════════════
+          logger.warn('[AppNavigator] Servidor indisponível — mantendo estado de ativação atual (não alterando)');
+          // NÃO chamar setDeviceActivated aqui — manter o estado atual
         }
       } catch (error) {
         logger.error('[AppNavigator] Erro ao verificar ativação:', error);
         setDeviceActivated(false);
-        serverValidatedRef.current = 'inactive';
-        persistActivationState(false);
+        try { await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'inactive'); } catch {}
         setCheckError(error instanceof Error ? error.message : 'Erro ao verificar dispositivo');
       } finally {
         setCheckingDevice(false);
         isCheckingRef.current = false;
       }
     };
-    
+
     checkDeviceActivation();
-  }, [isAuthenticated, isSignout]);
-  
+  }, [isAuthenticated, isSignout, recheckTrigger]);
+
+  // ═══════════════════════════════════════════════════════════════════════
   // Listener para mudanças de estado do app (background → foreground)
-  // IMPORTANTE: NÃO fazer upgrade de false → true baseado em dados locais.
-  // O servidor é a fonte de verdade. Se o servidor disse "precisa ativação",
-  // dados locais antigos não devem sobrescrever essa decisão.
+  // Ao voltar do background, forçar re-verificação com o servidor.
+  // Isso garante que a tela de ativação se mantém visível se o
+  // dispositivo ainda não foi ativado.
+  // ═══════════════════════════════════════════════════════════════════════
   useEffect(() => {
+    const appStateRef = { current: AppState.currentState };
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        // Se já está ativado, não precisa re-verificar
-        if (deviceActivated) {
-          return;
-        }
-        
-        // Se o servidor já validou como "inactive" nesta sessão,
-        // NÃO fazer upgrade baseado em dados locais.
-        // O usuário precisa completar a ativação.
-        if (serverValidatedRef.current === 'inactive') {
-          logger.info('[AppNavigator] App voltou ao foreground — servidor já validou como inativo, mantendo tela de ativação');
-          return;
-        }
-        
-        // Se nunca validou (app recém-aberto sem rede), tentar validar com servidor agora
-        logger.info('[AppNavigator] App voltou ao foreground — tentando validação com servidor...');
-        // Resetar o auth state para forçar re-verificação
-        lastAuthStateRef.current = '';
+      const prev = appStateRef.current;
+      appStateRef.current = nextAppState;
+
+      if ((prev === 'background' || prev === 'inactive') && nextAppState === 'active') {
+        logger.info('[AppNavigator] App voltou ao foreground — disparando re-verificação de ativação');
+        setRecheckTrigger(prev => prev + 1);
       }
     });
-    
+
     return () => subscription.remove();
-  }, [deviceActivated]);
+  }, []);
 
   // Enquanto carrega auth ou verifica dispositivo, mostra loading
   if (isLoading || checkingDevice) {
@@ -791,6 +797,9 @@ export function AppNavigator() {
               onPress={() => {
                 setCheckError(null);
                 setCheckingDevice(true);
+                // Forçar re-verificação resetando o ref e incrementando o trigger
+                lastAuthStateRef.current = '';
+                setRecheckTrigger(prev => prev + 1);
               }}
               style={{ backgroundColor: theme.colors.primary, borderRadius: 8, padding: 14, alignItems: 'center' }}
             >
