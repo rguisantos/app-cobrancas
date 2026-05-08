@@ -160,7 +160,7 @@ export default function RelatorioInadimplenciaScreen() {
   const rotaLabel = useMemo(() => {
     if (!rotaId) return 'Todas as rotas';
     const found = rotas.find(r => String(r.id) === String(rotaId));
-    return found?.nome || 'Rota';
+    return found?.descricao || 'Rota';
   }, [rotaId, rotas]);
 
   // ─── exportação ──────────────────────────────────────────────────────────
@@ -421,7 +421,7 @@ export default function RelatorioInadimplenciaScreen() {
                   onPress={() => { setRotaId(String(r.id)); setShowRotaPicker(false); }}
                 >
                   <View style={[s.rotaDot, { backgroundColor: r.cor || '#64748B' }]} />
-                  <Text style={[s.rotaOptionText, String(rotaId) === String(r.id) && s.rotaOptionTextActive]}>{r.nome}</Text>
+                  <Text style={[s.rotaOptionText, String(rotaId) === String(r.id) && s.rotaOptionTextActive]}>{r.descricao}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>

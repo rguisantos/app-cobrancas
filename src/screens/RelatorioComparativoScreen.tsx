@@ -130,7 +130,7 @@ export default function RelatorioComparativoScreen() {
   const rotaLabel = useMemo(() => {
     if (!rotaId) return 'Todas';
     const found = rotas.find(r => String(r.id) === String(rotaId));
-    return found?.nome || 'Rota';
+    return found?.descricao || 'Rota';
   }, [rotaId, rotas]);
 
   const carregar = useCallback(async () => {
@@ -409,7 +409,7 @@ export default function RelatorioComparativoScreen() {
                   onPress={() => { setRotaId(String(r.id)); setShowRotaPicker(false); }}
                 >
                   <View style={[st.rotaDot, { backgroundColor: r.cor || '#64748B' }]} />
-                  <Text style={[st.rotaOptionText, String(rotaId) === String(r.id) && st.rotaOptionTextActive]}>{r.nome}</Text>
+                  <Text style={[st.rotaOptionText, String(rotaId) === String(r.id) && st.rotaOptionTextActive]}>{r.descricao}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>

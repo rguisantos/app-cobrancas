@@ -45,24 +45,34 @@ export function DatabaseProvider({ children }: DatabaseProviderProps) {
     setIsLoading(true);
     setError(null);
     
+    // Timeout de segurança: se demorar mais de 30s, mostrar erro
+    const timeoutPromise = new Promise<void>((_, reject) => {
+      setTimeout(() => reject(new Error('Timeout: inicialização do banco demorou mais de 30 segundos')), 30000);
+    });
+    
     try {
       logger.info('[DatabaseContext] Inicializando banco de dados...');
       
-      // 1. Inicializar banco
-      await databaseService.initialize();
-      logger.info('[DatabaseContext] Banco inicializado');
-      
-      // 2. Inicializar dados padrão
-      await databaseService.inicializarAtributosPadrao();
-      await databaseService.inicializarRotasPadrao();
-      logger.info('[DatabaseContext] Dados padrão inicializados');
-      
-      // 3. Inicializar usuário admin
-      await AuthService.inicializar();
-      logger.info('[DatabaseContext] Auth inicializado');
-      
-      // 4. Diagnóstico
-      await databaseService.diagnosticar();
+      await Promise.race([
+        (async () => {
+          // 1. Inicializar banco
+          await databaseService.initialize();
+          logger.info('[DatabaseContext] Banco inicializado');
+          
+          // 2. Inicializar dados padrão
+          await databaseService.inicializarAtributosPadrao();
+          await databaseService.inicializarRotasPadrao();
+          logger.info('[DatabaseContext] Dados padrão inicializados');
+          
+          // 3. Inicializar usuário admin
+          await AuthService.inicializar();
+          logger.info('[DatabaseContext] Auth inicializado');
+          
+          // 4. Diagnóstico
+          await databaseService.diagnosticar();
+        })(),
+        timeoutPromise
+      ]);
       
       setIsReady(true);
       logger.info('[DatabaseContext] ✅ Pronto para uso');

@@ -206,7 +206,7 @@ export default function RelatorioRecebimentosScreen() {
   const rotaLabel = useMemo(() => {
     if (!rotaId) return 'Todas';
     const found = rotas.find(r => String(r.id) === String(rotaId));
-    return found?.nome || 'Rota';
+    return found?.descricao || 'Rota';
   }, [rotaId, rotas]);
 
   // ==========================================================================
@@ -447,7 +447,7 @@ export default function RelatorioRecebimentosScreen() {
                   onPress={() => { setRotaId(String(r.id)); setShowRotaPicker(false); }}
                 >
                   <View style={[st.rotaDot, { backgroundColor: r.cor || '#64748B' }]} />
-                  <Text style={[st.rotaOptionText, String(rotaId) === String(r.id) && st.rotaOptionTextActive]}>{r.nome}</Text>
+                  <Text style={[st.rotaOptionText, String(rotaId) === String(r.id) && st.rotaOptionTextActive]}>{r.descricao}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
