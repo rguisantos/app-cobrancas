@@ -172,8 +172,13 @@ export default function DeviceActivationScreen() {
         const finalKey = dispositivo?.deviceKey || finalDeviceKey;
         const finalChave = dispositivo?.chave || '';
 
+        // IMPORTANTE: Usar o UUID `id` do servidor como deviceId, NÃO a chave (DEV-XXXXXX).
+        // O servidor espera o UUID no campo deviceId para lookup por `id`.
+        // A chave fica armazenada separadamente no campo `chave` do sync_metadata.
+        const serverDeviceId = dispositivo?.id || dispositivoId.trim();
+
         // Fonte única de verdade: SyncMetadata (SQLite) para todo o app
-        await databaseService.setDeviceId(dispositivoId.trim(), deviceName, finalKey, finalChave);
+        await databaseService.setDeviceId(serverDeviceId, deviceName, finalKey, finalChave);
         
         // Persistir estado de ativação no AsyncStorage (sobrevive a reinícios do app)
         try {
@@ -184,7 +189,7 @@ export default function DeviceActivationScreen() {
         
         console.log('[DeviceActivation] ========================================');
         console.log('[DeviceActivation] DISPOSITIVO ATIVADO COM SUCESSO!');
-        console.log('[DeviceActivation] dispositivoId:', dispositivoId.trim());
+        console.log('[DeviceActivation] serverDeviceId (UUID):', serverDeviceId);
         console.log('[DeviceActivation] deviceKey:', finalKey);
         console.log('[DeviceActivation] chave:', finalChave);
         console.log('[DeviceActivation] deviceName:', deviceName);
