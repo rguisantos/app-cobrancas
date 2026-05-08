@@ -320,9 +320,9 @@ class SyncService {
       };
 
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Erro desconhecido';
-      errors.push(errorMsg);
-      logger.error('[Sync] Erro:', error);
+      const errorMsg = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
+      errors.push(errorMsg || 'Erro desconhecido');
+      logger.error('[Sync] Erro:', errorMsg);
 
       this.notify({
         phase: 'error',
@@ -450,9 +450,9 @@ class SyncService {
       logger.info('[Sync/Push] Mudanças enviadas', { pushed, conflicts: conflicts.length });
 
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Erro no push';
-      errors.push(errorMsg);
-      logger.error('[Sync/Push] Erro:', error);
+      const errorMsg = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
+      errors.push(errorMsg || 'Erro no push');
+      logger.error('[Sync/Push] Erro:', errorMsg);
     }
 
     return { pushed, conflicts, errors };
@@ -534,9 +534,9 @@ class SyncService {
       }
 
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Erro no pull';
-      errors.push(errorMsg);
-      logger.error('[Sync/Pull] Erro:', error);
+      const errorMsg = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
+      errors.push(errorMsg || 'Erro no pull');
+      logger.error('[Sync/Pull] Erro:', errorMsg);
     }
 
     return { pulled, errors, conflicts: allConflicts };
@@ -731,9 +731,9 @@ class SyncService {
       });
 
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Erro no pull';
-      errors.push(errorMsg);
-      logger.error('[Sync/Pull] Erro:', error);
+      const errorMsg = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
+      errors.push(errorMsg || 'Erro no pull');
+      logger.error('[Sync/Pull] Erro:', errorMsg);
     }
 
     return { pulled, errors, conflicts: allConflicts };

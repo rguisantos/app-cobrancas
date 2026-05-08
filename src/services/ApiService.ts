@@ -429,6 +429,10 @@ class ApiService {
       if (ENV.DEBUG) {
         console.log(`[API:SYNC:PULL] falha: ${response.error}`);
       }
+      // Include server detail if available for better debugging
+      const serverDetail = (response.data as any)?.detail
+      const errorMessages = [response.error || 'Falha ao buscar mudanças']
+      if (serverDetail) errorMessages.push(`Detalhe: ${serverDetail}`)
       return {
         success: false,
         lastSyncAt: new Date().toISOString(),
@@ -443,7 +447,7 @@ class ApiService {
           metas: [],
         },
         conflicts: [],
-        errors: [response.error || 'Falha ao buscar mudanças'],
+        errors: errorMessages,
       };
     }
 
