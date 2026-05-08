@@ -5,6 +5,10 @@
  * Uso:
  * import logger from '../utils/logger';
  * logger.info('Mensagem', { dados: 'opcionais' });
+ * 
+ * Logs are ALWAYS stored (for the debug terminal screen)
+ * regardless of ENV.DEBUG setting. Console output is
+ * controlled by ENV.DEBUG.
  */
 
 import { ENV } from '../config/env';
@@ -15,7 +19,7 @@ import { ENV } from '../config/env';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-interface LogEntry {
+export interface LogEntry {
   level: LogLevel;
   message: string;
   data?: any;
@@ -28,32 +32,26 @@ interface LogEntry {
 // ============================================================================
 
 class Logger {
-  private enabled: boolean;
+  private consoleEnabled: boolean;  // Controls console output only
   private minLevel: LogLevel;
   private logs: LogEntry[] = [];
+  private listeners: Array<(entry: LogEntry) => void> = [];
 
   constructor() {
-    this.enabled = ENV.DEBUG;
+    this.consoleEnabled = ENV.DEBUG;
     this.minLevel = 'debug';
-
   }
 
   private getTimestamp(): string {
     return new Date().toISOString();
-
   }
 
-  private shouldLog(level: LogLevel): boolean {
-    if (!this.enabled) return false;
-
+  private shouldConsole(level: LogLevel): boolean {
+    if (!this.consoleEnabled) return false;
     const levels: Record<LogLevel, number> = {
-      debug: 0,
-      info: 1,
-      warn: 2,      error: 3,
+      debug: 0, info: 1, warn: 2, error: 3,
     };
-
     return levels[level] >= levels[this.minLevel];
-
   }
 
   private formatMessage(level: LogLevel, message: string, data?: any): string {
@@ -61,7 +59,6 @@ class Logger {
     const levelTag = `[${level.toUpperCase()}]`;
     const dataString = data ? ` ${JSON.stringify(data)}` : '';
     return `${timestamp} ${levelTag} ${message}${dataString}`;
-
   }
 
   private storeLog(level: LogLevel, message: string, data?: any, source?: string) {
@@ -73,14 +70,18 @@ class Logger {
       source,
     };
 
+    // ALWAYS store logs for the debug terminal screen
     this.logs.push(entry);
 
-    // Manter apenas últimos 1000 logs
-    if (this.logs.length > 1000) {
-      this.logs = this.logs.slice(-1000);
-  
-  }
+    // Manter apenas últimos 500 logs
+    if (this.logs.length > 500) {
+      this.logs = this.logs.slice(-500);
+    }
 
+    // Notify listeners in real-time (for debug terminal screen)
+    for (const listener of this.listeners) {
+      try { listener(entry); } catch {}
+    }
   }
 
   // ============================================================================
@@ -88,38 +89,31 @@ class Logger {
   // ============================================================================
 
   debug(message: string, data?: any, source?: string) {
-    if (this.shouldLog('debug')) {
+    this.storeLog('debug', message, data, source);
+    if (this.shouldConsole('debug')) {
       console.log(this.formatMessage('debug', message, data));
-      this.storeLog('debug', message, data, source);
-  
-  }
-
+    }
   }
 
   info(message: string, data?: any, source?: string) {
-    if (this.shouldLog('info')) {
+    this.storeLog('info', message, data, source);
+    if (this.shouldConsole('info')) {
       console.log(this.formatMessage('info', message, data));
-      this.storeLog('info', message, data, source);
-  
-  }
-
+    }
   }
 
   warn(message: string, data?: any, source?: string) {
-    if (this.shouldLog('warn')) {      console.warn(this.formatMessage('warn', message, data));
-      this.storeLog('warn', message, data, source);
-  
-  }
-
+    this.storeLog('warn', message, data, source);
+    if (this.shouldConsole('warn')) {
+      console.warn(this.formatMessage('warn', message, data));
+    }
   }
 
   error(message: string, error?: any, source?: string) {
-    if (this.shouldLog('error')) {
+    this.storeLog('error', message, error, source);
+    if (this.shouldConsole('error')) {
       console.error(this.formatMessage('error', message, error));
-      this.storeLog('error', message, error, source);
-  
-  }
-
+    }
   }
 
   // ============================================================================
@@ -127,11 +121,10 @@ class Logger {
   // ============================================================================
 
   /**
-   * Habilita ou desabilita logging
+   * Habilita ou desabilita console output (logs are always stored)
    */
   setEnabled(enabled: boolean) {
-    this.enabled = enabled;
-
+    this.consoleEnabled = enabled;
   }
 
   /**
@@ -139,7 +132,6 @@ class Logger {
    */
   setMinLevel(level: LogLevel) {
     this.minLevel = level;
-
   }
 
   /**
@@ -148,10 +140,19 @@ class Logger {
   getLogs(filter?: LogLevel): LogEntry[] {
     if (filter) {
       return this.logs.filter(log => log.level === filter);
-  
+    }
+    return [...this.logs];
   }
-    return this.logs;
 
+  /**
+   * Adiciona listener para novos logs em tempo real (para a tela de terminal)
+   * Retorna função de cleanup
+   */
+  addLogListener(listener: (entry: LogEntry) => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
   }
 
   /**
@@ -159,16 +160,15 @@ class Logger {
    */
   clearLogs() {
     this.logs = [];
-
   }
 
   /**
    * Exporta logs para string
-   */  exportLogs(): string {
+   */
+  exportLogs(): string {
     return this.logs
       .map(log => `${log.timestamp} [${log.level.toUpperCase()}] ${log.message}${log.data ? ' ' + JSON.stringify(log.data) : ''}`)
       .join('\n');
-
   }
 
   /**
@@ -176,7 +176,6 @@ class Logger {
    */
   navigation(screen: string, params?: any) {
     this.info(`Navigation: ${screen}`, params, 'Navigation');
-
   }
 
   /**
@@ -188,9 +187,7 @@ class Logger {
       this.error(message, error, 'API');
     } else {
       this.info(message, undefined, 'API');
-  
-  }
-
+    }
   }
 
   /**
@@ -202,9 +199,7 @@ class Logger {
       this.error(message, error, 'Sync');
     } else {
       this.info(message, undefined, 'Sync');
-  
-  }
-
+    }
   }
 }
 

@@ -11,6 +11,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useCa
 import { Cliente, ClienteListItem, ClienteFilters } from '../types';
 import { clienteRepository } from '../repositories/ClienteRepository';
 import { useDatabase } from './DatabaseContext';
+import { useSync } from './SyncContext';
 
 // ============================================================================
 // INTERFACES
@@ -65,6 +66,7 @@ interface ClienteProviderProps {
 export function ClienteProvider({ children }: ClienteProviderProps) {
   // Verificar se o banco está pronto
   const { isReady } = useDatabase();
+  const { syncVersion } = useSync();
   
   // Estado
   const [clientes, setClientes] = useState<ClienteListItem[]>([]);
@@ -252,7 +254,7 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
     if (isReady) {
       carregarClientes();
     }
-  }, [carregarClientes, isReady]);
+  }, [carregarClientes, isReady, syncVersion]);
 
   // ==========================================================================
   // ESTADO DO CONTEXT

@@ -11,6 +11,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, Rea
 import { Manutencao, ManutencaoFilters } from '../types';
 import { manutencaoRepository, ManutencaoFilters as RepoFilters } from '../repositories/ManutencaoRepository';
 import { useDatabase } from './DatabaseContext';
+import { useSync } from './SyncContext';
 
 // ============================================================================
 // INTERFACES
@@ -67,6 +68,7 @@ interface ManutencaoProviderProps {
 export function ManutencaoProvider({ children }: ManutencaoProviderProps) {
   // Verificar se o banco está pronto
   const { isReady } = useDatabase();
+  const { syncVersion } = useSync();
 
   // Estado
   const [manutencoes, setManutencoes] = useState<Manutencao[]>([]);
@@ -232,7 +234,7 @@ export function ManutencaoProvider({ children }: ManutencaoProviderProps) {
     if (isReady) {
       carregar();
     }
-  }, [carregar, isReady]);
+  }, [carregar, isReady, syncVersion]);
 
   // ==========================================================================
   // ESTADO DO CONTEXT

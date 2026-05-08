@@ -57,6 +57,7 @@ import EnviarEstoqueScreen from '../screens/EnviarEstoqueScreen';
 import CobrancaConfirmScreen from '../screens/CobrancaConfirmScreen';
 import CobrancaDetailScreen from '../screens/CobrancaDetailScreen';
 import SyncStatusScreen from '../screens/SyncStatusScreen';
+import DebugTerminalScreen from '../screens/DebugTerminalScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import RotasGerenciarScreen from '../screens/RotasGerenciarScreen';
 import AtributosProdutoGerenciarScreen from '../screens/AtributosProdutoGerenciarScreen';
@@ -183,6 +184,7 @@ export type ModalStackParamList = {
   HistoricoPagamento: { cobrancaId: string; clienteNome?: string };
   Recibo: { cobrancaId: string };
   MapaClientes: undefined;
+  DebugTerminal: undefined;
 };
 
 // Root Stack (gerencia auth state)
@@ -595,6 +597,13 @@ function ModalNavigator() {
         name="MapaClientes"
         component={MapaClientesScreen}
         options={{ title: 'Mapa de Clientes' }}
+      />
+
+      {/* Debug Terminal */}
+      <ModalStack.Screen
+        name="DebugTerminal"
+        component={DebugTerminalScreen}
+        options={{ title: 'Terminal de Debug', headerShown: true }}
       />
     </ModalStack.Navigator>
   );

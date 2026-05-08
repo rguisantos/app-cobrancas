@@ -13,6 +13,7 @@ import { produtoRepository } from '../repositories/ProdutoRepository';
 import { manutencaoRepository } from '../repositories/ManutencaoRepository';
 import { cobrancaService } from '../services/CobrancaService';
 import { useDatabase } from './DatabaseContext';
+import { useSync } from './SyncContext';
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -130,6 +131,7 @@ interface LocacaoProviderProps {
 export function LocacaoProvider({ children }: LocacaoProviderProps) {
   // Aguardar banco estar pronto
   const { isReady } = useDatabase();
+  const { syncVersion } = useSync();
   
   // Estado
   const [locacoes, setLocacoes] = useState<LocacaoListItem[]>([]);
@@ -160,7 +162,7 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     if (isReady) {
       carregarLocacoes();
     }
-  }, [isReady]);
+  }, [isReady, syncVersion]);
 
   // ==========================================================================
   // CARREGAMENTO DE DADOS

@@ -64,6 +64,9 @@ export interface SyncState {
   // Erros
   erro: string | null;
   ultimoErro: string | null;
+
+  // Versão de sync (incrementa após cada sincronização)
+  syncVersion: number;
 }
 
 export interface SyncContextData extends SyncState {
@@ -95,6 +98,9 @@ export interface SyncContextData extends SyncState {
   setAutoSyncInterval: (minutos: number) => void;
   syncConfig: SyncConfig;
   
+  // Versão de sync (incrementa após cada sincronização)
+  syncVersion: number;
+
   // Propriedades adicionais para compatibilidade
   lastSync: string | null;
   pendingItems: {
@@ -172,6 +178,7 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   const [dispositivo, setDispositivo] = useState<SyncState['dispositivo']>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [ultimoErro, setUltimoErro] = useState<string | null>(null);
+  const [syncVersion, setSyncVersion] = useState(0);
   
   // Estados para ativação de dispositivo
   const [needsDeviceActivation, setNeedsDeviceActivation] = useState(false);
@@ -326,6 +333,9 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       setMudancasPendentes(restantes.length);
       await atualizarPendingItems();
 
+      // Incrementar syncVersion para que contexts de entidades recarreguem dados
+      setSyncVersion(prev => prev + 1);
+
       // Limpar progresso após 2 segundos
       setTimeout(() => setProgress(null), 2000);
 
@@ -336,6 +346,9 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       setStatus('error');
       setLastSyncMessage(`Erro: ${mensagem}`);
       logger.error('[SyncContext] Erro na sincronização:', error);
+
+      // Incrementar syncVersion mesmo em erro para que contexts recarreguem dados
+      setSyncVersion(prev => prev + 1);
     } finally {
       setIsSyncing(false);
     }
@@ -797,6 +810,9 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     ativarAutoSync,
     setAutoSyncInterval,
     syncConfig,
+
+    // Versão de sync
+    syncVersion,
 
     // Propriedades adicionais para compatibilidade
     lastSync: lastSyncAt,

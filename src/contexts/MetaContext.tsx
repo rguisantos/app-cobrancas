@@ -8,6 +8,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, Rea
 import { Meta, TipoMeta, StatusMeta } from '../types';
 import { databaseService } from '../services/DatabaseService';
 import { useDatabase } from './DatabaseContext';
+import { useSync } from './SyncContext';
 import { useAuth } from './AuthContext';
 import { generateId } from '../utils/database';
 
@@ -42,6 +43,7 @@ interface MetaProviderProps {
 
 export function MetaProvider({ children }: MetaProviderProps) {
   const { isReady } = useDatabase();
+  const { syncVersion } = useSync();
   const { user } = useAuth();
 
   const [metas, setMetas] = useState<Meta[]>([]);
@@ -175,7 +177,7 @@ export function MetaProvider({ children }: MetaProviderProps) {
     if (isReady) {
       carregar();
     }
-  }, [carregar, isReady]);
+  }, [carregar, isReady, syncVersion]);
 
   // ==========================================================================
   // CONTEXT VALUE

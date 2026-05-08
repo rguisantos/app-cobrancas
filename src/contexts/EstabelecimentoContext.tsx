@@ -10,6 +10,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, Rea
 import { Estabelecimento } from '../types';
 import atributosRepository, { AtributoItem } from '../repositories/AtributosRepository';
 import { useDatabase } from './DatabaseContext';
+import { useSync } from './SyncContext';
 
 // ============================================================================
 // INTERFACES
@@ -64,6 +65,7 @@ interface EstabelecimentoProviderProps {
 
 export function EstabelecimentoProvider({ children }: EstabelecimentoProviderProps) {
   const { isReady } = useDatabase();
+  const { syncVersion } = useSync();
 
   const [estabelecimentos, setEstabelecimentos] = useState<AtributoItem[]>([]);
   const [estabelecimentoSelecionado, setEstabelecimentoSelecionado] = useState<AtributoItem | null>(null);
@@ -236,7 +238,7 @@ export function EstabelecimentoProvider({ children }: EstabelecimentoProviderPro
     if (isReady) {
       carregar();
     }
-  }, [carregar, isReady]);
+  }, [carregar, isReady, syncVersion]);
 
   // ==========================================================================
   // CONTEXT VALUE

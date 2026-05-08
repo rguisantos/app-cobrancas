@@ -10,6 +10,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import { Produto, ProdutoListItem, ProdutoFilters } from '../types';
 import { produtoRepository } from '../repositories/ProdutoRepository';
 import { useDatabase } from './DatabaseContext';
+import { useSync } from './SyncContext';
 
 // ============================================================================
 // INTERFACES
@@ -56,6 +57,7 @@ interface ProdutoProviderProps {
 export function ProdutoProvider({ children }: ProdutoProviderProps) {
   // Verificar se o banco está pronto
   const { isReady } = useDatabase();
+  const { syncVersion } = useSync();
   
   const [produtos, setProdutos] = useState<ProdutoListItem[]>([]);
   const [produtoSelecionado, setProdutoSelecionado] = useState<Produto | null>(null);
@@ -188,7 +190,7 @@ export function ProdutoProvider({ children }: ProdutoProviderProps) {
     if (isReady) {
       carregarProdutos();
     }
-  }, [carregarProdutos, isReady]);
+  }, [carregarProdutos, isReady, syncVersion]);
 
   const contextValue: ProdutoContextData = {
     produtos,

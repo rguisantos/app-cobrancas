@@ -22,6 +22,8 @@ import { useAuth }      from '../contexts/AuthContext';
 import { syncService }  from '../services/SyncService';
 import { apiService }   from '../services/ApiService';
 import { databaseService } from '../services/DatabaseService';
+import { useNavigation } from '@react-navigation/native';
+import type { ModalStackNavigationProp } from '../navigation/AppNavigator';
 
 // ============================================================================
 // TIPOS
@@ -137,6 +139,7 @@ export default function SyncStatusScreen() {
     sincronizar, verificarConexao,
   } = useSync();
   const { user, token } = useAuth();
+  const navigation = useNavigation<ModalStackNavigationProp>();
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [networkStatus, setNetworkStatus] = useState<'checking' | 'online' | 'offline'>('checking');
@@ -462,6 +465,11 @@ export default function SyncStatusScreen() {
           <TouchableOpacity style={s.actionBtn} onPress={handleFullSync}>
             <Ionicons name="download" size={18} color="#DC2626" />
             <Text style={s.actionBtnText}>Sync Completa (Forçar Download)</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={s.actionBtn} onPress={() => navigation.navigate('DebugTerminal')}>
+            <Ionicons name="terminal" size={18} color="#16A34A" />
+            <Text style={s.actionBtnText}>Terminal de Debug (Logs em Tempo Real)</Text>
           </TouchableOpacity>
         </View>
 

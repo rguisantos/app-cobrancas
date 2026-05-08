@@ -482,8 +482,79 @@ class SyncService {
         lastSyncAt: metadata.lastSyncAt || new Date(0).toISOString(),
       };
 
-      // PULL com paginação — continua enquanto hasMore=true
-      let currentLastSyncAt = payload.lastSyncAt;
+      // ═══════════════════════════════════════════════════════════════════
+      // FIX: Detectar device estale ANTES do pull incremental.
+      // Se o lastSyncAt é muito antigo (> 30 dias), o pull incremental
+      // retorna vazio (porque o deviceId do device exclui seus próprios
+      // registros). Nesse caso, ir direto ao snapshot.
+      // ═══════════════════════════════════════════════════════════════════
+      const lastSyncDate = new Date(payload.lastSyncAt);
+      const diasOffline = (Date.now() - lastSyncDate.getTime()) / (1000 * 60 * 60 * 24);
+      const STALE_THRESHOLD_DAYS = 30;
+
+      if (diasOffline > STALE_THRESHOLD_DAYS) {
+        logger.warn(`[Sync/Pull] Device estale (${Math.round(diasOffline)} dias) — usando snapshot direto`);
+        try {
+          const snapshotResult = await this.syncFromSnapshot();
+          if (snapshotResult > 0) {
+            pulled = snapshotResult;
+            logger.info(`[Sync/Pull] Snapshot aplicado: ${pulled} registros`);
+          } else {
+            logger.warn('[Sync/Pull] Snapshot retornou 0 registros — tentando pull incremental como fallback');
+            // Fallback: tentar pull incremental mesmo para device estale
+            const incrementalResult = await this._doIncrementalPull(metadata, payload.lastSyncAt);
+            pulled = incrementalResult.pulled;
+            errors.push(...incrementalResult.errors);
+            if (incrementalResult.conflicts.length > 0) {
+              allConflicts.push(...incrementalResult.conflicts);
+            }
+          }
+        } catch (snapError) {
+          logger.error('[Sync/Pull] Snapshot falhou, tentando pull incremental:', snapError);
+          // Fallback: tentar pull incremental
+          const incrementalResult = await this._doIncrementalPull(metadata, payload.lastSyncAt);
+          pulled = incrementalResult.pulled;
+          errors.push(...incrementalResult.errors);
+          if (incrementalResult.conflicts.length > 0) {
+            allConflicts.push(...incrementalResult.conflicts);
+          }
+        }
+
+        return { pulled, errors, conflicts: allConflicts };
+      }
+
+      // ═══════════════════════════════════════════════════════════════════
+      // Pull incremental normal (device NÃO estale)
+      // ═══════════════════════════════════════════════════════════════════
+      const incrementalResult = await this._doIncrementalPull(metadata, payload.lastSyncAt);
+      pulled = incrementalResult.pulled;
+      errors.push(...incrementalResult.errors);
+      if (incrementalResult.conflicts.length > 0) {
+        allConflicts.push(...incrementalResult.conflicts);
+      }
+
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Erro no pull';
+      errors.push(errorMsg);
+      logger.error('[Sync/Pull] Erro:', error);
+    }
+
+    return { pulled, errors, conflicts: allConflicts };
+  }
+
+  /**
+   * Pull incremental com paginação (extraído de pullChanges)
+   */
+  private async _doIncrementalPull(
+    metadata: { deviceId: string; deviceKey: string },
+    initialLastSyncAt: string
+  ): Promise<{ pulled: number; errors: string[]; conflicts: SyncConflict[] }> {
+    const errors: string[] = [];
+    const allConflicts: SyncConflict[] = [];
+    let pulled = 0;
+
+    try {
+      let currentLastSyncAt = initialLastSyncAt;
       const allChanges: any = {
         clientes: [], produtos: [], locacoes: [], cobrancas: [],
         rotas: [], usuarios: [], manutencoes: [], metas: [],
@@ -496,7 +567,6 @@ class SyncService {
       const allUpdatedVersions: UpdatedVersion[] = [];
       let round = 0;
       let hasMore = false;
-      let isStale = false;
       let finalLastSyncAt = '';
       let noProgressCount = 0;
       let prevTotal = 0;
@@ -569,7 +639,6 @@ class SyncService {
         // Atualizar cursor para próxima página
         finalLastSyncAt = response.lastSyncAt || finalLastSyncAt;
         hasMore = response.hasMore || false;
-        isStale = response.isStale || isStale;
         currentLastSyncAt = finalLastSyncAt;
 
         // FIX #2: Detect no-progress loops (hasMore=true but no new data)
@@ -629,30 +698,11 @@ class SyncService {
         }
       }
 
-      // Avisar se o dispositivo está muito tempo sem sync
-      if (isStale) {
-        logger.warn(
-          '[Sync/Pull] AVISO: dispositivo sem sync há mais de 30 dias. ' +
-          'Dados podem estar incompletos — usando snapshot para resync completo.'
-        );
-        this.notify({
-          phase: 'pulling',
-          total: pulled,
-          current: pulled,
-          message: 'Dispositivo desatualizado — sincronizando snapshot completo...',
-          errors: [],
-        });
-        const snapshotResult = await this.syncFromSnapshot();
-        if (snapshotResult) {
-          pulled += snapshotResult;
-        }
-      }
-
       // Aplicar mudanças acumuladas se houver
       if (pulled > 0) {
         await databaseService.applyRemoteChanges({
           success: true,
-          lastSyncAt: finalLastSyncAt,
+          lastSyncAt: finalLastSyncAt || new Date().toISOString(),
           changes: allChanges,
           tiposProduto: allTiposProduto,
           descricoesProduto: allDescricoesProduto,
@@ -661,7 +711,24 @@ class SyncService {
         });
       }
 
-      logger.info('[Sync/Pull] Mudanças recebidas', { pulled, rounds: round, conflicts: allConflicts.length });
+      // Log detalhado dos dados baixados para debug
+      logger.info('[Sync/Pull] Mudanças recebidas', {
+        pulled,
+        rounds: round,
+        conflicts: allConflicts.length,
+        clientes: allChanges.clientes.length,
+        produtos: allChanges.produtos.length,
+        locacoes: allChanges.locacoes.length,
+        cobrancas: allChanges.cobrancas.length,
+        rotas: allChanges.rotas.length,
+        usuarios: allChanges.usuarios.length,
+        manutencoes: allChanges.manutencoes.length,
+        metas: allChanges.metas.length,
+        estabelecimentos: allEstabelecimentos.length,
+        tiposProduto: allTiposProduto.length,
+        descricoesProduto: allDescricoesProduto.length,
+        tamanhosProduto: allTamanhosProduto.length,
+      });
 
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Erro no pull';

@@ -8,6 +8,7 @@ import { HistoricoCobranca } from '../types';
 import { CobrancaFilters, NovaCobrancaData } from '../repositories/CobrancaRepository';
 import { cobrancaRepository } from '../repositories/CobrancaRepository';
 import { useDatabase } from './DatabaseContext';
+import { useSync } from './SyncContext';
 
 // ============================================================================
 // INTERFACES
@@ -51,6 +52,7 @@ interface CobrancaProviderProps {
 
 export function CobrancaProvider({ children }: CobrancaProviderProps) {
   const { isReady } = useDatabase();
+  const { syncVersion } = useSync();
 
   const [cobrancas, setCobrancas] = useState<HistoricoCobranca[]>([]);
   const [cobrancaSelecionada, setCobrancaSelecionada] = useState<HistoricoCobranca | null>(null);
@@ -144,7 +146,7 @@ export function CobrancaProvider({ children }: CobrancaProviderProps) {
     if (isReady) {
       carregarCobrancas();
     }
-  }, [isReady, carregarCobrancas]);
+  }, [isReady, carregarCobrancas, syncVersion]);
 
   const contextValue: CobrancaContextData = {
     cobrancas,

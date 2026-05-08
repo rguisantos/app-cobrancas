@@ -95,7 +95,7 @@ export function DashboardProvider({
 }: DashboardProviderProps) {
   // Estado
   const { isReady } = useDatabase();
-  const { isSyncing, status: syncStatus } = useSync();
+  const { isSyncing, status: syncStatus, syncVersion } = useSync();
   
   // Ref para rastrear quando a sincronização termina
   const wasSyncingRef = useRef(false);
@@ -489,7 +489,7 @@ export function DashboardProvider({
   // Carregar dashboard mobile ao montar (aguarda banco)
   useEffect(() => {
     if (isReady) carregarDashboardMobile();
-  }, [isReady, carregarDashboardMobile]);
+  }, [isReady, carregarDashboardMobile, syncVersion]);
 
   // Recarregar métricas quando a sincronização terminar
   useEffect(() => {

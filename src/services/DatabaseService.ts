@@ -5,6 +5,7 @@
  */
 
 import * as SQLite from 'expo-sqlite';
+import logger from '../utils/logger';
 import { 
   SyncableEntity, 
   EntityType, 
@@ -1262,13 +1263,13 @@ class DatabaseService {
 
     const changes = response.changes || {};
     
-    if (ENV.DEBUG) {
-      const total = (changes.clientes || []).length + (changes.produtos || []).length +
-        (changes.locacoes || []).length + (changes.cobrancas || []).length +
-        (changes.rotas || []).length + (changes.usuarios || []).length +
-        (changes.manutencoes || []).length + (changes.metas || []).length;
-      console.log(`[Database] Aplicando ${total} mudanças remotas`);
-    }
+    // Always log for debug terminal (not just ENV.DEBUG)
+    const total = (changes.clientes || []).length + (changes.produtos || []).length +
+      (changes.locacoes || []).length + (changes.cobranca || []).length +
+      (changes.cobrancas || []).length + (changes.rotas || []).length +
+      (changes.usuarios || []).length + (changes.manutencoes || []).length +
+      (changes.metas || []).length;
+    logger.info(`[Database] Aplicando ${total} mudanças remotas — lastSyncAt: ${response.lastSyncAt?.substring(0, 19)}`);
 
     await this.runTransaction(async () => {
       // Aplicar mudanças de cada entidade usando upsert direto
@@ -1357,13 +1358,26 @@ class DatabaseService {
       });
     });
 
-    if (ENV.DEBUG) {
+    // Always log post-apply counts for debug terminal
+    try {
       const clientesCount = await this.getFirstAsync<{ cnt: number }>(
         `SELECT COUNT(*) as cnt FROM clientes WHERE deletedAt IS NULL`, []
       );
-      console.log(`[Database] Mudanças remotas aplicadas — clientes: ${clientesCount?.cnt || 0}`);
-    } else {
-      console.log('[Database] Mudanças remotas aplicadas com sucesso');
+      const produtosCount = await this.getFirstAsync<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM produtos WHERE deletedAt IS NULL`, []
+      );
+      const locacoesCount = await this.getFirstAsync<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM locacoes WHERE deletedAt IS NULL`, []
+      );
+      const cobrancasCount = await this.getFirstAsync<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM cobrancas WHERE deletedAt IS NULL`, []
+      );
+      const rotasCount = await this.getFirstAsync<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM rotas WHERE deletedAt IS NULL`, []
+      );
+      logger.info(`[Database] Mudanças remotas aplicadas — clientes: ${clientesCount?.cnt || 0}, produtos: ${produtosCount?.cnt || 0}, locações: ${locacoesCount?.cnt || 0}, cobranças: ${cobrancasCount?.cnt || 0}, rotas: ${rotasCount?.cnt || 0}`);
+    } catch (countErr) {
+      logger.warn('[Database] Mudanças remotas aplicadas (não foi possível contar registros)');
     }
   }
 

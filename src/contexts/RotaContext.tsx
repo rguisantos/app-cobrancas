@@ -9,6 +9,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, Rea
 import { Rota } from '../types';
 import { rotaRepository, RotaFilters } from '../repositories/RotaRepository';
 import { useDatabase } from './DatabaseContext';
+import { useSync } from './SyncContext';
 import { useAuth } from './AuthContext';
 
 // ============================================================================
@@ -55,6 +56,7 @@ interface RotaProviderProps {
 export function RotaProvider({ children }: RotaProviderProps) {
   const { isAdmin } = useAuth();
   const { isReady } = useDatabase();
+  const { syncVersion } = useSync();
   
   const [rotas, setRotas] = useState<Rota[]>([]);
   const [rotaSelecionada, setRotaSelecionada] = useState<Rota | null>(null);
@@ -201,7 +203,7 @@ export function RotaProvider({ children }: RotaProviderProps) {
     if (isReady) {
       carregarRotas();
     }
-  }, [carregarRotas, isReady]);
+  }, [carregarRotas, isReady, syncVersion]);
 
   // ==========================================================================
   // CONTEXT VALUE
