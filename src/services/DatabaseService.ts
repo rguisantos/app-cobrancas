@@ -531,9 +531,15 @@ class DatabaseService {
     ];
 
     for (const table of tables) {
-      await this.db.runAsync(table);
-  
-  }
+      try {
+        await this.db.execAsync(table);
+      } catch (ddlError: any) {
+        // DDL errors are critical — log with the SQL for debugging
+        console.error(`[Database] DDL error: ${ddlError?.message}`);
+        console.error(`[Database] Failing SQL: ${table.substring(0, 120)}...`);
+        throw ddlError;
+      }
+    }
 
     console.log('[Database] Tabelas criadas com sucesso');
 
@@ -2529,19 +2535,24 @@ class DatabaseService {
    */
   async inicializarRotasPadrao(): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
-    
-    const rotasExistentes = await this.getRotas();
-    if (rotasExistentes.length === 0) {
-      const rotasPadrao = [
-        { id: '1', descricao: 'Linha Aquidauana' },
-        { id: '2', descricao: 'Linha Miranda' },
-        { id: '3', descricao: 'Linha Bonito' },
-        { id: '4', descricao: 'Centro' },
-      ];
-      for (const rota of rotasPadrao) {
-        await this.saveRota(rota.id, rota.descricao, 'Ativo');
+
+    try {
+      const rotasExistentes = await this.getRotas();
+      if (rotasExistentes.length === 0) {
+        const rotasPadrao = [
+          { id: '1', descricao: 'Linha Aquidauana' },
+          { id: '2', descricao: 'Linha Miranda' },
+          { id: '3', descricao: 'Linha Bonito' },
+          { id: '4', descricao: 'Centro' },
+        ];
+        for (const rota of rotasPadrao) {
+          await this.saveRota(rota.id, rota.descricao, 'Ativo');
+        }
+        console.log('[Database] Rotas padrão inicializadas');
       }
-      console.log('[Database] Rotas padrão inicializadas');
+    } catch (error) {
+      // Rotas padrão são opcionais — não impedir o app de iniciar
+      console.error('[Database] Erro ao inicializar rotas padrão (não crítico):', error);
     }
   }
 

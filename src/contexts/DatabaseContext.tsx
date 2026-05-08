@@ -56,31 +56,54 @@ export function DatabaseProvider({ children }: DatabaseProviderProps) {
       await Promise.race([
         (async () => {
           // 1. Inicializar banco
-          await databaseService.initialize();
-          logger.info('[DatabaseContext] Banco inicializado');
+          try {
+            await databaseService.initialize();
+            logger.info('[DatabaseContext] Banco inicializado');
+          } catch (dbInitErr) {
+            logger.error('[DatabaseContext] ERRO CRÍTICO - Falha ao criar tabelas:', dbInitErr);
+            throw new Error(`Falha ao criar tabelas: ${dbInitErr instanceof Error ? dbInitErr.message : String(dbInitErr)}`);
+          }
           
-          // 2. Inicializar dados padrão
-          await databaseService.inicializarAtributosPadrao();
-          await databaseService.inicializarRotasPadrao();
+          // 2. Inicializar dados padrão (não crítico — erros são apenas logados)
+          try {
+            await databaseService.inicializarAtributosPadrao();
+          } catch (attrErr) {
+            logger.warn('[DatabaseContext] Erro ao inicializar atributos (não crítico):', attrErr);
+          }
+          try {
+            await databaseService.inicializarRotasPadrao();
+          } catch (rotaErr) {
+            logger.warn('[DatabaseContext] Erro ao inicializar rotas (não crítico):', rotaErr);
+          }
           logger.info('[DatabaseContext] Dados padrão inicializados');
           
-          // 3. Inicializar usuário admin
-          await AuthService.inicializar();
-          logger.info('[DatabaseContext] Auth inicializado');
+          // 3. Inicializar usuário admin (erros internos são capturados pelo AuthService)
+          try {
+            await AuthService.inicializar();
+            logger.info('[DatabaseContext] Auth inicializado');
+          } catch (authErr) {
+            logger.warn('[DatabaseContext] Erro ao inicializar auth (não crítico):', authErr);
+          }
           
-          // 4. Diagnóstico
-          await databaseService.diagnosticar();
+          // 4. Diagnóstico (não crítico)
+          try {
+            await databaseService.diagnosticar();
+          } catch (diagErr) {
+            logger.warn('[DatabaseContext] Erro no diagnóstico (não crítico):', diagErr);
+          }
         })(),
         timeoutPromise
       ]);
       
       setIsReady(true);
-      logger.info('[DatabaseContext] ✅ Pronto para uso');
+      logger.info('[DatabaseContext] Pronto para uso');
       
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Erro ao inicializar banco';
+      const errorMsg = err instanceof Error 
+        ? err.message 
+        : `Erro ao inicializar banco: ${String(err)}`;
       setError(errorMsg);
-      logger.error('[DatabaseContext] ❌ Erro na inicialização:', err);
+      logger.error('[DatabaseContext] Erro na inicialização:', err);
       setIsReady(false);
     } finally {
       setIsLoading(false);

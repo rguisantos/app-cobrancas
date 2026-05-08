@@ -130,7 +130,7 @@ function ErrorScreen({ error, onRetry }: ErrorScreenProps) {
       </Text>
 
       <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 24 }}>
-        {__DEV__ && error?.message
+        {error?.message
           ? error.message
           : 'Ocorreu um erro inesperado. Tente novamente ou entre em contato com o suporte.'}
       </Text>
