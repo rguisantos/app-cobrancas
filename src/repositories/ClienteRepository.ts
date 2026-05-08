@@ -485,12 +485,12 @@ class ClienteRepository {
       id: cliente.id,
       nomeExibicao: cliente.nomeExibicao,
       cpfCnpj: cliente.cpfCnpj || cliente.cpf || cliente.cnpj,
+      rotaId: cliente.rotaId || undefined,
       rotaNome: cliente.rotaNome || '',
       cidade: cliente.cidade,
       estado: cliente.estado,
       status: cliente.status,
     };
-
   }
 
   /**

@@ -11,7 +11,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useCa
 import { Cliente, ClienteListItem, ClienteFilters } from '../types';
 import { clienteRepository } from '../repositories/ClienteRepository';
 import { useDatabase } from './DatabaseContext';
-import { useSync } from './SyncContext';
+import syncEvents from '../utils/sync-events';
 
 // ============================================================================
 // INTERFACES
@@ -31,7 +31,7 @@ export interface ClienteState {
 
 export interface ClienteContextData extends ClienteState {
   // Carregamento
-  carregarClientes: (filtros?: ClienteFilters) => Promise<void>;
+  carregarClientes: (filtros?: ClienteFilters) => Promise<ClienteListItem[]>;
   carregarCliente: (id: string) => Promise<void>;
   
   // Seleção
@@ -66,7 +66,6 @@ interface ClienteProviderProps {
 export function ClienteProvider({ children }: ClienteProviderProps) {
   // Verificar se o banco está pronto
   const { isReady } = useDatabase();
-  const { syncVersion } = useSync();
   
   // Estado
   const [clientes, setClientes] = useState<ClienteListItem[]>([]);
@@ -88,7 +87,7 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
   // CARREGAMENTO
   // ==========================================================================
 
-  const carregarClientes = useCallback(async (filtros?: ClienteFilters) => {
+  const carregarClientes = useCallback(async (filtros?: ClienteFilters): Promise<ClienteListItem[]> => {
     setCarregando(true);
     setOperacao('carregar', true);
     setErro(null);
@@ -97,10 +96,12 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
       const lista = await clienteRepository.getAll(filtros);
       setClientes(lista);
       setTotalClientes(lista.length);
+      return lista;
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao carregar clientes';
       setErro(mensagem);
       console.error('[ClienteContext] Erro ao carregar clientes:', error);
+      return [];
     } finally {
       setCarregando(false);
       setOperacao('carregar', false);
@@ -254,7 +255,17 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
     if (isReady) {
       carregarClientes();
     }
-  }, [carregarClientes, isReady, syncVersion]);
+  }, [carregarClientes, isReady]);
+
+  // CORREÇÃO: Recarregar dados quando o sync completar
+  // Sem isso, os clientes ficam vazios na UI mesmo após o sync ter baixado dados
+  useEffect(() => {
+    const unsubscribe = syncEvents.onSyncComplete(() => {
+      console.log('[ClienteContext] Sync completo — recarregando clientes');
+      carregarClientes();
+    });
+    return unsubscribe;
+  }, [carregarClientes]);
 
   // ==========================================================================
   // ESTADO DO CONTEXT

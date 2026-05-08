@@ -629,6 +629,13 @@ export function AppNavigator() {
   // Refs para controle de fluxo
   const lastAuthStateRef = useRef<string>('');
   const isCheckingRef = useRef(false);
+  // Ref para rastrear se a verificação atual é causada por um recheck (background → foreground)
+  // Em rechecks, só permitimos DOWNGRADE (setar false), nunca UPGRADE (setar true).
+  // A ativação real só deve vir do fluxo de ativação (ativarDispositivo).
+  const isRecheckRef = useRef(false);
+  // Ref para rastrear se o dispositivo foi explicitamente ativado nesta sessão
+  // pelo fluxo de ativação (não por verificação com servidor)
+  const explicitlyActivatedRef = useRef(false);
 
   // Chave para persistir validação do servidor (sobrevive a remounts e restarts)
   const SERVER_VALIDATION_KEY = '@cobrancas:serverDeviceValidation';
@@ -690,9 +697,18 @@ export function AppNavigator() {
         return;
       }
 
+      // Se foi explicitamente ativado nesta sessão pelo fluxo de ativação,
+      // NÃO re-verificar — a ativação é definitiva até o usuário fazer logout
+      if (explicitlyActivatedRef.current) {
+        logger.info('[AppNavigator] Dispositivo ativado nesta sessão — pulando re-verificação');
+        setCheckingDevice(false);
+        return;
+      }
+
       isCheckingRef.current = true;
 
-      logger.info('[AppNavigator] Verificando ativação do dispositivo...');
+      const isRecheck = isRecheckRef.current;
+      logger.info(`[AppNavigator] Verificando ativação do dispositivo...${isRecheck ? ' (recheck - só downgrade)' : ' (verificação inicial)'}`);
 
       try {
         const metadata = await databaseService.getSyncMetadata();
@@ -726,28 +742,34 @@ export function AppNavigator() {
             setDeviceActivated(false);
             try { await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'inactive'); } catch {}
           } else {
-            logger.info('[AppNavigator] Dispositivo confirmado ativo pelo servidor');
-            setDeviceActivated(true);
-            try { await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'active'); } catch {}
+            // CORREÇÃO: Em rechecks (background→foreground), NÃO fazer upgrade.
+            // Só setar deviceActivated=true na verificação inicial.
+            // Isso evita que a tela de ativação desapareça ao voltar do background.
+            if (isRecheck) {
+              logger.info('[AppNavigator] Recheck: servidor confirmou ativo, mas mantendo estado atual (no upgrade on recheck)');
+            } else {
+              logger.info('[AppNavigator] Dispositivo confirmado ativo pelo servidor (verificação inicial)');
+              setDeviceActivated(true);
+              try { await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'active'); } catch {}
+            }
           }
         } catch (serverError) {
-          // ══════════════════════════════════════════════════════════════
           // SERVIDOR INDISPONÍVEL — NÃO mudar deviceActivated!
           // Manter o estado atual (se veio do persisted ou de verificação anterior).
-          // Isso evita que a tela de ativação desapareça por causa de um
-          // fallback para dados locais (o bug original).
-          // ══════════════════════════════════════════════════════════════
-          logger.warn('[AppNavigator] Servidor indisponível — mantendo estado de ativação atual (não alterando)');
-          // NÃO chamar setDeviceActivated aqui — manter o estado atual
+          logger.warn('[AppNavigator] Servidor indisponível — mantendo estado de ativação atual');
         }
       } catch (error) {
         logger.error('[AppNavigator] Erro ao verificar ativação:', error);
-        setDeviceActivated(false);
-        try { await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'inactive'); } catch {}
-        setCheckError(error instanceof Error ? error.message : 'Erro ao verificar dispositivo');
+        // Em recheck, não mudar para false por erro local — só em verificação inicial
+        if (!isRecheck) {
+          setDeviceActivated(false);
+          try { await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'inactive'); } catch {}
+          setCheckError(error instanceof Error ? error.message : 'Erro ao verificar dispositivo');
+        }
       } finally {
         setCheckingDevice(false);
         isCheckingRef.current = false;
+        isRecheckRef.current = false; // Resetar flag de recheck
       }
     };
 
@@ -768,6 +790,8 @@ export function AppNavigator() {
 
       if ((prev === 'background' || prev === 'inactive') && nextAppState === 'active') {
         logger.info('[AppNavigator] App voltou ao foreground — disparando re-verificação de ativação');
+        // Marcar como recheck para que a verificação só faça downgrade, nunca upgrade
+        isRecheckRef.current = true;
         setRecheckTrigger(prev => prev + 1);
       }
     });

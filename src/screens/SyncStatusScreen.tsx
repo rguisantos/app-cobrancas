@@ -1,259 +1,264 @@
 /**
  * SyncStatusScreen.tsx
- * Status detalhado de sincronização com logs em tempo real
- * - Usa SyncContext para informações de sync
- * - Mostra última sincronização, mudanças pendentes, status atual
- * - Estatísticas por entidade
- * - Conflitos pendentes
- * - Status de conectividade
- * - Botões: Sincronizar Agora, Forçar Sincronização, Sync Completa
+ * Terminal de sincronização — mostra logs em tempo real como um terminal
+ * - Captura automaticamente logs do SyncService, DatabaseService e ApiService
+ * - Mostra o que está acontecendo em cada etapa do sync
+ * - Contagem de registros por tabela no SQLite local
+ * - Botões: Sincronizar Agora, Forçar Sincronização, Sync Completa, Snapshot
  */
 
 import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, RefreshControl, ActivityIndicator,
-  Alert,
+  Alert, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons }     from '@expo/vector-icons';
-import { useSync }      from '../contexts/SyncContext';
-import { useAuth }      from '../contexts/AuthContext';
-import { syncService }  from '../services/SyncService';
-import { apiService }   from '../services/ApiService';
+import { Ionicons } from '@expo/vector-icons';
+import { useSync } from '../contexts/SyncContext';
+import { useAuth } from '../contexts/AuthContext';
+import { syncService } from '../services/SyncService';
+import { apiService } from '../services/ApiService';
 import { databaseService } from '../services/DatabaseService';
-import { useNavigation } from '@react-navigation/native';
-import type { ModalStackNavigationProp } from '../navigation/AppNavigator';
+import syncEvents from '../utils/sync-events';
+import logger from '../utils/logger';
 
 // ============================================================================
 // TIPOS
 // ============================================================================
 
+type LogLevel = 'info' | 'warn' | 'error' | 'success' | 'debug';
+
 interface LogEntry {
+  id: number;
   timestamp: string;
-  level: 'info' | 'warn' | 'error' | 'success';
+  level: LogLevel;
   message: string;
   details?: string;
 }
 
-interface EntityStat {
-  name: string;
-  pending: number;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
+interface TableCount {
+  table: string;
+  total: number;
+  active: number;
 }
 
 // ============================================================================
-// STATUS MAP
+// CONSTANTES
 // ============================================================================
 
-const STATUS_MAP: Record<string, { icon: keyof typeof Ionicons.glyphMap; color: string; bg: string; label: string }> = {
-  syncing: { icon: 'sync',              color: '#2563EB', bg: '#EFF6FF', label: 'Sincronizando...' },
-  synced:  { icon: 'checkmark-circle',  color: '#16A34A', bg: '#F0FDF4', label: 'Sincronizado' },
-  error:   { icon: 'alert-circle',      color: '#DC2626', bg: '#FEF2F2', label: 'Erro na sincronização' },
-  pending: { icon: 'time',              color: '#D97706', bg: '#FFFBEB', label: 'Mudanças pendentes' },
-  offline: { icon: 'cloud-offline',     color: '#64748B', bg: '#F1F5F9', label: 'Sem conexão' },
-  conflict:{ icon: 'swap-horizontal',   color: '#EA580C', bg: '#FFF7ED', label: 'Conflitos pendentes' },
+const LEVEL_COLORS: Record<LogLevel, string> = {
+  debug: '#8B5CF6',
+  info: '#2563EB',
+  warn: '#D97706',
+  error: '#DC2626',
+  success: '#16A34A',
 };
 
-// ============================================================================
-// ENTITY CONFIG
-// ============================================================================
-
-const ENTITY_ICONS: Record<string, { name: string; icon: keyof typeof Ionicons.glyphMap; color: string }> = {
-  cliente:    { name: 'Clientes',      icon: 'people',     color: '#2563EB' },
-  produto:    { name: 'Produtos',      icon: 'cube',       color: '#16A34A' },
-  locacao:    { name: 'Locações',      icon: 'key',        color: '#8B5CF6' },
-  cobranca:   { name: 'Cobranças',     icon: 'cash',       color: '#D97706' },
-  manutencao: { name: 'Manutenções',   icon: 'construct',  color: '#EA580C' },
-  meta:       { name: 'Metas',         icon: 'trophy',     color: '#7C3AED' },
-  rota:       { name: 'Rotas',         icon: 'map',        color: '#059669' },
-  usuario:    { name: 'Usuários',      icon: 'person',     color: '#64748B' },
-  estabelecimento: { name: 'Estabelecimentos', icon: 'business', color: '#0891B2' },
+const LEVEL_ICONS: Record<LogLevel, string> = {
+  debug: 'bug',
+  info: 'information-circle',
+  warn: 'warning',
+  error: 'close-circle',
+  success: 'checkmark-circle',
 };
 
-// ============================================================================
-// SUBCOMPONENTS
-// ============================================================================
+const STATUS_MAP: Record<string, { icon: string; color: string; label: string }> = {
+  syncing: { icon: 'sync', color: '#2563EB', label: 'Sincronizando...' },
+  synced: { icon: 'checkmark-circle', color: '#16A34A', label: 'Sincronizado' },
+  error: { icon: 'alert-circle', color: '#DC2626', label: 'Erro' },
+  pending: { icon: 'time', color: '#D97706', label: 'Pendente' },
+  offline: { icon: 'cloud-offline', color: '#64748B', label: 'Offline' },
+  conflict: { icon: 'swap-horizontal', color: '#EA580C', label: 'Conflitos' },
+};
 
-function InfoRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
-  return (
-    <View style={s.infoRow}>
-      <Text style={s.infoLabel}>{label}</Text>
-      <Text style={[s.infoValue, valueColor ? { color: valueColor, fontWeight: '700' } : null]}>{value}</Text>
-    </View>
-  );
-}
-
-function LogItem({ log }: { log: LogEntry }) {
-  const levelColors = {
-    info: '#2563EB',
-    warn: '#D97706',
-    error: '#DC2626',
-    success: '#16A34A',
-  };
-
-  return (
-    <View style={[s.logItem, { borderLeftColor: levelColors[log.level] }]}>
-      <View style={s.logHeader}>
-        <Text style={[s.logLevel, { color: levelColors[log.level] }]}>
-          {log.level.toUpperCase()}
-        </Text>
-        <Text style={s.logTime}>{log.timestamp}</Text>
-      </View>
-      <Text style={s.logMessage}>{log.message}</Text>
-      {log.details && <Text style={s.logDetails}>{log.details}</Text>}
-    </View>
-  );
-}
-
-function EntityStatRow({ stat }: { stat: EntityStat }) {
-  return (
-    <View style={s.entityRow}>
-      <View style={[s.entityIcon, { backgroundColor: stat.color + '1A' }]}>
-        <Ionicons name={stat.icon} size={16} color={stat.color} />
-      </View>
-      <Text style={s.entityName}>{stat.name}</Text>
-      {stat.pending > 0 ? (
-        <View style={[s.entityBadge, { backgroundColor: '#FEF3C7' }]}>
-          <Text style={s.entityBadgeText}>{stat.pending} pendente{stat.pending > 1 ? 's' : ''}</Text>
-        </View>
-      ) : (
-        <View style={[s.entityBadge, { backgroundColor: '#F0FDF4' }]}>
-          <Text style={[s.entityBadgeText, { color: '#16A34A' }]}>✓</Text>
-        </View>
-      )}
-    </View>
-  );
-}
+const TABLES_TO_COUNT = [
+  { table: 'clientes', label: 'Clientes' },
+  { table: 'produtos', label: 'Produtos' },
+  { table: 'locacoes', label: 'Locações' },
+  { table: 'cobrancas', label: 'Cobranças' },
+  { table: 'rotas', label: 'Rotas' },
+  { table: 'usuarios', label: 'Usuários' },
+  { table: 'manutencoes', label: 'Manutenções' },
+  { table: 'metas', label: 'Metas' },
+  { table: 'estabelecimentos', label: 'Estabelecimentos' },
+  { table: 'tipos_produto', label: 'Tipos Produto' },
+  { table: 'descricoes_produto', label: 'Descrições' },
+  { table: 'tamanhos_produto', label: 'Tamanhos' },
+  { table: 'change_log', label: 'Change Log' },
+  { table: 'sync_metadata', label: 'Sync Meta' },
+];
 
 // ============================================================================
 // COMPONENTE PRINCIPAL
 // ============================================================================
 
+let logCounter = 0;
+
 export default function SyncStatusScreen() {
   const {
-    status, lastSync, pendingItems, syncNow, isSyncing,
+    status, lastSync, isSyncing, syncNow,
     mudancasPendentes, dispositivo, erro, ultimoErro,
     conflitosPendentes, totalConflitos, progress,
-    sincronizar, verificarConexao,
+    sincronizar, verificarConexao, lastSyncAt, lastSyncMessage,
   } = useSync();
   const { user, token } = useAuth();
-  const navigation = useNavigation<ModalStackNavigationProp>();
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [networkStatus, setNetworkStatus] = useState<'checking' | 'online' | 'offline'>('checking');
-  const [entityStats, setEntityStats] = useState<EntityStat[]>([]);
+  const [tableCounts, setTableCounts] = useState<TableCount[]>([]);
   const [debugInfo, setDebugInfo] = useState({
     apiURL: '',
     deviceId: '',
     deviceKey: '',
     hasToken: false,
     dbInitialized: false,
+    lastSyncAt: '',
   });
+  const [showCounts, setShowCounts] = useState(true);
+  const [autoScroll, setAutoScroll] = useState(true);
 
-  const scrollViewRef = useRef<ScrollView>(null);
+  const flatListRef = useRef<FlatList>(null);
 
-  // Adicionar log
-  const addLog = useCallback((level: LogEntry['level'], message: string, details?: string) => {
-    const timestamp = new Date().toLocaleTimeString('pt-BR');
-    setLogs(prev => [...prev.slice(-99), { timestamp, level, message, details }]);
+  // ─── Adicionar log ──────────────────────────────────────────────────────
+  const addLog = useCallback((level: LogLevel, message: string, details?: string) => {
+    const timestamp = new Date().toLocaleTimeString('pt-BR', { hour12: false });
+    logCounter++;
+    setLogs(prev => [...prev.slice(-199), { id: logCounter, timestamp, level, message, details }]);
   }, []);
 
-  // ─── carregar informações ─────────────────────────────────────────────────
+  // ─── Capturar logs do console automaticamente ───────────────────────────
+  useEffect(() => {
+    // Interceptar console.log/error/warn para capturar logs do sync
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+
+    console.log = (...args: any[]) => {
+      originalLog(...args);
+      const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+      if (msg.includes('[Sync') || msg.includes('[Database]') || msg.includes('applyRemoteChanges') || msg.includes('upsertFromSync')) {
+        const level: LogLevel = msg.includes('ERRO') || msg.includes('❌') ? 'error' : msg.includes('warn') ? 'warn' : 'info';
+        addLog(level, msg.substring(0, 200));
+      }
+    };
+
+    console.error = (...args: any[]) => {
+      originalError(...args);
+      const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+      if (msg.includes('[Sync') || msg.includes('[Database]') || msg.includes('[Api')) {
+        addLog('error', msg.substring(0, 200));
+      }
+    };
+
+    console.warn = (...args: any[]) => {
+      originalWarn(...args);
+      const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+      if (msg.includes('[Sync') || msg.includes('[Database]')) {
+        addLog('warn', msg.substring(0, 200));
+      }
+    };
+
+    return () => {
+      console.log = originalLog;
+      console.error = originalError;
+      console.warn = originalWarn;
+    };
+  }, [addLog]);
+
+  // ─── Escutar eventos de sync ────────────────────────────────────────────
+  useEffect(() => {
+    const unsub = syncEvents.onSyncComplete(() => {
+      addLog('success', 'Sync completo — contextos notificados para recarregar dados');
+      loadTableCounts();
+    });
+    return unsub;
+  }, [addLog]);
+
+  // ─── Contar registros por tabela ────────────────────────────────────────
+  const loadTableCounts = useCallback(async () => {
+    try {
+      const counts: TableCount[] = [];
+      for (const { table, label } of TABLES_TO_COUNT) {
+        try {
+          const totalResult = await databaseService.getFirstAsync<{ cnt: number }>(
+            `SELECT COUNT(*) as cnt FROM ${table}`, []
+          );
+          const activeResult = await databaseService.getFirstAsync<{ cnt: number }>(
+            `SELECT COUNT(*) as cnt FROM ${table} WHERE deletedAt IS NULL`, []
+          );
+          counts.push({
+            table: label,
+            total: totalResult?.cnt || 0,
+            active: activeResult?.cnt || 0,
+          });
+        } catch {
+          counts.push({ table: label, total: -1, active: -1 });
+        }
+      }
+      setTableCounts(counts);
+    } catch (error) {
+      addLog('error', 'Erro ao contar registros', String(error));
+    }
+  }, [addLog]);
+
+  // ─── Carregar informações ───────────────────────────────────────────────
   const loadInfo = useCallback(async () => {
     try {
-      // Debug info
       const metadata = await databaseService.getSyncMetadata();
       const apiURL = apiService['baseURL'] || 'N/A';
 
       setDebugInfo({
         apiURL,
         deviceId: metadata.deviceId || 'Não registrado',
-        deviceKey: metadata.deviceKey ? `${metadata.deviceKey.substring(0, 15)}...` : 'N/A',
+        deviceKey: metadata.deviceKey ? `${metadata.deviceKey.substring(0, 20)}...` : 'N/A',
         hasToken: !!token,
         dbInitialized: true,
+        lastSyncAt: metadata.lastSyncAt || 'Nunca',
       });
 
-      // Network status
+      // Network
       setNetworkStatus('checking');
       const connected = await verificarConexao();
       setNetworkStatus(connected ? 'online' : 'offline');
 
-      // Entity stats
-      const counts = await databaseService.getPendingChangesCountByEntity();
-      const stats: EntityStat[] = [];
-      for (const [entityType, count] of Object.entries(counts)) {
-        const cfg = ENTITY_ICONS[entityType] || {
-          name: entityType.charAt(0).toUpperCase() + entityType.slice(1),
-          icon: 'ellipse' as keyof typeof Ionicons.glyphMap,
-          color: '#64748B',
-        };
-        stats.push({ name: cfg.name, pending: count, icon: cfg.icon, color: cfg.color });
-      }
-      // Adicionar entidades sem pendências
-      for (const [entityType, cfg] of Object.entries(ENTITY_ICONS)) {
-        if (!counts[entityType]) {
-          stats.push({ name: cfg.name, pending: 0, icon: cfg.icon, color: cfg.color });
-        }
-      }
-      setEntityStats(stats);
-
+      await loadTableCounts();
       addLog('info', 'Informações carregadas');
     } catch (error) {
       addLog('error', 'Erro ao carregar informações', String(error));
     }
-  }, [token, addLog, verificarConexao]);
+  }, [token, addLog, verificarConexao, loadTableCounts]);
 
-  // ─── testar conexão ───────────────────────────────────────────────────────
-  const testConnection = useCallback(async () => {
-    addLog('info', 'Testando conexão com a API...');
-    setNetworkStatus('checking');
-    try {
-      const health = await apiService.healthCheck();
-      if (health.ok) {
-        setNetworkStatus('online');
-        addLog('success', 'Conexão com API OK', `Timestamp: ${health.timestamp}`);
-      } else {
-        setNetworkStatus('offline');
-        addLog('error', 'API retornou erro', `Status: ${health.timestamp}`);
-      }
-    } catch (error) {
-      setNetworkStatus('offline');
-      addLog('error', 'Falha ao conectar com API', String(error));
-    }
-  }, [addLog]);
-
-  // ─── sincronizar agora ────────────────────────────────────────────────────
+  // ─── Sincronizar ────────────────────────────────────────────────────────
   const handleSyncNow = useCallback(async () => {
-    addLog('info', 'Iniciando sincronização...');
+    addLog('info', '▶ Iniciando sincronização...');
     try {
       await syncNow();
-      addLog('success', 'Sincronização concluída!');
-      await loadInfo(); // Recarregar stats
+      addLog('success', '✓ Sincronização concluída!');
+      await loadInfo();
     } catch (e) {
-      addLog('error', 'Erro na sincronização', String(e));
+      addLog('error', '✗ Erro na sincronização', String(e));
     }
   }, [syncNow, addLog, loadInfo]);
 
-  // ─── forçar sincronização ─────────────────────────────────────────────────
+  // ─── Forçar sync ────────────────────────────────────────────────────────
   const handleForceSync = useCallback(async () => {
     Alert.alert(
       'Forçar Sincronização',
-      'Isso irá forçar uma sincronização completa, reenviando todas as mudanças pendentes. Continuar?',
+      'Isso irá forçar uma sincronização completa. Continuar?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Forçar Sync',
           style: 'destructive',
           onPress: async () => {
-            addLog('info', 'Forçando sincronização...');
+            addLog('info', '▶ Forçando sincronização...');
             try {
               await sincronizar(true);
-              addLog('success', 'Sincronização forçada concluída!');
+              addLog('success', '✓ Sincronização forçada concluída!');
               await loadInfo();
             } catch (e) {
-              addLog('error', 'Erro na sincronização forçada', String(e));
+              addLog('error', '✗ Erro na sync forçada', String(e));
             }
           },
         },
@@ -261,28 +266,29 @@ export default function SyncStatusScreen() {
     );
   }, [sincronizar, addLog, loadInfo]);
 
-  // ─── sync completo (forçar download) ──────────────────────────────────────
+  // ─── Sync completa ──────────────────────────────────────────────────────
   const handleFullSync = useCallback(async () => {
     Alert.alert(
       'Sincronização Completa',
-      'Isso irá baixar todos os dados do servidor novamente. Isso pode demorar. Continuar?',
+      'Isso irá baixar TODOS os dados do servidor novamente. Continuar?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Continuar',
           style: 'destructive',
           onPress: async () => {
-            addLog('info', 'Iniciando sincronização completa...');
+            addLog('info', '▶ Iniciando sincronização completa (fullSync)...');
             try {
               const result = await syncService.fullSync();
               if (result.success) {
-                addLog('success', 'Sync completa!', `Push: ${result.pushed}, Pull: ${result.pulled}`);
+                addLog('success', `✓ Sync completa! Push: ${result.pushed}, Pull: ${result.pulled}`);
+                syncEvents.emitSyncComplete();
               } else {
-                addLog('error', 'Falha na sync completa', result.errors.join(', '));
+                addLog('error', `✗ Falha na sync completa: ${result.errors.join(', ')}`);
               }
               await loadInfo();
             } catch (error) {
-              addLog('error', 'Erro na sync completa', String(error));
+              addLog('error', '✗ Erro na sync completa', String(error));
             }
           },
         },
@@ -290,297 +296,506 @@ export default function SyncStatusScreen() {
     );
   }, [addLog, loadInfo]);
 
-  // ─── limpar logs ──────────────────────────────────────────────────────────
-  const clearLogs = useCallback(() => {
-    setLogs([]);
-    addLog('info', 'Logs limpos');
+  // ─── Snapshot sync ──────────────────────────────────────────────────────
+  const handleSnapshotSync = useCallback(async () => {
+    Alert.alert(
+      'Snapshot Sync',
+      'Isso baixa o snapshot completo do servidor (para dispositivo desatualizado). Continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Continuar',
+          style: 'destructive',
+          onPress: async () => {
+            addLog('info', '▶ Iniciando snapshot sync...');
+            try {
+              const count = await syncService.syncFromSnapshot();
+              if (count > 0) {
+                addLog('success', `✓ Snapshot baixado! ${count} registros`);
+                syncEvents.emitSyncComplete();
+              } else {
+                addLog('warn', '⚠ Snapshot retornou 0 registros');
+              }
+              await loadInfo();
+            } catch (error) {
+              addLog('error', '✗ Erro no snapshot', String(error));
+            }
+          },
+        },
+      ]
+    );
+  }, [addLog, loadInfo]);
+
+  // ─── Testar conexão ─────────────────────────────────────────────────────
+  const testConnection = useCallback(async () => {
+    addLog('info', 'Testando conexão com a API...');
+    setNetworkStatus('checking');
+    try {
+      const health = await apiService.healthCheck();
+      if (health.ok) {
+        setNetworkStatus('online');
+        addLog('success', '✓ API online');
+      } else {
+        setNetworkStatus('offline');
+        addLog('error', '✗ API retornou erro');
+      }
+    } catch (error) {
+      setNetworkStatus('offline');
+      addLog('error', '✗ Falha ao conectar', String(error));
+    }
   }, [addLog]);
 
-  // ─── carregar ao iniciar ──────────────────────────────────────────────────
+  // ─── Testar pull manualmente ────────────────────────────────────────────
+  const handleTestPull = useCallback(async () => {
+    addLog('info', '▶ Teste: Executando pull manual...');
+    try {
+      const result = await syncService.pullChanges();
+      addLog('info', `Pull result: ${result.pulled} registros, ${result.errors.length} erros`);
+      if (result.pulled > 0) {
+        addLog('success', `✓ ${result.pulled} registros baixados do servidor`);
+        syncEvents.emitSyncComplete();
+      } else {
+        addLog('info', 'Nenhum registro novo para baixar');
+      }
+      await loadTableCounts();
+    } catch (error) {
+      addLog('error', '✗ Erro no pull', String(error));
+    }
+  }, [addLog, loadTableCounts]);
+
+  // ─── Limpar logs ────────────────────────────────────────────────────────
+  const clearLogs = useCallback(() => {
+    setLogs([]);
+  }, []);
+
+  // ─── Carregar ao iniciar ────────────────────────────────────────────────
   useEffect(() => {
     loadInfo();
-    addLog('info', 'Tela de sincronização aberta');
-  }, [loadInfo, addLog]);
-
-  // Auto-scroll
-  useEffect(() => {
-    if (logs.length > 0) {
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+    addLog('info', 'Terminal de sincronização aberto');
+    addLog('info', `Status atual: ${status}`);
+    if (dispositivo?.registrado) {
+      addLog('success', `Dispositivo registrado: ${dispositivo.chave?.substring(0, 20)}...`);
+    } else {
+      addLog('warn', 'Dispositivo NÃO registrado');
     }
-  }, [logs]);
+  }, []);
 
-  // ─── cálculos ─────────────────────────────────────────────────────────────
+  // ─── Auto-scroll ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (autoScroll && logs.length > 0) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 50);
+    }
+  }, [logs, autoScroll]);
+
+  // ─── Cálculos ───────────────────────────────────────────────────────────
   const cfg = STATUS_MAP[status as keyof typeof STATUS_MAP] ?? STATUS_MAP.pending;
-  const totalPendentes = typeof pendingItems === 'object'
-    ? Object.values(pendingItems as Record<string, number>).reduce((a, b) => a + b, 0)
-    : mudancasPendentes;
 
-  const pendingEntities = typeof pendingItems === 'object'
-    ? Object.entries(pendingItems as Record<string, number>).filter(([, v]) => v > 0)
-    : [];
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
+  const renderLog = useCallback(({ item }: { item: LogEntry }) => (
+    <View style={[t.logLine, { borderLeftColor: LEVEL_COLORS[item.level] }]}>
+      <Text style={t.logTime}>{item.timestamp}</Text>
+      <Ionicons
+        name={LEVEL_ICONS[item.level] as any}
+        size={12}
+        color={LEVEL_COLORS[item.level]}
+        style={t.logIcon}
+      />
+      <Text style={[t.logMsg, { color: LEVEL_COLORS[item.level] }]} numberOfLines={3}>
+        {item.message}
+      </Text>
+    </View>
+  ), []);
 
   return (
-    <SafeAreaView style={s.container} edges={['bottom']}>
-      <ScrollView
-        ref={scrollViewRef}
-        style={s.scroll}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isSyncing}
-            onRefresh={handleSyncNow}
-            colors={['#2563EB']}
-            tintColor="#2563EB"
-          />
-        }
-      >
-        {/* Status principal */}
-        <View style={[s.statusCard, { backgroundColor: cfg.bg }]}>
-          <View style={[s.statusIconCircle, { backgroundColor: cfg.color }]}>
-            {isSyncing
-              ? <ActivityIndicator color="#FFFFFF" size="large" />
-              : <Ionicons name={cfg.icon} size={32} color="#FFFFFF" />}
-          </View>
-          <Text style={[s.statusLabel, { color: cfg.color }]}>{cfg.label}</Text>
-          {lastSync && (
-            <Text style={s.lastSync}>
-              Última: {new Date(lastSync).toLocaleString('pt-BR')}
-            </Text>
-          )}
-          {erro && <Text style={s.errorText}>{erro}</Text>}
-
-          {/* Progress bar */}
-          {isSyncing && progress && (
-            <View style={s.progressContainer}>
-              <View style={s.progressBar}>
-                <View style={[s.progressFill, { width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%` }]} />
-              </View>
-              <Text style={s.progressText}>{progress.message}</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Conectividade */}
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>CONECTIVIDADE</Text>
-          <View style={s.connectivityRow}>
-            <View style={[s.connectivityDot, {
-              backgroundColor: networkStatus === 'online' ? '#16A34A' : networkStatus === 'offline' ? '#DC2626' : '#D97706',
-            }]} />
-            <Text style={s.connectivityText}>
-              {networkStatus === 'online' ? 'Online' : networkStatus === 'offline' ? 'Offline' : 'Verificando...'}
-            </Text>
-            <TouchableOpacity style={s.smallBtn} onPress={testConnection}>
-              <Ionicons name="refresh" size={14} color="#2563EB" />
-              <Text style={s.smallBtnText}>Testar</Text>
-            </TouchableOpacity>
-          </View>
-          <InfoRow label="API URL" value={debugInfo.apiURL} />
-          <InfoRow label="Token" value={debugInfo.hasToken ? 'Presente' : 'Ausente'}
-            valueColor={debugInfo.hasToken ? '#16A34A' : '#DC2626'} />
-        </View>
-
-        {/* Conflitos */}
-        {totalConflitos > 0 && (
-          <View style={[s.section, { borderLeftWidth: 3, borderLeftColor: '#EA580C' }]}>
-            <Text style={s.sectionTitle}>CONFLITOS PENDENTES</Text>
-            <View style={s.conflictRow}>
-              <Ionicons name="warning" size={20} color="#EA580C" />
-              <Text style={s.conflictText}>
-                {totalConflitos} conflito{totalConflitos > 1 ? 's' : ''} sem resolução
-              </Text>
-            </View>
-            {conflitosPendentes.slice(0, 5).map((c, i) => (
-              <View key={c.entityId || i} style={s.conflictItem}>
-                <Text style={s.conflictEntity}>{c.entityType}: {c.entityId.substring(0, 8)}...</Text>
-                <Text style={s.conflictType}>{c.conflictType}</Text>
-              </View>
-            ))}
-            {conflitosPendentes.length > 5 && (
-              <Text style={s.conflictMore}>...e mais {conflitosPendentes.length - 5} conflitos</Text>
-            )}
-          </View>
-        )}
-
-        {/* Mudanças pendentes */}
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>MUDANÇAS PENDENTES</Text>
-          <InfoRow label="Total de pendências"
-            value={String(totalPendentes)}
-            valueColor={totalPendentes > 0 ? '#D97706' : '#16A34A'}
-          />
-          {pendingEntities.map(([k, v]) => {
-            const cfg = ENTITY_ICONS[k];
-            return (
-              <InfoRow key={k} label={cfg?.name || k} value={String(v)} valueColor="#D97706" />
-            );
-          })}
-        </View>
-
-        {/* Estatísticas por entidade */}
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>ESTATÍSTICAS POR ENTIDADE</Text>
-          {entityStats.length > 0 ? (
-            entityStats.map(stat => (
-              <EntityStatRow key={stat.name} stat={stat} />
-            ))
-          ) : (
-            <Text style={s.noData}>Carregando estatísticas...</Text>
-          )}
-        </View>
-
-        {/* Dispositivo */}
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>DISPOSITIVO</Text>
-          <InfoRow label="Device ID" value={debugInfo.deviceId}
-            valueColor={debugInfo.deviceId !== 'Não registrado' ? '#16A34A' : '#DC2626'} />
-          <InfoRow label="Device Key" value={debugInfo.deviceKey} />
-          {dispositivo && (
-            <>
-              <InfoRow label="Nome" value={dispositivo.nome || 'N/A'} />
-              <InfoRow label="Registrado" value={dispositivo.registrado ? 'Sim' : 'Não'}
-                valueColor={dispositivo.registrado ? '#16A34A' : '#DC2626'} />
-            </>
-          )}
-          <InfoRow label="DB" value={debugInfo.dbInitialized ? 'Inicializado' : 'Erro'}
-            valueColor={debugInfo.dbInitialized ? '#16A34A' : '#DC2626'} />
-        </View>
-
-        {/* Botões de ação */}
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>AÇÕES</Text>
-
-          <TouchableOpacity style={s.actionBtn} onPress={testConnection}>
-            <Ionicons name="wifi" size={18} color="#2563EB" />
-            <Text style={s.actionBtnText}>Testar Conexão API</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={s.actionBtn} onPress={handleForceSync}>
-            <Ionicons name="sync" size={18} color="#D97706" />
-            <Text style={s.actionBtnText}>Forçar Sincronização</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={s.actionBtn} onPress={handleFullSync}>
-            <Ionicons name="download" size={18} color="#DC2626" />
-            <Text style={s.actionBtnText}>Sync Completa (Forçar Download)</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={s.actionBtn} onPress={() => navigation.navigate('DebugTerminal')}>
-            <Ionicons name="terminal" size={18} color="#16A34A" />
-            <Text style={s.actionBtnText}>Terminal de Debug (Logs em Tempo Real)</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Botão principal */}
-        <TouchableOpacity
-          style={[s.btnSync, isSyncing && s.btnDisabled]}
-          onPress={handleSyncNow}
-          disabled={isSyncing}
-          activeOpacity={0.85}
-        >
+    <SafeAreaView style={t.container} edges={['bottom']}>
+      {/* Header com status */}
+      <View style={[t.header, { backgroundColor: cfg.color + '15' }]}>
+        <View style={t.headerLeft}>
           {isSyncing
-            ? <><ActivityIndicator color="#FFFFFF" size="small" /><Text style={s.btnSyncText}>Sincronizando...</Text></>
-            : <><Ionicons name="cloud-download" size={20} color="#FFFFFF" /><Text style={s.btnSyncText}>Sincronizar Agora</Text></>}
+            ? <ActivityIndicator color={cfg.color} size="small" />
+            : <Ionicons name={cfg.icon as any} size={20} color={cfg.color} />}
+          <Text style={[t.headerTitle, { color: cfg.color }]}>{cfg.label}</Text>
+        </View>
+        <View style={t.headerRight}>
+          <View style={[t.dot, {
+            backgroundColor: networkStatus === 'online' ? '#16A34A' : networkStatus === 'offline' ? '#DC2626' : '#D97706'
+          }]} />
+          <Text style={t.headerSub}>
+            {lastSyncAt ? new Date(lastSyncAt).toLocaleString('pt-BR') : 'Nunca'}
+          </Text>
+        </View>
+      </View>
+
+      {/* Progresso */}
+      {isSyncing && progress && (
+        <View style={t.progressWrap}>
+          <View style={t.progressBar}>
+            <View style={[t.progressFill, { width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%` }]} />
+          </View>
+          <Text style={t.progressText}>{progress.message}</Text>
+        </View>
+      )}
+
+      {/* Mensagem do último sync */}
+      {lastSyncMessage && !isSyncing && (
+        <View style={t.msgWrap}>
+          <Text style={t.msgText} numberOfLines={1}>{lastSyncMessage}</Text>
+        </View>
+      )}
+
+      {/* Ações rápidas */}
+      <View style={t.actions}>
+        <TouchableOpacity style={[t.actionBtn, { backgroundColor: '#2563EB' }]} onPress={handleSyncNow} disabled={isSyncing}>
+          {isSyncing ? <ActivityIndicator color="#FFF" size={14} /> : <Ionicons name="sync" size={16} color="#FFF" />}
+          <Text style={t.actionBtnText}>Sync</Text>
         </TouchableOpacity>
 
-        {/* Logs */}
-        <View style={s.logsSection}>
-          <View style={s.logsHeader}>
-            <Text style={s.sectionTitle}>LOGS EM TEMPO REAL</Text>
-            <TouchableOpacity onPress={clearLogs}>
-              <Text style={s.clearBtn}>Limpar</Text>
+        <TouchableOpacity style={[t.actionBtn, { backgroundColor: '#D97706' }]} onPress={handleForceSync} disabled={isSyncing}>
+          <Ionicons name="refresh" size={16} color="#FFF" />
+          <Text style={t.actionBtnText}>Forçar</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[t.actionBtn, { backgroundColor: '#DC2626' }]} onPress={handleFullSync} disabled={isSyncing}>
+          <Ionicons name="download" size={16} color="#FFF" />
+          <Text style={t.actionBtnText}>Full</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[t.actionBtn, { backgroundColor: '#7C3AED' }]} onPress={handleSnapshotSync} disabled={isSyncing}>
+          <Ionicons name="cloud-download" size={16} color="#FFF" />
+          <Text style={t.actionBtnText}>Snap</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[t.actionBtn, { backgroundColor: '#059669' }]} onPress={handleTestPull} disabled={isSyncing}>
+          <Ionicons name="arrow-down" size={16} color="#FFF" />
+          <Text style={t.actionBtnText}>Pull</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[t.actionBtn, { backgroundColor: '#64748B' }]} onPress={testConnection}>
+          <Ionicons name="wifi" size={16} color="#FFF" />
+          <Text style={t.actionBtnText}>Ping</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Contagem de registros (colapsável) */}
+      <TouchableOpacity style={t.countsHeader} onPress={() => setShowCounts(!showCounts)}>
+        <Text style={t.countsTitle}>REGISTROS LOCAIS ({tableCounts.reduce((a, c) => a + Math.max(c.active, 0), 0)})</Text>
+        <Ionicons name={showCounts ? 'chevron-up' : 'chevron-down'} size={16} color="#64748B" />
+      </TouchableOpacity>
+
+      {showCounts && (
+        <View style={t.countsGrid}>
+          {tableCounts.map(tc => (
+            <View key={tc.table} style={t.countItem}>
+              <Text style={t.countLabel}>{tc.table}</Text>
+              <Text style={[t.countValue, { color: tc.active > 0 ? '#16A34A' : '#94A3B8' }]}>
+                {tc.total >= 0 ? String(tc.active) : '?'}
+              </Text>
+              {tc.total > tc.active && (
+                <Text style={t.countDeleted}>+{tc.total - tc.active} del</Text>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Debug info */}
+      <View style={t.debugRow}>
+        <Text style={t.debugText}>
+          Device: {debugInfo.deviceId.substring(0, 12)}{debugInfo.deviceId.length > 12 ? '...' : ''}
+        </Text>
+        <Text style={t.debugText}>
+          Token: {debugInfo.hasToken ? '✓' : '✗'}
+        </Text>
+        <Text style={t.debugText}>
+          DB: {debugInfo.dbInitialized ? '✓' : '✗'}
+        </Text>
+        <Text style={t.debugText}>
+          Pending: {mudancasPendentes}
+        </Text>
+      </View>
+
+      {/* Terminal de logs */}
+      <View style={t.terminal}>
+        <View style={t.terminalHeader}>
+          <View style={t.terminalDots}>
+            <View style={[t.terminalDot, { backgroundColor: '#EF4444' }]} />
+            <View style={[t.terminalDot, { backgroundColor: '#F59E0B' }]} />
+            <View style={[t.terminalDot, { backgroundColor: '#22C55E' }]} />
+          </View>
+          <Text style={t.terminalTitle}>TERMINAL — LOGS</Text>
+          <View style={t.terminalActions}>
+            <TouchableOpacity onPress={clearLogs} style={t.terminalAction}>
+              <Ionicons name="trash" size={14} color="#64748B" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setAutoScroll(!autoScroll)} style={t.terminalAction}>
+              <Ionicons name={autoScroll ? 'arrow-down-circle' : 'arrow-down-circle-outline'} size={14} color={autoScroll ? '#2563EB' : '#64748B'} />
             </TouchableOpacity>
           </View>
-
-          {logs.length === 0 ? (
-            <Text style={s.noLogs}>Nenhum log ainda</Text>
-          ) : (
-            logs.map((log, index) => (
-              <LogItem key={index} log={log} />
-            ))
-          )}
         </View>
 
-        <Text style={s.hint}>Puxe a tela para baixo para atualizar</Text>
-      </ScrollView>
+        <FlatList
+          ref={flatListRef}
+          data={logs}
+          renderItem={renderLog}
+          keyExtractor={item => String(item.id)}
+          style={t.terminalBody}
+          ListEmptyComponent={
+            <Text style={t.emptyLog}>Aguardando atividades... Pressione "Sync" para iniciar.</Text>
+          }
+          onContentSizeChange={() => {
+            if (autoScroll) {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }
+          }}
+        />
+      </View>
     </SafeAreaView>
   );
 }
 
 // ============================================================================
-// ESTILOS
+// ESTILOS (Terminal-like)
 // ============================================================================
 
-const s = StyleSheet.create({
-  container:        { flex: 1, backgroundColor: '#F8FAFC' },
-  scroll:           { flex: 1, padding: 16 },
+const t = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0F172A',
+  },
 
-  // Status card
-  statusCard:       { alignItems: 'center', borderRadius: 16, padding: 28, marginBottom: 16, gap: 8 },
-  statusIconCircle: { width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center' },
-  statusLabel:      { fontSize: 20, fontWeight: '700', marginTop: 8 },
-  lastSync:         { fontSize: 13, color: '#64748B' },
-  errorText:        { fontSize: 13, color: '#DC2626', marginTop: 8, textAlign: 'center' },
+  // Header
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerSub: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
 
   // Progress
-  progressContainer:{ width: '100%', marginTop: 8, gap: 4 },
-  progressBar:      { height: 4, backgroundColor: '#E2E8F0', borderRadius: 2, overflow: 'hidden' },
-  progressFill:     { height: '100%', backgroundColor: '#2563EB', borderRadius: 2 },
-  progressText:     { fontSize: 11, color: '#64748B', textAlign: 'center' },
+  progressWrap: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 4,
+  },
+  progressBar: {
+    height: 3,
+    backgroundColor: '#1E293B',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#2563EB',
+    borderRadius: 2,
+  },
+  progressText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    textAlign: 'center',
+  },
 
-  // Sections
-  section:          { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 12 },
-  sectionTitle:     { fontSize: 12, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
-  noData:           { fontSize: 13, color: '#94A3B8', textAlign: 'center', paddingVertical: 8 },
+  // Last sync message
+  msgWrap: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+  },
+  msgText: {
+    fontSize: 12,
+    color: '#64748B',
+  },
 
-  // Connectivity
-  connectivityRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  connectivityDot:  { width: 10, height: 10, borderRadius: 5 },
-  connectivityText: { fontSize: 14, fontWeight: '600', color: '#1E293B', flex: 1 },
-  smallBtn:         { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: '#EFF6FF' },
-  smallBtnText:     { fontSize: 12, fontWeight: '600', color: '#2563EB' },
+  // Actions
+  actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  actionBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
 
-  // Conflicts
-  conflictRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  conflictText:     { fontSize: 14, fontWeight: '600', color: '#EA580C', flex: 1 },
-  conflictItem:     { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  conflictEntity:   { fontSize: 13, color: '#1E293B', fontWeight: '500' },
-  conflictType:     { fontSize: 12, color: '#64748B' },
-  conflictMore:     { fontSize: 12, color: '#94A3B8', paddingTop: 4 },
+  // Counts
+  countsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+  },
+  countsTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94A3B8',
+    letterSpacing: 0.5,
+  },
+  countsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+  },
+  countItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  countLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
+  countValue: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  countDeleted: {
+    fontSize: 9,
+    color: '#64748B',
+  },
 
-  // Entity stats
-  entityRow:        { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  entityIcon:       { width: 30, height: 30, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-  entityName:       { fontSize: 14, color: '#1E293B', fontWeight: '500', flex: 1 },
-  entityBadge:      { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  entityBadgeText:  { fontSize: 11, fontWeight: '700', color: '#D97706' },
+  // Debug row
+  debugRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+  },
+  debugText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontFamily: 'monospace',
+  },
 
-  // Info
-  infoRow:          { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  infoLabel:        { fontSize: 14, color: '#64748B' },
-  infoValue:        { fontSize: 14, color: '#1E293B', fontWeight: '500', textAlign: 'right' },
+  // Terminal
+  terminal: {
+    flex: 1,
+    backgroundColor: '#020617',
+  },
+  terminalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+    gap: 8,
+  },
+  terminalDots: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  terminalDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  terminalTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.5,
+    flex: 1,
+  },
+  terminalActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  terminalAction: {
+    padding: 4,
+  },
+  terminalBody: {
+    flex: 1,
+    padding: 8,
+  },
+  emptyLog: {
+    fontSize: 13,
+    color: '#475569',
+    textAlign: 'center',
+    paddingVertical: 24,
+    fontFamily: 'monospace',
+  },
 
-  // Action buttons
-  actionBtn:        { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  actionBtnText:    { fontSize: 14, color: '#2563EB', fontWeight: '600' },
-
-  // Main sync button
-  btnSync:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#2563EB', padding: 16, borderRadius: 14, marginTop: 8, marginBottom: 8 },
-  btnDisabled:      { backgroundColor: '#93C5FD' },
-  btnSyncText:      { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  hint:             { textAlign: 'center', fontSize: 12, color: '#CBD5E1', marginBottom: 16 },
-
-  // Logs
-  logsSection:      { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 12 },
-  logsHeader:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  clearBtn:         { fontSize: 12, color: '#DC2626', fontWeight: '600' },
-  noLogs:           { fontSize: 13, color: '#94A3B8', textAlign: 'center', paddingVertical: 20 },
-  logItem:          { borderLeftWidth: 3, paddingLeft: 10, paddingVertical: 8, marginBottom: 4, backgroundColor: '#F8FAFC', borderRadius: 4 },
-  logHeader:        { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
-  logLevel:         { fontSize: 10, fontWeight: '700' },
-  logTime:          { fontSize: 10, color: '#94A3B8' },
-  logMessage:       { fontSize: 13, color: '#1E293B', fontWeight: '500' },
-  logDetails:       { fontSize: 11, color: '#64748B', marginTop: 2, fontFamily: 'monospace' },
+  // Log line
+  logLine: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    borderLeftWidth: 2,
+    paddingLeft: 8,
+    paddingVertical: 3,
+    borderBottomWidth: 1,
+    borderBottomColor: '#0F172A',
+  },
+  logTime: {
+    fontSize: 10,
+    color: '#475569',
+    fontFamily: 'monospace',
+    width: 65,
+  },
+  logIcon: {
+    marginTop: 1,
+  },
+  logMsg: {
+    fontSize: 12,
+    fontFamily: 'monospace',
+    flex: 1,
+  },
 });

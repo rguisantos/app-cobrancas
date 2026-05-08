@@ -36,6 +36,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 // Contexts
 import { useAuth } from '../contexts/AuthContext';
 import { useCliente } from '../contexts/ClienteContext';
+import { clienteRepository } from '../repositories/ClienteRepository';
 
 // Hooks
 import { usePaginatedList } from '../hooks/usePaginatedList';
@@ -81,8 +82,11 @@ export default function ClientesListScreen() {
     total,
   } = usePaginatedList<ClienteListItem>({
     fetchAll: async () => {
-      await carregarClientes();
-      return clientes;
+      // CORREÇÃO: Buscar diretamente do repositório ao invés de usar o estado
+      // do contexto (que tem stale closure). O estado `clientes` é atualizado
+      // de forma assíncrona por setClientes(), então ao retorná-lo imediatamente
+      // após carregarClientes(), o valor ainda é o antigo (vazio na primeira vez).
+      return await clienteRepository.getAll();
     },
     pageSize: 25,
     searchFields: ['nomeExibicao', 'cpfCnpj', 'cidade'],
@@ -90,7 +94,7 @@ export default function ClientesListScreen() {
     filterFn: filtroRota
       ? (c: ClienteListItem) => String(c.rotaId) === filtroRota
       : user?.tipoPermissao !== 'Administrador'
-        ? (c: ClienteListItem) => c.rotaId !== undefined && canAccessRota(c.rotaId)
+        ? (c: ClienteListItem) => c.rotaId !== undefined && canAccessRota(c.rotaId!)
         : undefined,
     autoLoad: false,
   });
@@ -99,7 +103,7 @@ export default function ClientesListScreen() {
   useFocusEffect(
     useCallback(() => {
       paginatedRefresh();
-    }, [])
+    }, [paginatedRefresh])
   );
 
   const onRefresh = useCallback(async () => {
