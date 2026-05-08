@@ -4536,15 +4536,15 @@ lighthouse-logger@^1.0.0:
     debug "^2.6.9"
     marky "^1.2.2"
 
-lightningcss-linux-arm64-gnu@1.32.0:
+lightningcss-linux-x64-gnu@1.32.0:
   version "1.32.0"
-  resolved "https://registry.npmjs.org/lightningcss-linux-arm64-gnu/-/lightningcss-linux-arm64-gnu-1.32.0.tgz"
-  integrity sha512-0nnMyoyOLRJXfbMOilaSRcLH3Jw5z9HDNGfT/gwCPgaDjnx0i8w7vBzFLFR1f6CMLKF8gVbebmkUN3fa/kQJpQ==
+  resolved "https://registry.npmjs.org/lightningcss-linux-x64-gnu/-/lightningcss-linux-x64-gnu-1.32.0.tgz"
+  integrity sha512-V7Qr52IhZmdKPVr+Vtw8o+WLsQJYCTd8loIfpDaMRWGUZfBOYEJeyJIkqGIDMZPwPx24pUMfwSxxI8phr/MbOA==
 
-lightningcss-linux-arm64-musl@1.32.0:
+lightningcss-linux-x64-musl@1.32.0:
   version "1.32.0"
-  resolved "https://registry.npmjs.org/lightningcss-linux-arm64-musl/-/lightningcss-linux-arm64-musl-1.32.0.tgz"
-  integrity sha512-UpQkoenr4UJEzgVIYpI80lDFvRmPVg6oqboNHfoH4CQIfNA+HOrZ7Mo7KZP02dC6LjghPQJeBsvXhJod/wnIBg==
+  resolved "https://registry.npmjs.org/lightningcss-linux-x64-musl/-/lightningcss-linux-x64-musl-1.32.0.tgz"
+  integrity sha512-bYcLp+Vb0awsiXg/80uCRezCYHNg1/l3mt0gzHnWV9XP1W5sKa5/TCdGWaR/zBM2PeF/HbsQv/j2URNOiVuxWg==
 
 lightningcss@^1.30.1:
   version "1.32.0"

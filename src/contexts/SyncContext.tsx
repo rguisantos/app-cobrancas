@@ -456,25 +456,25 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
         return false;
       }
       
-      // Capturar chave e deviceKey do servidor se retornados
-      if (response.data?.dispositivo?.chave) {
-        await databaseService.updateSyncMetadata({
-          deviceKey: response.data.dispositivo.chave,
-        } as any);
-      }
+      // Usar dados do servidor como fonte única de verdade
+      const serverDevice = response.data.dispositivo;
+      const serverDeviceKey = serverDevice?.deviceKey || deviceKey;
+      const serverChave = serverDevice?.chave || '';
+      const serverId = serverDevice?.id || dispositivoId;
       
-      // Salvar informações do dispositivo localmente
+      // Salvar informações do dispositivo localmente usando dados do servidor
       await databaseService.setDeviceId(
-        dispositivoId,
+        serverId,
         deviceName,
-        deviceKey
+        serverDeviceKey,
+        serverChave
       );
       
       // Atualizar estado
       setDispositivo({
-        id: dispositivoId,
+        id: serverId,
         nome: deviceName,
-        chave: deviceKey,
+        chave: serverDeviceKey,
         registrado: true,
       });
       
