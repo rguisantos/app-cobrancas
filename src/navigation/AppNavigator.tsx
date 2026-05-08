@@ -15,6 +15,7 @@ import { NavigationContainer, DefaultTheme, DarkTheme, useNavigation } from '@re
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { createBottomTabNavigator, BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Contexts
 import { useAuth } from '../contexts/AuthContext';
@@ -614,14 +615,58 @@ export function AppNavigator() {
   const [deviceActivated, setDeviceActivated] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
 
-  // Verificar se o dispositivo está ativado
+  // Ref para evitar re-verificação desnecessária e controlar fluxo de autenticação
+  const lastAuthStateRef = useRef<string>('');
+  const isCheckingRef = useRef(false);
+  const DEVICE_ACTIVATED_KEY = '@cobrancas:deviceActivated';
+
+  // Função para persistir estado de ativação
+  const persistActivationState = useCallback(async (activated: boolean) => {
+    try {
+      await AsyncStorage.setItem(DEVICE_ACTIVATED_KEY, JSON.stringify(activated));
+      logger.info(`[AppNavigator] Estado de ativação persistido: ${activated}`);
+    } catch (e) {
+      logger.warn('[AppNavigator] Falha ao persistir estado de ativação:', e);
+    }
+  }, []);
+
+  // Função para restaurar estado de ativação do AsyncStorage
+  const restoreActivationState = useCallback(async (): Promise<boolean | null> => {
+    try {
+      const stored = await AsyncStorage.getItem(DEVICE_ACTIVATED_KEY);
+      if (stored !== null) {
+        return JSON.parse(stored) as boolean;
+      }
+    } catch (e) {
+      logger.warn('[AppNavigator] Falha ao restaurar estado de ativação:', e);
+    }
+    return null;
+  }, []);
+
+  // Verificar se o dispositivo está ativado — rodar apenas uma vez por sessão autenticada
   useEffect(() => {
+    const currentAuthState = `${isAuthenticated}-${isSignout}`;
+    
+    // Evitar re-verificação se o estado de auth não mudou significativamente
+    if (currentAuthState === lastAuthStateRef.current) {
+      return;
+    }
+    lastAuthStateRef.current = currentAuthState;
+
+    // Evitar re-entrância (duas verificações rodando ao mesmo tempo)
+    if (isCheckingRef.current) {
+      return;
+    }
+
     const checkDeviceActivation = async () => {
       if (!isAuthenticated || isSignout) {
         setCheckingDevice(false);
         setDeviceActivated(false);
+        persistActivationState(false);
         return;
       }
+
+      isCheckingRef.current = true;
       
       logger.info('[AppNavigator] Verificando ativação do dispositivo...');
       
@@ -638,7 +683,18 @@ export function AppNavigator() {
         // Sem chave/ID local: precisa ativação
         if (!savedDeviceId || !savedDeviceKey) {
           logger.info('[AppNavigator] Sem metadados do dispositivo — precisa ativação');
-          setDeviceActivated(false);
+          // Restaurar do AsyncStorage para caso de reinício do app
+          const restoredState = await restoreActivationState();
+          if (restoredState === false) {
+            setDeviceActivated(false);
+          } else if (restoredState === true) {
+            // AsyncStorage diz ativado, mas não há metadados locais — provável erro
+            // Não confiar no cache sem metadados locais
+            setDeviceActivated(false);
+            persistActivationState(false);
+          } else {
+            setDeviceActivated(false);
+          }
           setCheckingDevice(false);
           return;
         }
@@ -646,16 +702,25 @@ export function AppNavigator() {
         // Com metadados válidos: validar no servidor quando possível
         logger.info('[AppNavigator] Dispositivo com metadados locais — verificando servidor...');
           
-        const response = await apiService.verificarStatusDispositivo(savedDeviceKey);
-        
-        logger.info('[AppNavigator] Resposta do servidor:', response.data);
-        
-        if (response.success && response.data?.needsActivation === true) {
-          logger.warn('[AppNavigator] Dispositivo desativado pelo admin');
-          setDeviceActivated(false);
-        } else {
-          logger.info('[AppNavigator] Dispositivo confirmado ativo');
+        try {
+          const response = await apiService.verificarStatusDispositivo(savedDeviceKey);
+          
+          logger.info('[AppNavigator] Resposta do servidor:', response.data);
+          
+          if (response.success && response.data?.needsActivation === true) {
+            logger.warn('[AppNavigator] Dispositivo desativado pelo admin');
+            setDeviceActivated(false);
+            persistActivationState(false);
+          } else {
+            logger.info('[AppNavigator] Dispositivo confirmado ativo');
+            setDeviceActivated(true);
+            persistActivationState(true);
+          }
+        } catch (serverError) {
+          // Erro de rede: confiar nos metadados locais (offline-first)
+          logger.warn('[AppNavigator] Erro ao verificar servidor — usando metadados locais como fallback');
           setDeviceActivated(true);
+          persistActivationState(true);
         }
       } catch (error) {
         logger.error('[AppNavigator] Erro ao verificar ativação:', error);
@@ -663,38 +728,57 @@ export function AppNavigator() {
         try {
           const metadata = await databaseService.getSyncMetadata();
           if (metadata.deviceId && metadata.deviceKey) {
-            logger.info('[AppNavigator] Erro de rede com metadados locais válidos — permitindo acesso');
+            logger.info('[AppNavigator] Erro com metadados locais válidos — permitindo acesso');
             setDeviceActivated(true);
+            persistActivationState(true);
             return;
           }
         } catch (metadataError) {
           logger.warn('[AppNavigator] Falha ao ler sync_metadata após erro de ativação', metadataError);
         }
 
-        if (dispositivo?.id && dispositivo?.chave) {
-          setDeviceActivated(true);
-        } else {
-          setCheckError(error instanceof Error ? error.message : 'Erro ao verificar dispositivo');
-          setDeviceActivated(false);
-        }
+        // Se não há metadados locais, precisa ativação
+        setDeviceActivated(false);
+        persistActivationState(false);
+        setCheckError(error instanceof Error ? error.message : 'Erro ao verificar dispositivo');
       } finally {
         setCheckingDevice(false);
+        isCheckingRef.current = false;
       }
     };
     
     checkDeviceActivation();
-  }, [isAuthenticated, isSignout, token]);
+  }, [isAuthenticated, isSignout]); // Removido `token` das dependências para evitar re-verificação em refresh de token
   
-  // Listener para mudanças de estado do app
+  // Listener para mudanças de estado do app (background → foreground)
   useEffect(() => {
     const checkActivation = async () => {
-      const metadata = await databaseService.getSyncMetadata();
-      if (metadata.deviceId && metadata.deviceKey) {
-        setDeviceActivated(true);
+      // Se já está ativado, não precisa re-verificar
+      if (deviceActivated) {
+        return;
+      }
+      
+      // Verificar metadados locais e AsyncStorage
+      try {
+        const metadata = await databaseService.getSyncMetadata();
+        if (metadata.deviceId && metadata.deviceKey) {
+          // Tem metadados locais — marcar como ativado (offline-first)
+          setDeviceActivated(true);
+          persistActivationState(true);
+          return;
+        }
+        
+        // Sem metadados locais — verificar AsyncStorage
+        const restoredState = await restoreActivationState();
+        if (restoredState === true) {
+          setDeviceActivated(true);
+        }
+        // Se restoredState === false ou null, permanece na tela de ativação
+      } catch (e) {
+        logger.warn('[AppNavigator] Erro ao verificar ativação no AppState:', e);
       }
     };
     
-    // Verificar a cada vez que o app volta para primeiro plano
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
         checkActivation();
@@ -702,7 +786,7 @@ export function AppNavigator() {
     });
     
     return () => subscription.remove();
-  }, []);
+  }, [deviceActivated]);
 
   // Enquanto carrega auth ou verifica dispositivo, mostra loading
   if (isLoading || checkingDevice) {

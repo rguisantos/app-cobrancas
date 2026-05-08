@@ -26,11 +26,13 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Device from 'expo-device';
 import * as Updates from 'expo-updates';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiService } from '../services/ApiService';
 import { useAuth } from '../contexts/AuthContext';
 import { databaseService } from '../services/DatabaseService';
 
 const { width } = Dimensions.get('window');
+const DEVICE_ACTIVATED_KEY = '@cobrancas:deviceActivated';
 
 export default function DeviceActivationScreen() {
   const { user, logout } = useAuth();
@@ -172,6 +174,13 @@ export default function DeviceActivationScreen() {
 
         // Fonte única de verdade: SyncMetadata (SQLite) para todo o app
         await databaseService.setDeviceId(dispositivoId.trim(), deviceName, finalKey, finalChave);
+        
+        // Persistir estado de ativação no AsyncStorage (sobrevive a reinícios do app)
+        try {
+          await AsyncStorage.setItem(DEVICE_ACTIVATED_KEY, JSON.stringify(true));
+        } catch (e) {
+          console.warn('[DeviceActivation] Falha ao persistir estado de ativação:', e);
+        }
         
         console.log('[DeviceActivation] ========================================');
         console.log('[DeviceActivation] DISPOSITIVO ATIVADO COM SUCESSO!');

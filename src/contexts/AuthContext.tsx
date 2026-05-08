@@ -149,6 +149,23 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
         logger.info('[Auth] Sessão restaurada', { user: parsedUser.nome, role: parsedUser.tipoPermissao });
         
         onAuthChange?.(parsedUser);
+
+        // Tentar refresh proativo do token para evitar sessão expirada
+        // após o app ficar em background por muito tempo
+        if (!savedToken.startsWith('LOCAL_') && !savedToken.startsWith('local.')) {
+          try {
+            logger.info('[Auth] Tentando refresh proativo no bootstrap...');
+            const newToken = await authService.refreshToken();
+            if (newToken) {
+              setToken(newToken);
+              apiService.setToken(newToken);
+              logger.info('[Auth] Token refreshed com sucesso no bootstrap');
+            }
+          } catch (refreshError) {
+            logger.warn('[Auth] Refresh proativo falhou no bootstrap — sessão pode estar expirada:', refreshError);
+            // Não fazer logout aqui — o interceptor do ApiService lidará com isso
+          }
+        }
       } else {
         setIsSignout(true);
         logger.info('[Auth] Nenhuma sessão ativa');
