@@ -9,7 +9,8 @@ import {
   ChangeLog, 
   SyncResponse, 
   SyncConflict,
-  EntityType 
+  EntityType,
+  UpdatedVersion,
 } from '../types';
 import { databaseService } from './DatabaseService';
 import { apiService } from './ApiService';
@@ -38,6 +39,111 @@ export interface SyncResult {
 }
 
 type SyncEventListener = (progress: SyncProgress) => void;
+
+// ============================================================================
+// FIX #4: ALLOWED_FIELDS — mirrors backend sync-helpers.ts ALLOWED_FIELDS
+// Used to filter outgoing PUSH payload changes to only include fields
+// the server accepts, reducing payload size and preventing server-side errors.
+// ============================================================================
+
+const ALLOWED_FIELDS: Record<string, Set<string>> = {
+  cliente: new Set([
+    'tipo', 'tipoPessoa', 'identificador', 'nomeExibicao', 'nomeCompleto',
+    'razaoSocial', 'nomeFantasia', 'cpf', 'cnpj', 'rg', 'inscricaoEstadual',
+    'email', 'telefonePrincipal', 'contatos', 'cep', 'logradouro', 'numero',
+    'complemento', 'bairro', 'cidade', 'estado', 'rotaId', 'rotaNome',
+    'latitude', 'longitude',
+    'status', 'observacao', 'dataCadastro', 'dataUltimaAlteracao',
+    'syncStatus', 'lastSyncedAt', 'needsSync', 'version', 'deviceId',
+  ]),
+  produto: new Set([
+    'tipo', 'identificador', 'numeroRelogio', 'tipoId', 'tipoNome',
+    'descricaoId', 'descricaoNome', 'tamanhoId', 'tamanhoNome',
+    'codigoCH', 'codigoABLF', 'conservacao', 'statusProduto',
+    'dataFabricacao', 'dataUltimaManutencao', 'relatorioUltimaManutencao',
+    'dataAvaliacao', 'aprovacao', 'estabelecimento', 'observacao', 'dataCadastro',
+    'dataUltimaAlteracao',
+    'syncStatus', 'lastSyncedAt', 'needsSync', 'version', 'deviceId',
+  ]),
+  locacao: new Set([
+    'tipo', 'clienteId', 'clienteNome', 'produtoId', 'produtoIdentificador',
+    'produtoTipo', 'dataLocacao', 'dataFim', 'observacao', 'formaPagamento',
+    'numeroRelogio', 'precoFicha', 'percentualEmpresa', 'percentualCliente',
+    'periodicidade', 'valorFixo', 'dataPrimeiraCobranca', 'status',
+    'ultimaLeituraRelogio', 'dataUltimaCobranca', 'trocaPano', 'dataUltimaManutencao',
+    'syncStatus', 'lastSyncedAt', 'needsSync', 'version', 'deviceId',
+  ]),
+  cobranca: new Set([
+    'tipo', 'locacaoId', 'clienteId', 'clienteNome', 'produtoId',
+    'produtoIdentificador', 'dataInicio', 'dataFim', 'dataPagamento',
+    'relogioAnterior', 'relogioAtual', 'fichasRodadas', 'valorFicha',
+    'totalBruto', 'descontoPartidasQtd', 'descontoPartidasValor', 'descontoDinheiro',
+    'percentualEmpresa', 'subtotalAposDescontos', 'valorPercentual',
+    'totalClientePaga', 'valorRecebido', 'saldoDevedorGerado',
+    'status', 'dataVencimento', 'observacao', 'trocaPano',
+    'syncStatus', 'lastSyncedAt', 'needsSync', 'version', 'deviceId',
+  ]),
+  rota: new Set([
+    'descricao', 'status', 'cor', 'regiao', 'ordem', 'observacao',
+    'syncStatus', 'lastSyncedAt', 'needsSync', 'version', 'deviceId',
+  ]),
+  usuario: new Set([
+    'tipo', 'nome', 'cpf', 'telefone', 'email',
+    'tipoPermissao', 'permissoesWeb', 'permissoesMobile',
+    'rotasPermitidas', 'status', 'bloqueado', 'dataUltimoAcesso', 'ultimoAcessoDispositivo',
+    'syncStatus', 'lastSyncedAt', 'needsSync', 'version', 'deviceId',
+  ]),
+  manutencao: new Set([
+    'produtoId', 'produtoIdentificador', 'produtoTipo',
+    'clienteId', 'clienteNome', 'locacaoId', 'cobrancaId',
+    'tipo', 'descricao', 'data', 'registradoPor',
+    'syncStatus', 'lastSyncedAt', 'needsSync', 'version', 'deviceId',
+  ]),
+  meta: new Set([
+    'nome', 'tipo', 'valorMeta', 'valorAtual',
+    'dataInicio', 'dataFim', 'rotaId', 'status', 'criadoPor',
+    'syncStatus', 'lastSyncedAt', 'needsSync', 'version', 'deviceId',
+  ]),
+  historicoRelogio: new Set([
+    'produtoId', 'relogioAnterior', 'relogioNovo', 'motivo',
+    'dataAlteracao', 'usuarioResponsavel',
+  ]),
+  tipoProduto: new Set([
+    'nome',
+  ]),
+  descricaoProduto: new Set([
+    'nome',
+  ]),
+  tamanhoProduto: new Set([
+    'nome',
+  ]),
+  estabelecimento: new Set([
+    'nome', 'endereco', 'observacao',
+    'syncStatus', 'lastSyncedAt', 'needsSync', 'version', 'deviceId',
+  ]),
+};
+
+/**
+ * Filter change fields to only include allowed fields for the given entity type.
+ * Removes fields like 'id', 'createdAt', 'cpfCnpj', 'rgIe', 'locacaoAtiva', 'estaLocado'
+ * that the server would reject or ignore.
+ */
+function filterChangeFields(entityType: string, changes: Record<string, unknown>): Record<string, unknown> {
+  const allowed = ALLOWED_FIELDS[entityType];
+  if (!allowed) {
+    // Unknown entity type — pass through unchanged (backward compat)
+    logger.warn(`[Sync] No ALLOWED_FIELDS for entityType "${entityType}" — passing all fields`);
+    return changes;
+  }
+
+  const filtered: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(changes)) {
+    if (allowed.has(key)) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+}
 
 // ============================================================================
 // CLASSE SYNC SERVICE
@@ -173,6 +279,10 @@ class SyncService {
       }
       pulled = pullResult.pulled;
       errors.push(...pullResult.errors);
+      // FIX #1: Merge pull conflicts into the overall sync result
+      if (pullResult.conflicts && pullResult.conflicts.length > 0) {
+        conflicts = [...conflicts, ...pullResult.conflicts];
+      }
 
       // Purge old change logs after successful sync
       try {
@@ -273,27 +383,35 @@ class SyncService {
       // Preparar payload
       const metadata = await databaseService.getSyncMetadata();
       
+      // FIX #4: Filter changes using ALLOWED_FIELDS before sending to server
       // Converter tipos do SQLite para tipos esperados pela API
       const payload = {
         deviceId: metadata.deviceId,
         deviceKey: metadata.deviceKey,
         lastSyncAt: metadata.lastSyncAt,
-        changes: pendingChanges.map(change => ({
-          id: change.id,
-          entityId: change.entityId,
-          entityType: change.entityType,
-          operation: change.operation,
-          // Converter changes de string JSON para objeto
-          changes: typeof change.changes === 'string' 
+        changes: pendingChanges.map(change => {
+          // Parse changes if string (from SQLite)
+          const rawChanges: Record<string, unknown> = typeof change.changes === 'string' 
             ? JSON.parse(change.changes) 
-            : change.changes,
-          timestamp: change.timestamp,
-          deviceId: change.deviceId,
-          // Converter synced de number (0/1) para boolean
-          synced: Boolean(change.synced),
-          // Converter syncedAt null para undefined
-          syncedAt: change.syncedAt || undefined,
-        })),
+            : change.changes;
+
+          // Filter fields to only include what the server accepts
+          const filteredChanges = filterChangeFields(change.entityType, rawChanges);
+
+          return {
+            id: change.id,
+            entityId: change.entityId,
+            entityType: change.entityType,
+            operation: change.operation,
+            changes: filteredChanges,
+            timestamp: change.timestamp,
+            deviceId: change.deviceId,
+            // Converter synced de number (0/1) para boolean
+            synced: Boolean(change.synced),
+            // Converter syncedAt null para undefined
+            syncedAt: change.syncedAt || undefined,
+          };
+        }),
       };
 
       // Enviar para o servidor
@@ -342,11 +460,18 @@ class SyncService {
 
   /**
    * Recebe mudanças do servidor (PULL)
+   * 
+   * FIX #1: Now handles conflicts and errors from PULL response
+   * FIX #2: Increased max rounds from 10 to 20 with no-progress detection
+   * FIX #3: Applies updatedVersions from PULL response
    */
-  async pullChanges(): Promise<{ pulled: number; errors: string[] }> {
+  async pullChanges(): Promise<{ pulled: number; errors: string[]; conflicts: SyncConflict[] }> {
     const errors: string[] = [];
+    const allConflicts: SyncConflict[] = [];
     let pulled = 0;
-    const MAX_PULL_ROUNDS = 10;
+    // FIX #2: Increased max rounds from 10 to 20 with explicit infinite-loop guard
+    const MAX_PULL_ROUNDS = 20;
+    const ABSOLUTE_MAX_ROUNDS = 30; // Hard cap — if hit, something is very wrong
 
     try {
       const metadata = await databaseService.getSyncMetadata();
@@ -362,18 +487,38 @@ class SyncService {
       const allChanges: any = {
         clientes: [], produtos: [], locacoes: [], cobrancas: [],
         rotas: [], usuarios: [], manutencoes: [], metas: [],
+        historicoRelogio: [],
       };
       const allTiposProduto: any[] = [];
       const allDescricoesProduto: any[] = [];
       const allTamanhosProduto: any[] = [];
       const allEstabelecimentos: any[] = [];
+      const allUpdatedVersions: UpdatedVersion[] = [];
       let round = 0;
       let hasMore = false;
       let isStale = false;
       let finalLastSyncAt = '';
+      let noProgressCount = 0;
+      let prevTotal = 0;
 
       do {
         round++;
+
+        // FIX #2: Hard cap against infinite loops
+        if (round > ABSOLUTE_MAX_ROUNDS) {
+          logger.error(`[Sync/Pull] ABORT: exceeded absolute max of ${ABSOLUTE_MAX_ROUNDS} rounds — possible server bug with hasMore always true`);
+          errors.push(`Sincronização abortada: ${ABSOLUTE_MAX_ROUNDS} rodadas excedidas. Dados restantes serão sincronizados na próxima vez.`);
+          // Consider snapshot recovery if we hit this
+          logger.warn('[Sync/Pull] Triggering snapshot recovery due to excessive rounds');
+          try {
+            const snapshotResult = await this.syncFromSnapshot();
+            if (snapshotResult) pulled += snapshotResult;
+          } catch (snapErr) {
+            logger.error('[Sync/Pull] Snapshot recovery also failed:', snapErr);
+          }
+          break;
+        }
+
         const pullPayload = {
           deviceId: metadata.deviceId,
           deviceKey: metadata.deviceKey,
@@ -387,10 +532,28 @@ class SyncService {
           break;
         }
 
+        // FIX #1: Handle conflicts and errors in PULL response
+        if (response.conflicts && response.conflicts.length > 0) {
+          allConflicts.push(...response.conflicts);
+          logger.warn(`[Sync/Pull] ${response.conflicts.length} conflitos recebidos no round ${round}`);
+          for (const conflict of response.conflicts) {
+            logger.warn(`[Sync/Pull] Conflito: ${conflict.entityType}:${conflict.entityId} — tipo: ${conflict.conflictType}`);
+          }
+        }
+        if (response.errors && response.errors.length > 0) {
+          errors.push(...response.errors);
+          logger.warn(`[Sync/Pull] ${response.errors.length} erros no round ${round}:`, response.errors);
+        }
+
+        // FIX #3: Collect updatedVersions from PULL response
+        if (response.updatedVersions && response.updatedVersions.length > 0) {
+          allUpdatedVersions.push(...response.updatedVersions);
+        }
+
         const changes = response.changes || {};
         
         // Acumular mudanças de cada entidade
-        const changeKeys = ['clientes', 'produtos', 'locacoes', 'cobrancas', 'rotas', 'usuarios', 'manutencoes', 'metas'] as const;
+        const changeKeys = ['clientes', 'produtos', 'locacoes', 'cobrancas', 'rotas', 'usuarios', 'manutencoes', 'metas', 'historicoRelogio'] as const;
         for (const key of changeKeys) {
           if (changes[key] && Array.isArray(changes[key])) {
             allChanges[key].push(...changes[key]!);
@@ -409,6 +572,25 @@ class SyncService {
         isStale = response.isStale || isStale;
         currentLastSyncAt = finalLastSyncAt;
 
+        // FIX #2: Detect no-progress loops (hasMore=true but no new data)
+        const currentTotal =
+          allChanges.clientes.length + allChanges.produtos.length +
+          allChanges.locacoes.length + allChanges.cobrancas.length +
+          allChanges.rotas.length + allChanges.usuarios.length +
+          allChanges.manutencoes.length + allChanges.metas.length +
+          allChanges.historicoRelogio.length;
+        if (currentTotal === prevTotal && hasMore) {
+          noProgressCount++;
+          if (noProgressCount >= 3) {
+            logger.error(`[Sync/Pull] ABORT: ${noProgressCount} rounds com hasMore=true mas sem novos dados — possível bug no servidor`);
+            errors.push('Sincronização parcial: servidor reportando dados pendentes mas não enviando novos registros');
+            break;
+          }
+        } else {
+          noProgressCount = 0;
+        }
+        prevTotal = currentTotal;
+
         if (round >= MAX_PULL_ROUNDS && hasMore) {
           logger.warn(`[Sync/Pull] Atingido limite de ${MAX_PULL_ROUNDS} rodadas — hasMore=true mas parando para evitar loop infinito`);
           errors.push(`Sincronização parcial: ${MAX_PULL_ROUNDS} rodadas atingidas, dados restantes serão sincronizados na próxima vez`);
@@ -425,7 +607,27 @@ class SyncService {
         allChanges.rotas.length +
         allChanges.usuarios.length +
         allChanges.manutencoes.length +
-        allChanges.metas.length;
+        allChanges.metas.length +
+        allChanges.historicoRelogio.length +
+        allEstabelecimentos.length;
+
+      // FIX #3: Apply updatedVersions from PULL response (same logic as PUSH)
+      if (allUpdatedVersions.length > 0) {
+        logger.info(`[Sync/Pull] Aplicando ${allUpdatedVersions.length} atualizações de versão do servidor`);
+        for (const uv of allUpdatedVersions) {
+          try {
+            const tableName = this.getTableName(uv.entityType as EntityType);
+            if (tableName) {
+              await databaseService.runAsync(
+                `UPDATE ${tableName} SET version = ? WHERE id = ?`,
+                [uv.newVersion, uv.entityId]
+              );
+            }
+          } catch (err) {
+            logger.error(`[Sync/Pull] Erro ao atualizar versão de ${uv.entityType}:${uv.entityId}:`, err);
+          }
+        }
+      }
 
       // Avisar se o dispositivo está muito tempo sem sync
       if (isStale) {
@@ -459,7 +661,7 @@ class SyncService {
         });
       }
 
-      logger.info('[Sync/Pull] Mudanças recebidas', { pulled, rounds: round });
+      logger.info('[Sync/Pull] Mudanças recebidas', { pulled, rounds: round, conflicts: allConflicts.length });
 
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Erro no pull';
@@ -467,7 +669,7 @@ class SyncService {
       logger.error('[Sync/Pull] Erro:', error);
     }
 
-    return { pulled, errors };
+    return { pulled, errors, conflicts: allConflicts };
   }
 
   // ==========================================================================
@@ -574,6 +776,11 @@ class SyncService {
       usuario: 'usuarios',
       manutencao: 'manutencoes',
       meta: 'metas',
+      historicoRelogio: 'historico_relogio',
+      tipoProduto: 'tipos_produto',
+      descricaoProduto: 'descricoes_produto',
+      tamanhoProduto: 'tamanhos_produto',
+      estabelecimento: 'estabelecimentos',
     };
     return tableMap[entityType];
   }
@@ -607,7 +814,8 @@ class SyncService {
         (snapshot.rotas?.length || 0) +
         (snapshot.usuarios?.length || 0) +
         (snapshot.manutencoes?.length || 0) +
-        (snapshot.metas?.length || 0);
+        (snapshot.metas?.length || 0) +
+        (snapshot.historicoRelogio?.length || 0);
 
       // CORREÇÃO: Aplicar como mudanças remotas incluindo TODAS as entidades
       // Antes faltavam manutencoes e metas, causando perda de dados em snapshot recovery
@@ -623,6 +831,7 @@ class SyncService {
           usuarios: snapshot.usuarios || [],
           manutencoes: snapshot.manutencoes || [],
           metas: snapshot.metas || [],
+          historicoRelogio: snapshot.historicoRelogio || [],
         },
         tiposProduto: snapshot.tiposProduto || [],
         descricoesProduto: snapshot.descricoesProduto || [],

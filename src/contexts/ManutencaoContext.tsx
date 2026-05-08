@@ -40,6 +40,8 @@ export interface ManutencaoContextData extends ManutencaoState {
 
   // Ações de Negócio
   registrar: (dados: Omit<Manutencao, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'needsSync' | 'version' | 'deviceId' | 'lastSyncedAt' | 'deletedAt'>) => Promise<Manutencao | null>;
+  atualizar: (id: string, data: Partial<Omit<Manutencao, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'needsSync' | 'version' | 'deviceId' | 'lastSyncedAt' | 'deletedAt'>>) => Promise<Manutencao | null>;
+  remover: (id: string) => Promise<boolean>;
 
   // Filtros in-memory
   filtrar: (filters: ManutencaoFiltersLocal) => Manutencao[];
@@ -135,6 +137,53 @@ export function ManutencaoProvider({ children }: ManutencaoProviderProps) {
     }
   }, [carregar, setOperacao]);
 
+  const atualizar = useCallback(async (
+    id: string,
+    data: Partial<Omit<Manutencao, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'needsSync' | 'version' | 'deviceId' | 'lastSyncedAt' | 'deletedAt'>>
+  ): Promise<Manutencao | null> => {
+    setCarregando(true);
+    setOperacao('atualizar', true);
+    setErro(null);
+
+    try {
+      const resultado = await manutencaoRepository.update(id, data);
+      await carregar();
+      console.log('[ManutencaoContext] Manutenção atualizada:', id);
+      return resultado;
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : 'Erro ao atualizar manutenção';
+      setErro(mensagem);
+      console.error('[ManutencaoContext] Erro ao atualizar manutenção:', error);
+      return null;
+    } finally {
+      setCarregando(false);
+      setOperacao('atualizar', false);
+    }
+  }, [carregar, setOperacao]);
+
+  const remover = useCallback(async (
+    id: string
+  ): Promise<boolean> => {
+    setCarregando(true);
+    setOperacao('remover', true);
+    setErro(null);
+
+    try {
+      const sucesso = await manutencaoRepository.delete(id);
+      await carregar();
+      console.log('[ManutencaoContext] Manutenção removida:', id);
+      return sucesso;
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : 'Erro ao remover manutenção';
+      setErro(mensagem);
+      console.error('[ManutencaoContext] Erro ao remover manutenção:', error);
+      return false;
+    } finally {
+      setCarregando(false);
+      setOperacao('remover', false);
+    }
+  }, [carregar, setOperacao]);
+
   // ==========================================================================
   // FILTROS IN-MEMORY
   // ==========================================================================
@@ -203,6 +252,8 @@ export function ManutencaoProvider({ children }: ManutencaoProviderProps) {
 
     // Ações de Negócio
     registrar,
+    atualizar,
+    remover,
 
     // Filtros
     filtrar,

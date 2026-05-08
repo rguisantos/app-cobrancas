@@ -67,7 +67,7 @@ const TIPO_OPTIONS = [
 export default function MetaFormScreen() {
   const route = useRoute<MetaFormRouteProp>();
   const navigation = useNavigation();
-  const { metas, salvar, atualizar, carregando } = useMeta();
+  const { metas, salvar, atualizar, remover, carregando } = useMeta();
   const { rotas } = useRota();
   const { canDo } = usePermissionGuard();
 
@@ -196,6 +196,34 @@ export default function MetaFormScreen() {
   }, [modo, metaId, nome, tipo, valorMeta, dataInicio, dataFim, rotaId, metas, salvar, atualizar, navigation, canDo, validate]);
 
   // ==========================================================================
+  // DELETE
+  // ==========================================================================
+
+  const handleDelete = useCallback(() => {
+    Alert.alert(
+      'Excluir Meta',
+      'Tem certeza que deseja excluir esta meta? Esta ação não pode ser desfeita.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await remover(metaId!);
+              Alert.alert('Sucesso', 'Meta excluída com sucesso', [
+                { text: 'OK', onPress: () => navigation.goBack() },
+              ]);
+            } catch (error) {
+              Alert.alert('Erro', 'Não foi possível excluir a meta');
+            }
+          },
+        },
+      ]
+    );
+  }, [metaId, remover, navigation]);
+
+  // ==========================================================================
   // OPÇÕES DE ROTA
   // ==========================================================================
 
@@ -306,6 +334,18 @@ export default function MetaFormScreen() {
             />
           </View>
 
+          {/* Botão Excluir (só no modo editar) */}
+          {modo === 'editar' && (
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={handleDelete}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={20} color="#DC2626" />
+              <Text style={styles.deleteButtonText}>Excluir Meta</Text>
+            </TouchableOpacity>
+          )}
+
           <View style={styles.footer} />
         </ScrollView>
 
@@ -404,5 +444,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    gap: 8,
+    marginTop: 8,
+  },
+  deleteButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#DC2626',
   },
 });

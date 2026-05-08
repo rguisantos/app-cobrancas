@@ -11,6 +11,8 @@ import { generateId } from '../utils/database';
 export interface AtributoItem {
   id: string;
   nome: string;
+  endereco?: string;
+  observacao?: string;
 }
 
 type TipoAtributo = 'tipo' | 'descricao' | 'tamanho' | 'estabelecimento';
@@ -116,7 +118,7 @@ class AtributosRepository {
         await databaseService.saveTamanhoProduto(novoId, nome);
         break;
       case 'estabelecimento':
-        await databaseService.saveEstabelecimento(novoId, nome);
+        await databaseService.saveEstabelecimento(novoId, nome, undefined, undefined);
         break;
     }
 
@@ -144,7 +146,7 @@ class AtributosRepository {
           await databaseService.saveTamanhoProduto(id, nome);
           break;
         case 'estabelecimento':
-          await databaseService.saveEstabelecimento(id, nome);
+          await databaseService.saveEstabelecimento(id, nome, undefined, undefined);
           break;
       }
 
@@ -210,12 +212,36 @@ class AtributosRepository {
 
   async salvarEstabelecimentos(itens: AtributoItem[]): Promise<void> {
     for (const item of itens) {
-      await databaseService.saveEstabelecimento(item.id, item.nome);
+      await databaseService.saveEstabelecimento(item.id, item.nome, item.endereco, item.observacao);
     }
   }
 
   async salvarEstabelecimento(item: AtributoItem): Promise<void> {
-    await databaseService.saveEstabelecimento(item.id, item.nome);
+    await databaseService.saveEstabelecimento(item.id, item.nome, item.endereco, item.observacao);
+  }
+
+  async adicionarEstabelecimento(nome: string, endereco?: string, observacao?: string): Promise<AtributoItem> {
+    const novoId = generateId('atributo');
+    const novoItem: AtributoItem = {
+      id: novoId,
+      nome: nome.trim(),
+      endereco: endereco?.trim() || undefined,
+      observacao: observacao?.trim() || undefined,
+    };
+    await databaseService.saveEstabelecimento(novoId, nome.trim(), novoItem.endereco, novoItem.observacao);
+    console.log('[AtributosRepository] Estabelecimento adicionado:', nome);
+    return novoItem;
+  }
+
+  async atualizarEstabelecimento(id: string, nome: string, endereco?: string, observacao?: string): Promise<boolean> {
+    try {
+      await databaseService.saveEstabelecimento(id, nome.trim(), endereco?.trim() || undefined, observacao?.trim() || undefined);
+      console.log('[AtributosRepository] Estabelecimento atualizado:', id, nome);
+      return true;
+    } catch (error) {
+      console.error('[AtributosRepository] Erro ao atualizar estabelecimento:', error);
+      return false;
+    }
   }
 
   async deleteEstabelecimento(id: string): Promise<void> {

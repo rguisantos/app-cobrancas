@@ -48,6 +48,11 @@ export const ENTITY_TABLE_MAP: Record<EntityType, string> = {
   usuario: 'usuarios',
   manutencao: 'manutencoes',
   meta: 'metas',
+  historicoRelogio: 'historico_relogio',
+  tipoProduto: 'tipos_produto',
+  descricaoProduto: 'descricoes_produto',
+  tamanhoProduto: 'tamanhos_produto',
+  estabelecimento: 'estabelecimentos',
 }
 
 /** Ordem de processamento por dependência (para sync push) */

@@ -141,6 +141,19 @@ export default function CobrancaDetailScreen() {
           </View>
         ) : null}
 
+        {/* Botão Ver Recibo */}
+        <TouchableOpacity
+          style={s.reciboBtn}
+          onPress={() => {
+            const parent = navigation.getParent();
+            if (parent) (parent as any).navigate('Recibo', { cobrancaId: cobranca.id });
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="document-text" size={20} color="#FFFFFF" />
+          <Text style={s.reciboBtnText}>Ver Recibo</Text>
+        </TouchableOpacity>
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -172,4 +185,18 @@ const s = StyleSheet.create({
   divisor:     { height: 1, backgroundColor: '#E2E8F0', marginVertical: 6 },
   obsBox:      { backgroundColor: '#F8FAFC', borderRadius: 10, padding: 14, borderLeftWidth: 3, borderLeftColor: '#2563EB' },
   obsText:     { fontSize: 14, color: '#475569', lineHeight: 20 },
+
+  // Recibo button
+  reciboBtn:   {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#2563EB',
+    borderRadius: 14,
+    paddingVertical: 16,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  reciboBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
 });

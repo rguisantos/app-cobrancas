@@ -1,9 +1,11 @@
 /**
  * RotaContext.tsx
  * Contexto para gerenciamento de estado de Rotas
+ *
+ * Enhanced with operacoes/isOperacao pattern like ClienteContext/ManutencaoContext
  */
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { Rota } from '../types';
 import { rotaRepository, RotaFilters } from '../repositories/RotaRepository';
 import { useDatabase } from './DatabaseContext';
@@ -18,6 +20,11 @@ export interface RotaState {
   rotaSelecionada: Rota | null;
   carregando: boolean;
   erro: string | null;
+  totalRotas: number;
+  /** Operation-specific loading flags */
+  operacoes: Record<string, boolean>;
+  /** Check if a specific operation is in progress */
+  isOperacao: (nome: string) => boolean;
 }
 
 export interface RotaContextData extends RotaState {
@@ -26,6 +33,8 @@ export interface RotaContextData extends RotaState {
   limparSelecao: () => void;
   salvarRota: (dados: Partial<Rota>) => Promise<Rota | null>;
   excluirRota: (id: string) => Promise<boolean>;
+  getAtivas: () => Rota[];
+  count: () => Promise<number>;
   refresh: () => Promise<void>;
 }
 
@@ -50,26 +59,47 @@ export function RotaProvider({ children }: RotaProviderProps) {
   const [rotas, setRotas] = useState<Rota[]>([]);
   const [rotaSelecionada, setRotaSelecionada] = useState<Rota | null>(null);
   const [carregando, setCarregando] = useState(false);
-  // TODO: Add operation-specific loading (operacoes / isOperacao) like ClienteContext/ProdutoContext
   const [erro, setErro] = useState<string | null>(null);
+  const [totalRotas, setTotalRotas] = useState(0);
+
+  // Operation-specific loading
+  const [operacoes, setOperacoes] = useState<Record<string, boolean>>({});
+
+  const isOperacao = useCallback((nome: string) => operacoes[nome] || false, [operacoes]);
+
+  const setOperacao = useCallback((nome: string, ativa: boolean) => {
+    setOperacoes(prev => ({ ...prev, [nome]: ativa }));
+  }, []);
+
+  // ==========================================================================
+  // CARREGAMENTO
+  // ==========================================================================
 
   const carregarRotas = useCallback(async (filters?: RotaFilters) => {
     setCarregando(true);
+    setOperacao('carregar', true);
     setErro(null);
     try {
       const lista = filters
         ? await rotaRepository.getFiltered(filters)
         : await rotaRepository.getAtivas();
       setRotas(lista);
+      setTotalRotas(lista.length);
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar rotas');
     } finally {
       setCarregando(false);
+      setOperacao('carregar', false);
     }
-  }, []);
+  }, [setOperacao]);
+
+  // ==========================================================================
+  // SELEÇÃO
+  // ==========================================================================
 
   const selecionarRota = useCallback(async (id: string) => {
     setCarregando(true);
+    setOperacao('selecionar', true);
     try {
       const rota = await rotaRepository.getById(id);
       setRotaSelecionada(rota);
@@ -77,12 +107,17 @@ export function RotaProvider({ children }: RotaProviderProps) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar rota');
     } finally {
       setCarregando(false);
+      setOperacao('selecionar', false);
     }
-  }, []);
+  }, [setOperacao]);
 
   const limparSelecao = useCallback(() => {
     setRotaSelecionada(null);
   }, []);
+
+  // ==========================================================================
+  // AÇÕES DE NEGÓCIO
+  // ==========================================================================
 
   const salvarRota = useCallback(async (dados: Partial<Rota>): Promise<Rota | null> => {
     if (!isAdmin()) {
@@ -90,14 +125,13 @@ export function RotaProvider({ children }: RotaProviderProps) {
       return null;
     }
     setCarregando(true);
+    setOperacao('salvar', true);
     try {
       let rota: Rota | null;
 
       if (dados.id) {
-        // Atualizar rota existente
         rota = await rotaRepository.update(dados as Partial<Rota> & { id: string });
       } else {
-        // Criar nova rota — valores default para novos campos
         rota = await rotaRepository.save({
           ...dados,
           cor: dados.cor || '#2563EB',
@@ -113,19 +147,21 @@ export function RotaProvider({ children }: RotaProviderProps) {
       return null;
     } finally {
       setCarregando(false);
+      setOperacao('salvar', false);
     }
-  }, [carregarRotas, isAdmin]);
+  }, [carregarRotas, isAdmin, setOperacao]);
 
   const excluirRota = useCallback(async (id: string): Promise<boolean> => {
     if (!isAdmin()) {
       setErro('Apenas administradores podem excluir rotas');
       return false;
     }
+    setCarregando(true);
+    setOperacao('excluir', true);
     try {
       const ok = await rotaRepository.delete(id);
       if (ok) {
         await carregarRotas();
-        // Limpar seleção se a rota excluída estava selecionada
         if (rotaSelecionada && String(rotaSelecionada.id) === String(id)) {
           setRotaSelecionada(null);
         }
@@ -135,12 +171,31 @@ export function RotaProvider({ children }: RotaProviderProps) {
       const msg = error instanceof Error ? error.message : 'Erro ao excluir rota';
       setErro(msg);
       return false;
+    } finally {
+      setCarregando(false);
+      setOperacao('excluir', false);
     }
-  }, [carregarRotas, isAdmin, rotaSelecionada]);
+  }, [carregarRotas, isAdmin, rotaSelecionada, setOperacao]);
+
+  // ==========================================================================
+  // UTILITÁRIOS
+  // ==========================================================================
+
+  const getAtivas = useCallback((): Rota[] => {
+    return rotas.filter(r => r.status === 'Ativo');
+  }, [rotas]);
+
+  const count = useCallback(async (): Promise<number> => {
+    return rotaRepository.count();
+  }, []);
 
   const refresh = useCallback(async () => {
     await carregarRotas();
   }, [carregarRotas]);
+
+  // ==========================================================================
+  // EFFECTS
+  // ==========================================================================
 
   useEffect(() => {
     if (isReady) {
@@ -148,16 +203,25 @@ export function RotaProvider({ children }: RotaProviderProps) {
     }
   }, [carregarRotas, isReady]);
 
+  // ==========================================================================
+  // CONTEXT VALUE
+  // ==========================================================================
+
   const contextValue: RotaContextData = {
     rotas,
     rotaSelecionada,
     carregando,
     erro,
+    totalRotas,
+    operacoes,
+    isOperacao,
     carregarRotas,
     selecionarRota,
     limparSelecao,
     salvarRota,
     excluirRota,
+    getAtivas,
+    count,
     refresh,
   };
 

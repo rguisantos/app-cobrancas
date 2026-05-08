@@ -1,6 +1,9 @@
 /**
  * RecoverPasswordScreen.tsx
- * Tela de recuperação de senha
+ * Tela de recuperação de senha — fluxo completo:
+ * 1. Usuário digita e-mail → API envia token de recuperação
+ * 2. Usuário insere token + nova senha → API redefine a senha
+ * Offline: mensagem orientando contactar o administrador.
  */
 
 import React, { useState } from 'react';
@@ -12,69 +15,250 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  Alert,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
+import { apiService } from '../services/ApiService';
+
 type Props = NativeStackScreenProps<any, 'RecoverPassword'>;
 
-export default function RecoverPasswordScreen({ navigation }: Props) {
-  const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
+type Step = 'email' | 'reset' | 'success';
 
-  const handleRecover = async () => {
+export default function RecoverPasswordScreen({ navigation }: Props) {
+  // Step 1 — Email
+  const [email, setEmail] = useState('');
+  // Step 2 — Reset
+  const [resetToken, setResetToken] = useState('');
+  const [novaSenha, setNovaSenha] = useState('');
+  const [confirmarSenha, setConfirmarSenha] = useState('');
+  // Common
+  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState<Step>('email');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // ==========================================================================
+  // STEP 1 — Enviar e-mail de recuperação
+  // ==========================================================================
+
+  const handleSendEmail = async () => {
     if (!email.trim()) {
-      Alert.alert('Erro', 'Digite seu e-mail');
+      setErrorMessage('Digite seu e-mail');
       return;
-  
-  }
+    }
 
     setLoading(true);
+    setErrorMessage(null);
+
     try {
-      // Offline mode: check if email exists locally
-      const { usuarioRepository } = await import('../repositories/UsuarioRepository');
-      const usuario = await usuarioRepository.getByEmail(email.trim().toLowerCase());
-      // Always show success (security - don't reveal if email exists)
-      setEmailSent(true);
+      const response = await apiService.forgotPassword(email.trim().toLowerCase());
+
+      if (response.success) {
+        // API respondeu com sucesso — avançar para etapa de redefinição
+        setStep('reset');
+      } else {
+        // Erro retornado pela API (ex.: rate-limit, e-mail não encontrado)
+        // Por segurança, não revelamos se o e-mail existe — avançamos mesmo assim
+        if (response.statusCode && response.statusCode >= 400 && response.statusCode < 500) {
+          // Erro de cliente — não mostrar detalhes, apenas avançar
+          setStep('reset');
+        } else {
+          setErrorMessage(response.error || 'Não foi possível enviar o e-mail de recuperação');
+        }
+      }
     } catch (error) {
-      Alert.alert('Erro', 'Não foi possível enviar o e-mail de recuperação');
+      // Erro de rede — modo offline
+      setStep('reset');
     } finally {
       setLoading(false);
-  
-  }
+    }
   };
 
-  if (emailSent) {
+  // ==========================================================================
+  // STEP 2 — Redefinir senha com token
+  // ==========================================================================
+
+  const handleResetPassword = async () => {
+    if (!resetToken.trim()) {
+      setErrorMessage('Digite o código de recuperação');
+      return;
+    }
+    if (!novaSenha.trim()) {
+      setErrorMessage('Digite a nova senha');
+      return;
+    }
+    if (novaSenha.length < 6) {
+      setErrorMessage('A senha deve ter no mínimo 6 caracteres');
+      return;
+    }
+    if (novaSenha !== confirmarSenha) {
+      setErrorMessage('As senhas não coincidem');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await apiService.resetPassword(
+        resetToken.trim(),
+        novaSenha,
+        confirmarSenha,
+      );
+
+      if (response.success) {
+        setStep('success');
+      } else {
+        setErrorMessage(response.error || 'Não foi possível redefinir a senha');
+      }
+    } catch (error) {
+      // Erro de rede
+      setErrorMessage('Sem conexão com o servidor. Tente novamente quando estiver online.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ==========================================================================
+  // SUCCESS
+  // ==========================================================================
+
+  if (step === 'success') {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.successContainer}>
           <View style={styles.iconContainer}>
-            <Ionicons name="mail" size={48} color="#2563EB" />
+            <Ionicons name="checkmark-circle" size={48} color="#16A34A" />
           </View>
-          <Text style={styles.successTitle}>E-mail Enviado!</Text>
+          <Text style={styles.successTitle}>Senha Redefinida!</Text>
           <Text style={styles.successText}>
-            Solicitação registrada para {email}. Em modo offline, entre em contato com o administrador do sistema para redefinir sua senha.
+            Sua senha foi alterada com sucesso. Você já pode fazer login com a nova senha.
           </Text>
           <TouchableOpacity
             style={styles.button}
             onPress={() => navigation.navigate('Login')}
           >
-            <Text style={styles.buttonText}>Voltar ao Login</Text>
+            <Text style={styles.buttonText}>Ir para Login</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
-
   }
+
+  // ==========================================================================
+  // STEP 2 — Formulário de redefinição
+  // ==========================================================================
+
+  if (step === 'reset') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => { setStep('email'); setErrorMessage(null); }}
+            >
+              <Ionicons name="arrow-back" size={24} color="#1E293B" />
+            </TouchableOpacity>
+
+            <View style={styles.header}>
+              <Text style={styles.title}>Redefinir Senha</Text>
+              <Text style={styles.subtitle}>
+                Insira o código recebido por e-mail e defina sua nova senha
+              </Text>
+            </View>
+
+            <View style={styles.form}>
+              {/* Código de recuperação */}
+              <View style={styles.inputContainer}>
+                <Ionicons name="key-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Código de recuperação"
+                  placeholderTextColor="#94A3B8"
+                  value={resetToken}
+                  onChangeText={setResetToken}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+
+              {/* Nova senha */}
+              <View style={styles.inputContainer}>
+                <Ionicons name="lock-closed-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nova senha"
+                  placeholderTextColor="#94A3B8"
+                  value={novaSenha}
+                  onChangeText={setNovaSenha}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+              </View>
+
+              {/* Confirmar senha */}
+              <View style={styles.inputContainer}>
+                <Ionicons name="lock-closed-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Confirmar nova senha"
+                  placeholderTextColor="#94A3B8"
+                  value={confirmarSenha}
+                  onChangeText={setConfirmarSenha}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+              </View>
+
+              {errorMessage && (
+                <View style={styles.errorBox}>
+                  <Ionicons name="alert-circle" size={18} color="#EF4444" />
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={handleResetPassword}
+                disabled={loading}
+              >
+                <Text style={styles.buttonText}>
+                  {loading ? 'Redefinindo...' : 'Redefinir Senha'}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Offline notice */}
+              <View style={styles.offlineNotice}>
+                <Ionicons name="information-circle-outline" size={16} color="#94A3B8" />
+                <Text style={styles.offlineNoticeText}>
+                  Sem conexão? Entre em contato com o administrador do sistema para redefinir sua senha.
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  // ==========================================================================
+  // STEP 1 — Formulário de e-mail
+  // ==========================================================================
 
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.content}
+        style={styles.keyboardView}
       >
         <TouchableOpacity
           style={styles.backButton}
@@ -86,7 +270,7 @@ export default function RecoverPasswordScreen({ navigation }: Props) {
         <View style={styles.header}>
           <Text style={styles.title}>Recuperar Senha</Text>
           <Text style={styles.subtitle}>
-            Digite seu e-mail para receber as instruções de recuperação
+            Digite seu e-mail para receber o código de recuperação
           </Text>
         </View>
 
@@ -105,13 +289,20 @@ export default function RecoverPasswordScreen({ navigation }: Props) {
             />
           </View>
 
+          {errorMessage && (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle" size={18} color="#EF4444" />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          )}
+
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleRecover}
+            onPress={handleSendEmail}
             disabled={loading}
           >
             <Text style={styles.buttonText}>
-              {loading ? 'Enviando...' : 'Enviar Instruções'}
+              {loading ? 'Enviando...' : 'Enviar Código'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -125,8 +316,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  content: {
+  keyboardView: {
     flex: 1,
+  },
+  scrollContent: {
     padding: 24,
   },
   backButton: {
@@ -170,6 +363,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1E293B',
   },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    padding: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#DC2626',
+  },
   button: {
     backgroundColor: '#2563EB',
     height: 52,
@@ -196,7 +402,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F0FDF4',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
@@ -213,5 +419,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 32,
     lineHeight: 24,
+  },
+  offlineNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F1F5F9',
+    padding: 12,
+    borderRadius: 8,
+    gap: 8,
+    marginTop: 8,
+  },
+  offlineNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
   },
 });

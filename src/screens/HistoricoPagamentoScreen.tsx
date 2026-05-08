@@ -4,17 +4,21 @@
  * - Route params: cobrancaId, clienteNome?
  * - Cada evento mostra: tipo, statusAnterior→statusNovo, valorPago, observacao
  * - Codificação por cor: pagamento=verde, estorno=vermelho, vencimento=âmbar, geracao=azul
+ * - Modo offline com dados em cache
+ * - Rastreamento de saldo ao longo do tempo
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator,
+  TouchableOpacity, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRoute, RouteProp } from '@react-navigation/native';
 
 import { apiService } from '../services/ApiService';
+import { databaseService } from '../services/DatabaseService';
 import { formatarMoeda, formatarDataHora, formatarData } from '../utils/currency';
 
 // ============================================================================
@@ -30,6 +34,7 @@ interface HistoricoEvento {
   valorPago?: number;
   observacao?: string;
   usuario?: string;
+  saldoApos?: number;
 }
 
 type HistoricoTipo = 'pagamento' | 'pagamento_parcial' | 'estorno' | 'alteracao_status' | 'vencimento' | 'geracao';
@@ -38,6 +43,8 @@ interface CobrancaResumo {
   clienteNome?: string;
   valor?: number;
   status?: string;
+  valorRecebido?: number;
+  saldoDevedor?: number;
 }
 
 type HistoricoPagamentoRouteProp = RouteProp<
@@ -88,11 +95,14 @@ export default function HistoricoPagamentoScreen() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [resumo, setResumo] = useState<CobrancaResumo>({ clienteNome: clienteNomeParam });
+  const [offline, setOffline] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // ─── carregar histórico ───────────────────────────────────────────────────
   const carregar = useCallback(async () => {
     try {
       setErro(null);
+      setOffline(false);
       const response = await apiService.getHistoricoPagamentos(cobrancaId);
       if (response.success && response.data) {
         const data = response.data as any;
@@ -105,16 +115,123 @@ export default function HistoricoPagamentoScreen() {
           setResumo(prev => ({ ...prev, ...data.cobranca }));
         }
       } else {
-        setErro(response.error || 'Erro ao carregar histórico');
+        // Tentar offline
+        await carregarOffline();
       }
     } catch (err) {
-      setErro(err instanceof Error ? err.message : 'Erro inesperado');
+      await carregarOffline(err instanceof Error ? err.message : 'Erro inesperado');
     } finally {
       setCarregando(false);
+      setRefreshing(false);
+    }
+  }, [cobrancaId]);
+
+  // ─── carregar offline ─────────────────────────────────────────────────────
+  const carregarOffline = useCallback(async (errorMsg?: string) => {
+    try {
+      setOffline(true);
+
+      // Buscar cobrança local
+      const cobrancaRows = await databaseService.getAllAsync<any>(
+        `SELECT * FROM cobrancas WHERE id = ? AND deletedAt IS NULL`,
+        [cobrancaId]
+      );
+
+      if (cobrancaRows.length > 0) {
+        const c = cobrancaRows[0];
+        setResumo(prev => ({
+          ...prev,
+          clienteNome: c.clienteNome || prev.clienteNome,
+          valor: c.totalClientePaga,
+          status: c.status,
+          valorRecebido: c.valorRecebido,
+          saldoDevedor: c.saldoDevedorGerado,
+        }));
+
+        // Gerar eventos a partir dos dados da cobrança local
+        const eventosLocais: HistoricoEvento[] = [];
+
+        // Evento de geração
+        if (c.dataInicio || c.createdAt) {
+          eventosLocais.push({
+            id: `${cobrancaId}_geracao`,
+            tipo: 'geracao',
+            data: c.dataInicio || c.createdAt,
+            statusNovo: 'Pendente',
+            observacao: 'Cobrança gerada',
+          });
+        }
+
+        // Evento de vencimento
+        if (c.dataVencimento) {
+          eventosLocais.push({
+            id: `${cobrancaId}_vencimento`,
+            tipo: 'vencimento',
+            data: c.dataVencimento,
+            observacao: `Vencimento: ${formatarData(c.dataVencimento)}`,
+          });
+        }
+
+        // Pagamento parcial
+        if (c.status === 'Parcial' && c.valorRecebido > 0) {
+          eventosLocais.push({
+            id: `${cobrancaId}_parcial`,
+            tipo: 'pagamento_parcial',
+            data: c.updatedAt || c.dataInicio,
+            statusAnterior: 'Pendente',
+            statusNovo: 'Parcial',
+            valorPago: c.valorRecebido,
+            observacao: 'Pagamento parcial registrado',
+          });
+        }
+
+        // Pagamento total
+        if (c.status === 'Pago') {
+          eventosLocais.push({
+            id: `${cobrancaId}_pago`,
+            tipo: 'pagamento',
+            data: c.updatedAt || c.dataInicio,
+            statusAnterior: c.valorRecebido >= (c.totalClientePaga || 0) ? 'Parcial' : 'Pendente',
+            statusNovo: 'Pago',
+            valorPago: c.valorRecebido,
+            observacao: 'Pagamento total registrado',
+          });
+        }
+
+        setEventos(eventosLocais);
+        setErro(null);
+      } else {
+        setEventos([]);
+        setErro(errorMsg || 'Sem conexão — nenhum dado local disponível');
+      }
+    } catch {
+      setEventos([]);
+      setErro(errorMsg || 'Sem conexão — nenhum dado local disponível');
     }
   }, [cobrancaId]);
 
   useEffect(() => { carregar(); }, [carregar]);
+
+  // ─── refresh ──────────────────────────────────────────────────────────────
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    carregar();
+  }, [carregar]);
+
+  // ─── calcular saldo ao longo do tempo ─────────────────────────────────────
+  const eventosComSaldo = useCallback((): HistoricoEvento[] => {
+    let saldo = resumo.valor || 0;
+    return eventos.map(evento => {
+      if (evento.tipo === 'pagamento' || evento.tipo === 'pagamento_parcial') {
+        saldo -= (evento.valorPago || 0);
+      } else if (evento.tipo === 'estorno') {
+        saldo += (evento.valorPago || 0);
+      }
+      return { ...evento, saldoApos: Math.max(0, saldo) };
+    });
+  }, [eventos, resumo.valor]);
+
+  const eventosProcessados = eventosComSaldo();
 
   // ─── loading ──────────────────────────────────────────────────────────────
   if (carregando) {
@@ -133,13 +250,22 @@ export default function HistoricoPagamentoScreen() {
         <Ionicons name="alert-circle-outline" size={56} color="#CBD5E1" />
         <Text style={s.errorTitle}>Erro ao carregar</Text>
         <Text style={s.errorText}>{erro}</Text>
+        <TouchableOpacity style={s.retryBtn} onPress={carregar}>
+          <Text style={s.retryBtnText}>Tentar novamente</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={s.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} tintColor="#2563EB" />
+        }
+      >
 
         {/* Header: resumo da cobrança */}
         <View style={s.header}>
@@ -161,6 +287,34 @@ export default function HistoricoPagamentoScreen() {
           </View>
         </View>
 
+        {/* Offline indicator */}
+        {offline && (
+          <View style={s.offlineBanner}>
+            <Ionicons name="cloud-offline" size={14} color="#D97706" />
+            <Text style={s.offlineText}>Modo offline — dados locais</Text>
+          </View>
+        )}
+
+        {/* Balance summary cards */}
+        {(resumo.valorRecebido != null || resumo.saldoDevedor != null) && (
+          <View style={s.balanceRow}>
+            {resumo.valorRecebido != null && (
+              <View style={s.balanceCard}>
+                <Ionicons name="arrow-down-circle" size={18} color="#16A34A" />
+                <Text style={s.balanceLabel}>Recebido</Text>
+                <Text style={[s.balanceValue, { color: '#16A34A' }]}>{formatarMoeda(resumo.valorRecebido)}</Text>
+              </View>
+            )}
+            {resumo.saldoDevedor != null && (
+              <View style={s.balanceCard}>
+                <Ionicons name="arrow-up-circle" size={18} color="#DC2626" />
+                <Text style={s.balanceLabel}>Devedor</Text>
+                <Text style={[s.balanceValue, { color: '#DC2626' }]}>{formatarMoeda(resumo.saldoDevedor)}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Erro parcial */}
         {erro && (
           <View style={s.erroCard}>
@@ -173,7 +327,7 @@ export default function HistoricoPagamentoScreen() {
         <Text style={s.sectionTitle}>LINHA DO TEMPO</Text>
 
         {/* Timeline */}
-        {eventos.length === 0 ? (
+        {eventosProcessados.length === 0 ? (
           <View style={s.empty}>
             <Ionicons name="time-outline" size={48} color="#CBD5E1" />
             <Text style={s.emptyTitle}>Nenhum evento registrado</Text>
@@ -181,8 +335,8 @@ export default function HistoricoPagamentoScreen() {
           </View>
         ) : (
           <View style={s.timeline}>
-            {eventos.map((evento, index) => {
-              const isLast = index === eventos.length - 1;
+            {eventosProcessados.map((evento, index) => {
+              const isLast = index === eventosProcessados.length - 1;
               return (
                 <TimelineItem key={evento.id} evento={evento} isLast={isLast} />
               );
@@ -250,8 +404,20 @@ function TimelineItem({ evento, isLast }: { evento: HistoricoEvento; isLast: boo
           {/* Valor pago */}
           {evento.valorPago != null && evento.valorPago > 0 && (
             <View style={s.valorRow}>
-              <Ionicons name="cash-outline" size={14} color="#16A34A" />
-              <Text style={s.valorText}>{formatarMoeda(evento.valorPago)}</Text>
+              <Ionicons name="cash-outline" size={14} color={evento.tipo === 'estorno' ? '#DC2626' : '#16A34A'} />
+              <Text style={[s.valorText, evento.tipo === 'estorno' && { color: '#DC2626' }]}>
+                {evento.tipo === 'estorno' ? '-' : '+'}{formatarMoeda(evento.valorPago)}
+              </Text>
+            </View>
+          )}
+
+          {/* Saldo após evento */}
+          {evento.saldoApos != null && evento.saldoApos >= 0 && (
+            <View style={s.saldoRow}>
+              <Text style={s.saldoLabel}>Saldo restante:</Text>
+              <Text style={[s.saldoValue, { color: evento.saldoApos === 0 ? '#16A34A' : '#1E293B' }]}>
+                {formatarMoeda(evento.saldoApos)}
+              </Text>
             </View>
           )}
 
@@ -307,6 +473,20 @@ const s = StyleSheet.create({
   headerStatusBadge:{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   headerStatusText:{ fontSize: 12, fontWeight: '700' },
 
+  // Offline
+  offlineBanner:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#FFFBEB', paddingVertical: 8, borderRadius: 10, marginBottom: 12 },
+  offlineText:    { fontSize: 12, color: '#D97706', fontWeight: '600' },
+
+  // Balance
+  balanceRow:     { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  balanceCard:    { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#F1F5F9' },
+  balanceLabel:   { fontSize: 11, color: '#94A3B8', flex: 1 },
+  balanceValue:   { fontSize: 14, fontWeight: '800' },
+
+  // Retry
+  retryBtn:       { marginTop: 16, backgroundColor: '#2563EB', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  retryBtnText:   { color: '#FFFFFF', fontWeight: '600', fontSize: 14 },
+
   // Erro
   erroCard:       { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF2F2', padding: 12, borderRadius: 10, marginBottom: 12 },
   erroText:       { flex: 1, color: '#DC2626', fontSize: 13 },
@@ -345,6 +525,11 @@ const s = StyleSheet.create({
   // Valor
   valorRow:       { flexDirection: 'row', alignItems: 'center', gap: 6 },
   valorText:      { fontSize: 14, fontWeight: '700', color: '#16A34A' },
+
+  // Saldo
+  saldoRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F8FAFC', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  saldoLabel:     { fontSize: 11, color: '#94A3B8' },
+  saldoValue:     { fontSize: 13, fontWeight: '700' },
 
   // Observação
   observacaoText: { fontSize: 12, color: '#64748B', lineHeight: 17, backgroundColor: '#F8FAFC', borderRadius: 8, padding: 8 },

@@ -3,9 +3,11 @@
  * Tela de configurações técnicas do aplicativo
  * 
  * Funcionalidades:
- * - Toggle de sincronização automática
- * - Limpar dados locais
- * - Informações do app
+ * - Configurações de sincronização
+ * - Gerenciamento de dados locais
+ * - Configurações de aparência
+ * - Informações do app e versão
+ * - Opções avançadas (force resync, etc.)
  */
 
 import React, { useState, useCallback } from 'react';
@@ -27,8 +29,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSync } from '../contexts/SyncContext';
 import { useBranding } from '../components/BrandingProvider';
 
-// Utils
+// Services
 import { databaseService } from '../services/DatabaseService';
+import { syncService } from '../services/SyncService';
 import logger from '../utils/logger';
 
 // Config
@@ -40,19 +43,26 @@ import { ENV } from '../config/env';
 
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
-  const { primaryColor, appName } = useBranding();
+  const { primaryColor, appName, companyName } = useBranding();
   const {
     syncConfig,
     ativarAutoSync,
     sincronizar,
     isSyncing,
     lastSyncAt,
+    mudancasPendentes,
   } = useSync();
 
   // Estado local para configurações
   const [settings, setSettings] = useState({
     autoSync: syncConfig?.autoSyncEnabled ?? true,
+    syncOnAppStart: syncConfig?.syncOnAppStart ?? true,
+    syncOnAppResume: syncConfig?.syncOnAppResume ?? true,
+    warnBeforeLargeSync: syncConfig?.warnBeforeLargeSync ?? false,
   });
+
+  const [limpando, setLimpando] = useState(false);
+  const [forceResyncing, setForceResyncing] = useState(false);
 
   // ==========================================================================
   // HANDLERS
@@ -85,6 +95,7 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              setLimpando(true);
               const pendentes = await databaseService.getPendingChanges();
               if (pendentes.length > 0) {
                 Alert.alert(
@@ -100,6 +111,8 @@ export default function SettingsScreen() {
             } catch (error) {
               Alert.alert('Erro', 'Não foi possível limpar os dados');
               logger.error('Erro ao limpar dados locais', error, 'Settings');
+            } finally {
+              setLimpando(false);
             }
           },
         },
@@ -107,8 +120,41 @@ export default function SettingsScreen() {
     );
   }, []);
 
+  const handleForceFullResync = useCallback(() => {
+    Alert.alert(
+      'Sincronização Completa',
+      'Isso irá buscar todos os dados do servidor novamente, substituindo os dados locais. Use esta opção se os dados estiverem inconsistentes. Deseja continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Sincronizar Tudo',
+          style: 'default',
+          onPress: async () => {
+            try {
+              setForceResyncing(true);
+              // Resetar lastSyncAt para forçar sync completa
+              await databaseService.updateSyncMetadata({
+                lastSyncAt: '',
+                lastPushAt: '',
+                lastPullAt: '',
+              });
+              await sincronizar(true);
+              Alert.alert('Sucesso', 'Sincronização completa realizada com sucesso');
+              logger.info('Force full resync executado pelo usuário', undefined, 'Settings');
+            } catch (error) {
+              Alert.alert('Erro', 'Não foi possível realizar a sincronização completa');
+              logger.error('Erro no force full resync', error, 'Settings');
+            } finally {
+              setForceResyncing(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [sincronizar]);
+
   // ==========================================================================
-  // RENDER
+  // RENDER HELPERS
   // ==========================================================================
 
   const renderSettingItem = (
@@ -180,7 +226,7 @@ export default function SettingsScreen() {
           <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
         )}
 
-        {type === 'button' && disabled && isSyncing && (
+        {type === 'button' && disabled && (isSyncing || limpando || forceResyncing) && (
           <ActivityIndicator size="small" color={primaryColor} />
         )}
       </TouchableOpacity>
@@ -204,14 +250,32 @@ export default function SettingsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Sincronização */}
+        {/* ── Sincronização ──────────────────────────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Sincronização</Text>
           <View style={styles.sectionCard}>
-            {renderSettingItem('autoSync', 'Sincronização Automática', 'Sincronizar em segundo plano', 'sync', {
+            {renderSettingItem('autoSync', 'Sincronização Automática', 'Sincronizar dados em segundo plano', 'sync', {
               type: 'toggle',
               value: settings.autoSync,
               onToggle: (value) => handleToggle('autoSync', value),
+            })}
+            {renderSettingItem('syncOnAppStart', 'Ao Abrir o App', 'Sincronizar ao iniciar o aplicativo', 'play', {
+              type: 'toggle',
+              value: settings.syncOnAppStart,
+              onToggle: (value) => handleToggle('syncOnAppStart', value),
+              iconColor: '#16A34A',
+            })}
+            {renderSettingItem('syncOnAppResume', 'Ao Retornar ao App', 'Sincronizar ao trazer o app para primeiro plano', 'refresh', {
+              type: 'toggle',
+              value: settings.syncOnAppResume,
+              onToggle: (value) => handleToggle('syncOnAppResume', value),
+              iconColor: '#0891B2',
+            })}
+            {renderSettingItem('warnLargeSync', 'Avisar Sincronização Grande', 'Mostrar aviso antes de sincronizar muitos dados', 'warning', {
+              type: 'toggle',
+              value: settings.warnBeforeLargeSync,
+              onToggle: (value) => handleToggle('warnBeforeLargeSync', value),
+              iconColor: '#D97706',
             })}
             {renderSettingItem('syncNow', 'Sincronizar Agora', 
               lastSyncAt ? `Última: ${new Date(lastSyncAt).toLocaleTimeString('pt-BR')}` : 'Nunca sincronizado',
@@ -219,23 +283,47 @@ export default function SettingsScreen() {
               type: 'button',
               onPress: handleSyncNow,
               disabled: isSyncing,
+              iconColor: '#2563EB',
+            })}
+            {renderSettingItem('forceResync', 'Sincronização Completa', 'Buscar todos os dados do servidor novamente', 'cloud-download-outline', {
+              type: 'button',
+              onPress: handleForceFullResync,
+              disabled: isSyncing || forceResyncing,
+              iconColor: '#9333EA',
             })}
           </View>
         </View>
 
-        {/* Dados */}
+        {/* ── Armazenamento & Dados ─────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Dados</Text>
+          <Text style={styles.sectionTitle}>Armazenamento & Dados</Text>
           <View style={styles.sectionCard}>
             {renderSettingItem('clearData', 'Limpar Dados Locais', 'Apagar cache e dados offline', 'trash', {
               type: 'button',
               danger: true,
               onPress: handleClearData,
             })}
+            {renderSettingItem('pendingCount', 'Alterações Pendentes', 
+              `${mudancasPendentes} alteração${mudancasPendentes !== 1 ? 'ões' : ''} aguardando envio`,
+              'cloud-upload', {
+              type: 'info',
+              iconColor: mudancasPendentes > 0 ? '#D97706' : '#16A34A',
+            })}
           </View>
         </View>
 
-        {/* Sobre */}
+        {/* ── Aparência ─────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Aparência</Text>
+          <View style={styles.sectionCard}>
+            {renderSettingItem('theme', 'Tema', 'Ajustar ao sistema (automático)', 'color-palette', {
+              type: 'info',
+              iconColor: '#9333EA',
+            })}
+          </View>
+        </View>
+
+        {/* ── Sobre ─────────────────────────────────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Sobre</Text>
           <View style={styles.sectionCard}>
@@ -244,6 +332,18 @@ export default function SettingsScreen() {
               iconColor: '#2563EB',
             })}
             {renderSettingItem('appVersion', 'Versão do App', `v${ENV.APP_VERSION}`, 'information-circle', {
+              type: 'info',
+              iconColor: '#64748B',
+            })}
+            {renderSettingItem('company', 'Empresa', companyName, 'business', {
+              type: 'info',
+              iconColor: '#0891B2',
+            })}
+            {renderSettingItem('env', 'Ambiente', ENV.DEBUG ? 'Desenvolvimento' : 'Produção', 'code-working', {
+              type: 'info',
+              iconColor: ENV.DEBUG ? '#D97706' : '#16A34A',
+            })}
+            {renderSettingItem('syncInterval', 'Intervalo de Sync', `${syncConfig?.autoSyncInterval || 15} minutos`, 'time', {
               type: 'info',
               iconColor: '#64748B',
             })}

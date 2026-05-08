@@ -490,6 +490,18 @@ class ProdutoRepository {
           [historico.id, historico.produtoId, historico.relogioAnterior, historico.relogioNovo, historico.motivo, historico.dataAlteracao, historico.usuarioResponsavel]
         );
         console.log('[ProdutoRepository] Histórico de relógio salvo localmente:', historico.id);
+
+        // Register change_log entry so historicoRelogio enters the PUSH pipeline
+        await databaseService.logChange({
+          id: `historicoRelogio_${historico.id}_${historico.dataAlteracao}`,
+          entityId: historico.id,
+          entityType: 'historicoRelogio',
+          operation: 'create',
+          changes: historico as any,
+          timestamp: historico.dataAlteracao,
+          deviceId: await databaseService.getDeviceId(),
+          synced: false,
+        });
       } catch (dbError) {
         console.warn('[ProdutoRepository] Não foi possível salvar histórico localmente (tabela pode não existir):', dbError);
       }

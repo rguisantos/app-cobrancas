@@ -76,6 +76,17 @@ import HistoricoPagamentoScreen from '../screens/HistoricoPagamentoScreen';
 import MetasListScreen from '../screens/MetasListScreen';
 import MetaFormScreen from '../screens/MetaFormScreen';
 import EstabelecimentosListScreen from '../screens/EstabelecimentosListScreen';
+import RelatorioRotaDiariaScreen  from '../screens/RelatorioRotaDiariaScreen';
+import RelatorioPeriodoScreen     from '../screens/RelatorioPeriodoScreen';
+import RelatorioFinanceiroScreen  from '../screens/RelatorioFinanceiroScreen';
+import RelatorioRotasScreen        from '../screens/RelatorioRotasScreen';
+import RelatorioOperacionalScreen  from '../screens/RelatorioOperacionalScreen';
+import RelatorioComparativoScreen  from '../screens/RelatorioComparativoScreen';
+import EstabelecimentoFormScreen from '../screens/estabelecimentos/EstabelecimentoFormScreen';
+import UsuarioFormScreen from '../screens/admin/UsuarioFormScreen';
+import PerfilScreen from '../screens/perfil/PerfilScreen';
+import ReciboScreen from '../screens/cobrancas/ReciboScreen';
+import MapaClientesScreen from '../screens/mapa/MapaClientesScreen';
 
 // ============================================================================
 // CONFIGURAÇÃO DE TEMAS
@@ -151,15 +162,26 @@ export type ModalStackParamList = {
   RelatorioInadimplencia:  undefined;
   RelatorioEstoque:        undefined;
   RelatorioRecebimentos:   undefined;
+  RelatorioRotaDiaria:     undefined;
+  RelatorioPeriodo:        undefined;
+  RelatorioFinanceiro:     undefined;
+  RelatorioRotas:          undefined;
+  RelatorioOperacional:    undefined;
+  RelatorioComparativo:    undefined;
   BuscaGlobal:             undefined;
   ManutencoesList: undefined;
-  ManutencaoForm: { modo: 'criar'; produtoId?: string };
+  ManutencaoForm: { modo: 'criar' | 'editar'; produtoId?: string; manutencaoId?: string };
   MetasList: undefined;
   MetaForm: { modo: 'criar' | 'editar'; metaId?: string };
   EstabelecimentosList: undefined;
+  EstabelecimentoForm: { modo: 'criar' | 'editar'; estabelecimentoId?: string; estabelecimentoNome?: string; estabelecimentoEndereco?: string; estabelecimentoObservacao?: string };
+  UsuarioForm: { modo: 'criar' | 'editar'; usuarioId?: string; usuarioNome?: string; usuarioEmail?: string; usuarioCpf?: string; usuarioTelefone?: string; usuarioTipoPermissao?: string; usuarioStatus?: string };
+  Perfil: undefined;
   Notificacoes: undefined;
   Agenda: undefined;
   HistoricoPagamento: { cobrancaId: string; clienteNome?: string };
+  Recibo: { cobrancaId: string };
+  MapaClientes: undefined;
 };
 
 // Root Stack (gerencia auth state)
@@ -454,6 +476,36 @@ function ModalNavigator() {
         component={BuscaGlobalScreen}
         options={{ title: 'Busca Global' }}
       />
+      <ModalStack.Screen
+        name="RelatorioRotaDiaria"
+        component={RelatorioRotaDiariaScreen}
+        options={{ title: 'Rota Diária' }}
+      />
+      <ModalStack.Screen
+        name="RelatorioPeriodo"
+        component={RelatorioPeriodoScreen}
+        options={{ title: 'Relatório por Período' }}
+      />
+      <ModalStack.Screen
+        name="RelatorioFinanceiro"
+        component={RelatorioFinanceiroScreen}
+        options={{ title: 'Relatório Financeiro' }}
+      />
+      <ModalStack.Screen
+        name="RelatorioRotas"
+        component={RelatorioRotasScreen}
+        options={{ title: 'Desempenho por Rota' }}
+      />
+      <ModalStack.Screen
+        name="RelatorioOperacional"
+        component={RelatorioOperacionalScreen}
+        options={{ title: 'Resumo Operacional' }}
+      />
+      <ModalStack.Screen
+        name="RelatorioComparativo"
+        component={RelatorioComparativoScreen}
+        options={{ title: 'Comparativo de Períodos' }}
+      />
 
       {/* Manutenções */}
       <ModalStack.Screen
@@ -465,7 +517,7 @@ function ModalNavigator() {
         name="ManutencaoForm"
         component={ManutencaoFormScreen}
         options={({ route }) => ({
-          title: 'Nova Manutenção',
+          title: route.params.modo === 'criar' ? 'Nova Manutenção' : 'Editar Manutenção',
         })}
       />
 
@@ -489,6 +541,29 @@ function ModalNavigator() {
         component={EstabelecimentosListScreen}
         options={{ title: 'Estabelecimentos' }}
       />
+      <ModalStack.Screen
+        name="EstabelecimentoForm"
+        component={EstabelecimentoFormScreen}
+        options={({ route }) => ({
+          title: route.params.modo === 'criar' ? 'Novo Estabelecimento' : 'Editar Estabelecimento',
+        })}
+      />
+
+      {/* Usuários - Form */}
+      <ModalStack.Screen
+        name="UsuarioForm"
+        component={UsuarioFormScreen}
+        options={({ route }) => ({
+          title: route.params.modo === 'criar' ? 'Novo Usuário' : 'Editar Usuário',
+        })}
+      />
+
+      {/* Perfil */}
+      <ModalStack.Screen
+        name="Perfil"
+        component={PerfilScreen}
+        options={{ title: 'Meu Perfil' }}
+      />
 
       {/* Notificações, Agenda e Histórico de Pagamentos */}
       <ModalStack.Screen
@@ -505,6 +580,20 @@ function ModalNavigator() {
         name="HistoricoPagamento"
         component={HistoricoPagamentoScreen}
         options={{ title: 'Histórico de Pagamentos' }}
+      />
+
+      {/* Recibo */}
+      <ModalStack.Screen
+        name="Recibo"
+        component={ReciboScreen}
+        options={{ title: 'Recibo' }}
+      />
+
+      {/* Mapa de Clientes */}
+      <ModalStack.Screen
+        name="MapaClientes"
+        component={MapaClientesScreen}
+        options={{ title: 'Mapa de Clientes' }}
       />
     </ModalStack.Navigator>
   );

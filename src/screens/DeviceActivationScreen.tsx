@@ -165,13 +165,19 @@ export default function DeviceActivationScreen() {
       console.log('[DeviceActivation] Resposta:', response);
       
       if (response.success && response.data?.success) {
+        const dispositivo = response.data.dispositivo;
+        // Prefer deviceKey and chave from the server response; fall back to locally generated values
+        const finalKey = dispositivo?.deviceKey || finalDeviceKey;
+        const finalChave = dispositivo?.chave || '';
+
         // Fonte única de verdade: SyncMetadata (SQLite) para todo o app
-        await databaseService.setDeviceId(dispositivoId.trim(), deviceName, finalDeviceKey);
+        await databaseService.setDeviceId(dispositivoId.trim(), deviceName, finalKey, finalChave);
         
         console.log('[DeviceActivation] ========================================');
         console.log('[DeviceActivation] DISPOSITIVO ATIVADO COM SUCESSO!');
         console.log('[DeviceActivation] dispositivoId:', dispositivoId.trim());
-        console.log('[DeviceActivation] deviceKey:', finalDeviceKey);
+        console.log('[DeviceActivation] deviceKey:', finalKey);
+        console.log('[DeviceActivation] chave:', finalChave);
         console.log('[DeviceActivation] deviceName:', deviceName);
         console.log('[DeviceActivation] ========================================');
         

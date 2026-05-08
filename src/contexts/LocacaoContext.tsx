@@ -2,6 +2,8 @@
  * LocacaoContext.tsx
  * Contexto para gerenciamento de estado de Locações
  * Integração: Repositórios + Services + Tipos
+ *
+ * Enhanced with operacoes/isOperacao pattern like ClienteContext/ManutencaoContext
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
@@ -25,6 +27,10 @@ export interface LocacaoState {
   totalLocacoes: number;
   totalAtivas: number;
   totalFinalizadas: number;
+  /** Operation-specific loading flags */
+  operacoes: Record<string, boolean>;
+  /** Check if a specific operation is in progress */
+  isOperacao: (nome: string) => boolean;
 }
 
 export interface LocacaoContextData extends LocacaoState {
@@ -130,7 +136,6 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   const [locacoesAtivas, setLocacoesAtivas] = useState<LocacaoListItem[]>([]);
   const [locacaoSelecionada, setLocacaoSelecionada] = useState<Locacao | null>(null);
   const [carregando, setCarregando] = useState(false);
-  // TODO: Add operation-specific loading (operacoes / isOperacao) like ClienteContext/ProdutoContext
   const [erro, setErro] = useState<string | null>(null);
 
   // Contagens
@@ -138,8 +143,17 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   const [totalAtivas, setTotalAtivas] = useState(0);
   const [totalFinalizadas, setTotalFinalizadas] = useState(0);
 
+  // Operation-specific loading
+  const [operacoes, setOperacoes] = useState<Record<string, boolean>>({});
+
+  const isOperacao = useCallback((nome: string) => operacoes[nome] || false, [operacoes]);
+
+  const setOperacao = useCallback((nome: string, ativa: boolean) => {
+    setOperacoes(prev => ({ ...prev, [nome]: ativa }));
+  }, []);
+
   // ==========================================================================
-  // INICIALIZAÇÃO - Aguardar banco estar pronto
+  // INICIALIZAÇÃO
   // ==========================================================================
 
   useEffect(() => {
@@ -152,11 +166,9 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   // CARREGAMENTO DE DADOS
   // ==========================================================================
 
-  /**
-   * Carrega todas as locações (com filtros opcionais)
-   */
   const carregarLocacoes = useCallback(async (filtros?: any) => {
     setCarregando(true);
+    setOperacao('carregar', true);
     setErro(null);
 
     try {
@@ -177,20 +189,17 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       console.error('[LocacaoContext] Erro ao carregar locações:', error);
     } finally {
       setCarregando(false);
+      setOperacao('carregar', false);
     }
-  }, []);
+  }, [setOperacao]);
 
-  /**
-   * Carrega locações de um cliente específico
-   */
   const carregarLocacoesPorCliente = useCallback(async (clienteId: string) => {
     setCarregando(true);
+    setOperacao('carregar', true);
     setErro(null);
 
     try {
-      // getAll returns LocacaoListItem[] (via toListItem) — includes produtoId
       const locacoesList = await locacaoRepository.getAll({ clienteId: String(clienteId) });
-
       setLocacoes(locacoesList);
       setLocacoesAtivas(locacoesList.filter(l => l.status === 'Ativa'));
       setTotalLocacoes(locacoesList.length);
@@ -200,14 +209,13 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       console.error('[LocacaoContext] Erro ao carregar locações do cliente:', error);
     } finally {
       setCarregando(false);
+      setOperacao('carregar', false);
     }
-  }, []);
+  }, [setOperacao]);
 
-  /**
-   * Carrega histórico de locações de um produto
-   */
   const carregarLocacoesPorProduto = useCallback(async (produtoId: string) => {
     setCarregando(true);
+    setOperacao('carregar', true);
     setErro(null);
 
     try {
@@ -235,18 +243,17 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       console.error('[LocacaoContext] Erro ao carregar histórico do produto:', error);
     } finally {
       setCarregando(false);
+      setOperacao('carregar', false);
     }
-  }, []);
+  }, [setOperacao]);
 
   // ==========================================================================
   // SELEÇÃO
   // ==========================================================================
 
-  /**
-   * Seleciona uma locação para visualização/edição
-   */
   const selecionarLocacao = useCallback(async (id: string) => {
     setCarregando(true);
+    setOperacao('selecionar', true);
     try {
       const locacao = await locacaoRepository.getById(id);
       setLocacaoSelecionada(locacao);
@@ -254,29 +261,24 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       console.error('[LocacaoContext] Erro ao selecionar locação:', error);
     } finally {
       setCarregando(false);
+      setOperacao('selecionar', false);
     }
-  }, []);
+  }, [setOperacao]);
 
-  /**
-   * Limpa a locação selecionada
-   */
-  const limparSelecao = () => {
+  const limparSelecao = useCallback(() => {
     setLocacaoSelecionada(null);
-  };
+  }, []);
 
   // ==========================================================================
   // AÇÕES DE NEGÓCIO
   // ==========================================================================
 
-  /**
-   * Cria nova locação
-   */
   const criarLocacao = useCallback(async (dados: NovaLocacaoData): Promise<Locacao | null> => {
     setCarregando(true);
+    setOperacao('salvar', true);
     setErro(null);
 
     try {
-      // Verificar se produto já está locado
       const produtoLocado = await verificarProdutoLocado(dados.produtoId);
       if (produtoLocado) {
         setErro('Produto já está locado para outro cliente');
@@ -284,8 +286,6 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       }
 
       const novaLocacao = await locacaoRepository.criarNovaLocacao(dados);
-      
-      // Atualizar lista
       await carregarLocacoes();
       
       console.log('[LocacaoContext] Locação criada com sucesso:', novaLocacao?.id);
@@ -297,26 +297,22 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return null;
     } finally {
       setCarregando(false);
+      setOperacao('salvar', false);
     }
-  }, [carregarLocacoes]);
+  }, [carregarLocacoes, setOperacao]);
 
-  /**
-   * Atualiza locação existente
-   */
   const atualizarLocacao = useCallback(async (dados: Partial<Locacao> & { id: string }): Promise<boolean> => {
     setCarregando(true);
+    setOperacao('atualizar', true);
     setErro(null);
 
     try {
       const locacao = await locacaoRepository.update(dados);
-      
       if (locacao) {
-        // Atualizar lista
         await carregarLocacoes();
         console.log('[LocacaoContext] Locação atualizada:', dados.id);
         return true;
       }
-      
       return false;
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao atualizar locação';
@@ -325,23 +321,20 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return false;
     } finally {
       setCarregando(false);
+      setOperacao('atualizar', false);
     }
-  }, [carregarLocacoes]);
+  }, [carregarLocacoes, setOperacao]);
 
-  /**
-   * Finaliza locação
-   */
   const finalizarLocacao = useCallback(async (id: string, motivo?: string): Promise<boolean> => {
     setCarregando(true);
+    setOperacao('finalizar', true);
     setErro(null);
 
     try {
-      // Buscar locação antes de finalizar para ter o produtoId
       const locacao = await locacaoRepository.getById(id);
       const sucesso = await locacaoRepository.finalizarLocacao(id, motivo);
       
       if (sucesso) {
-        // Atualizar produto para disponível (não locado)
         if (locacao?.produtoId) {
           await produtoRepository.update({
             id: String(locacao.produtoId),
@@ -349,12 +342,10 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
             locacaoAtual: undefined,
           } as any);
         }
-        // Atualizar lista
         await carregarLocacoes();
         console.log('[LocacaoContext] Locação finalizada:', id);
         return true;
       }
-      
       return false;
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao finalizar locação';
@@ -363,21 +354,19 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return false;
     } finally {
       setCarregando(false);
+      setOperacao('finalizar', false);
     }
-  }, [carregarLocacoes, produtoRepository]);
+  }, [carregarLocacoes, produtoRepository, setOperacao]);
 
-  /**
-   * Realiza relocação de produto (muda de cliente)
-   */
   const realizarRelocacao = useCallback(async (dados: RelocacaoData): Promise<boolean> => {
     setCarregando(true);
+    setOperacao('relocacao', true);
     setErro(null);
 
     try {
       const resultado = await locacaoRepository.realizarRelocacao(dados);
       
       if (resultado.novaLocacao || resultado.locacaoAntigaFinalizada) {
-        // Se marcou troca de pano
         if (dados.trocaPano && resultado.novaLocacao?.produtoId) {
           try {
             const now = new Date().toISOString();
@@ -401,12 +390,10 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
             console.warn('[LocacaoContext] Erro ao registrar manutenção na relocação:', e);
           }
         }
-        // Atualizar lista
         await carregarLocacoes();
         console.log('[LocacaoContext] Relocação realizada:', dados.produtoId);
         return true;
       }
-      
       return false;
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao realizar relocação';
@@ -415,34 +402,28 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return false;
     } finally {
       setCarregando(false);
+      setOperacao('relocacao', false);
     }
-  }, [carregarLocacoes]);
+  }, [carregarLocacoes, setOperacao]);
 
-  /**
-   * Envia produto para estoque (desvincula do cliente)
-   */
   const enviarParaEstoque = useCallback(async (dados: EnviarEstoqueData): Promise<boolean> => {
     setCarregando(true);
+    setOperacao('enviarEstoque', true);
     setErro(null);
 
     try {
-      // Finalizar locação
       const locacaoFinalizada = await finalizarLocacao(dados.locacaoId, dados.motivo);
       
       if (locacaoFinalizada) {
-        // Atualizar produto para estoque
         await produtoRepository.enviarParaEstoque(
           dados.produtoId,
           dados.estabelecimento,
           dados.motivo
         );
-        
-        // Atualizar lista
         await carregarLocacoes();
         console.log('[LocacaoContext] Produto enviado para estoque:', dados.produtoId);
         return true;
       }
-      
       return false;
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao enviar para estoque';
@@ -451,16 +432,14 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
       return false;
     } finally {
       setCarregando(false);
+      setOperacao('enviarEstoque', false);
     }
-  }, [carregarLocacoes, finalizarLocacao]);
+  }, [carregarLocacoes, finalizarLocacao, setOperacao]);
 
   // ==========================================================================
   // UTILITÁRIOS
   // ==========================================================================
 
-  /**
-   * Verifica se produto está locado
-   */
   const verificarProdutoLocado = useCallback(async (produtoId: string): Promise<boolean> => {
     try {
       const locacao = await locacaoRepository.getAtivaByProduto(produtoId);
@@ -471,9 +450,6 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     }
   }, []);
 
-  /**
-   * Busca locação ativa por produto
-   */
   const getLocacaoAtivaPorProduto = useCallback(async (produtoId: string): Promise<Locacao | null> => {
     try {
       return await locacaoRepository.getAtivaByProduto(produtoId);
@@ -483,9 +459,6 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     }
   }, []);
 
-  /**
-   * Atualiza a lista de locações
-   */
   const atualizarLista = useCallback(async () => {
     await carregarLocacoes();
   }, [carregarLocacoes]);
@@ -495,7 +468,6 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
   // ==========================================================================
 
   const contextValue: LocacaoContextData = {
-    // Estado
     locacoes,
     locacoesAtivas,
     locacaoSelecionada,
@@ -504,28 +476,25 @@ export function LocacaoProvider({ children }: LocacaoProviderProps) {
     totalLocacoes,
     totalAtivas,
     totalFinalizadas,
+    operacoes,
+    isOperacao,
 
-    // Carregamento
     carregarLocacoes,
     carregarLocacoesPorCliente,
     carregarLocacoesPorProduto,
 
-    // Seleção
     selecionarLocacao,
     limparSelecao,
 
-    // Ações de Negócio
     criarLocacao,
     atualizarLocacao,
     finalizarLocacao,
     realizarRelocacao,
     enviarParaEstoque,
 
-    // Utilitários
     verificarProdutoLocado,
     getLocacaoAtivaPorProduto,
 
-    // Refresh
     atualizarLista,
   };
 
@@ -549,9 +518,5 @@ export function useLocacao(): LocacaoContextData {
 
   return context;
 }
-
-// ============================================================================
-// EXPORTAÇÃO PADRÃO
-// ============================================================================
 
 export default LocacaoContext;

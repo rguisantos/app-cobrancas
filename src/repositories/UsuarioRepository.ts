@@ -289,11 +289,14 @@ class UsuarioRepository {
           error.lockoutInfo = { locked: true, minutosRestantes };
           throw error;
         } else {
-          // Bloqueio expirado — resetar contadores
-          await databaseService.runAsync(
-            `UPDATE usuarios SET bloqueado = 0, tentativasLoginFalhas = 0, bloqueadoAte = NULL, updatedAt = ? WHERE id = ?`,
-            [new Date().toISOString(), (result as any).id]
-          );
+          // Bloqueio expirado — resetar contadores via databaseService.update() para registrar change_log
+          await databaseService.update('usuario', {
+            id: (result as any).id,
+            bloqueado: false,
+            tentativasLoginFalhas: 0,
+            bloqueadoAte: null,
+            version: (result as any).version || 1,
+          } as any);
         }
       }
 
@@ -316,11 +319,13 @@ class UsuarioRepository {
       if (senhaOk) {
         logger.debug('[UsuarioRepository] Senha correta! Login autorizado.');
 
-        // Resetar tentativas falhas após login bem-sucedido
-        await databaseService.runAsync(
-          `UPDATE usuarios SET tentativasLoginFalhas = 0, bloqueadoAte = NULL WHERE id = ?`,
-          [(result as any).id]
-        );
+        // Resetar tentativas falhas após login bem-sucedido via databaseService.update() para registrar change_log
+        await databaseService.update('usuario', {
+          id: (result as any).id,
+          tentativasLoginFalhas: 0,
+          bloqueadoAte: null,
+          version: (result as any).version || 1,
+        } as any);
 
         // Atualizar último acesso
         await this.atualizarUltimoAcesso((result as any).id, 'Mobile');
@@ -355,22 +360,30 @@ class UsuarioRepository {
       const TEMPO_BLOQUEIO_MINUTOS = 15;
 
       if (novasTentativas >= MAX_TENTATIVAS) {
-        const bloqueadoAte = new Date(Date.now() + TEMPO_BLOQUEIO_MINUTOS * 60000).toISOString();
-        await databaseService.runAsync(
-          `UPDATE usuarios SET tentativasLoginFalhas = ?, bloqueado = 1, bloqueadoAte = ?, updatedAt = ? WHERE id = ?`,
-          [novasTentativas, bloqueadoAte, new Date().toISOString(), (result as any).id]
-        );
+        const bloqueioAte = new Date(Date.now() + TEMPO_BLOQUEIO_MINUTOS * 60000).toISOString();
+        await databaseService.update('usuario', {
+          id: (result as any).id,
+          tentativasLoginFalhas: novasTentativas,
+          bloqueado: true,
+          bloqueadoAte: bloqueioAte,
+          version: (result as any).version || 1,
+        } as any);
         console.log(`[UsuarioRepository] Conta bloqueada após ${novasTentativas} tentativas falhas`);
       } else {
-        await databaseService.runAsync(
-          `UPDATE usuarios SET tentativasLoginFalhas = ?, updatedAt = ? WHERE id = ?`,
-          [novasTentativas, new Date().toISOString(), (result as any).id]
-        );
+        await databaseService.update('usuario', {
+          id: (result as any).id,
+          tentativasLoginFalhas: novasTentativas,
+          version: (result as any).version || 1,
+        } as any);
       }
 
       console.log('[UsuarioRepository] Senha incorreta para:', email, `(${novasTentativas}/${MAX_TENTATIVAS})`);
       return null;
-    } catch (error) {
+    } catch (error: any) {
+      // Re-lançar erros de lockout temporário para que o chamador possa exibir info de lockout
+      if (error?.lockoutInfo) {
+        throw error;
+      }
       console.error('[UsuarioRepository] Erro na autenticação:', error);
       return null;
     }

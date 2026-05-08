@@ -121,33 +121,28 @@ export default function UsuariosGerenciarScreen() {
   );
 
   const handleNovoUsuario = () => {
-    setEditandoUsuario(null);
-    setFormData({
-      id: `usr_${Date.now()}`,
-      nome: '',
-      email: '',
-      senha: '',
-      cpf: '',
-      telefone: '',
-      tipoPermissao: 'AcessoControlado',
-      status: 'Ativo',
-    });
-    setModalVisible(true);
+    // Navigate to full-screen form
+    const parent = navigation.getParent();
+    if (parent) {
+      (parent as any).navigate('UsuarioForm', { modo: 'criar' });
+    }
   };
 
   const handleEditarUsuario = (usuario: Usuario) => {
-    setEditandoUsuario(usuario);
-    setFormData({
-      id: usuario.id,
-      nome: usuario.nome,
-      email: usuario.email,
-      senha: '',
-      cpf: usuario.cpf || '',
-      telefone: usuario.telefone || '',
-      tipoPermissao: usuario.tipoPermissao,
-      status: usuario.status,
-    });
-    setModalVisible(true);
+    // Navigate to full-screen form with existing data
+    const parent = navigation.getParent();
+    if (parent) {
+      (parent as any).navigate('UsuarioForm', {
+        modo: 'editar',
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        usuarioEmail: usuario.email,
+        usuarioCpf: usuario.cpf || '',
+        usuarioTelefone: usuario.telefone || '',
+        usuarioTipoPermissao: usuario.tipoPermissao,
+        usuarioStatus: usuario.status,
+      });
+    }
   };
 
   const handleSalvar = async () => {

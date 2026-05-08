@@ -2,7 +2,12 @@
  * BuscaGlobalScreen.tsx
  * Busca global — pesquisa em todas as entidades do sistema
  * Clientes, Produtos, Cobranças e Locações
+ * - Usa API quando online, repositórios locais como fallback
+ * - Busca com debounce (300ms)
+ * - Resultados agrupados por tipo de entidade
+ * - Navegação ao tocar no resultado
  */
+
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
@@ -12,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
+import { apiService } from '../services/ApiService';
 import { clienteRepository } from '../repositories/ClienteRepository';
 import { produtoRepository } from '../repositories/ProdutoRepository';
 import { cobrancaRepository } from '../repositories/CobrancaRepository';
@@ -95,27 +101,17 @@ export default function BuscaGlobalScreen() {
   const [resultados, setResultados] = useState<ResultadoBusca[]>([]);
   const [buscando, setBuscando] = useState(false);
   const [buscou, setBuscou] = useState(false);
+  const [offline, setOffline] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ==========================================================================
-  // BUSCA COM DEBOUNCE
+  // BUSCA LOCAL (FALLBACK OFFLINE)
   // ==========================================================================
 
-  const executarBusca = useCallback(async (q: string) => {
-    if (!q.trim() || q.trim().length < 2) {
-      setResultados([]);
-      setBuscou(false);
-      return;
-    }
-
-    setBuscando(true);
-    setBuscou(true);
+  const buscaLocal = useCallback(async (q: string): Promise<ResultadoBusca[]> => {
+    const resultadosBusca: ResultadoBusca[] = [];
 
     try {
-      const lower = q.toLowerCase().trim();
-      const resultadosBusca: ResultadoBusca[] = [];
-
-      // Buscar em paralelo em todas as entidades
       const [clientes, produtos, cobrancas, locacoes] = await Promise.all([
         clienteRepository.search(q),
         produtoRepository.search(q),
@@ -200,15 +196,90 @@ export default function BuscaGlobalScreen() {
           navegarParams: { locacaoId: l.id },
         });
       }
-
-      setResultados(resultadosBusca);
     } catch (e) {
-      console.error('[BuscaGlobal] Erro na busca:', e);
+      console.error('[BuscaGlobal] Erro na busca local:', e);
+    }
+
+    return resultadosBusca;
+  }, []);
+
+  // ==========================================================================
+  // BUSCA VIA API (ONLINE)
+  // ==========================================================================
+
+  const buscaApi = useCallback(async (q: string): Promise<ResultadoBusca[]> => {
+    const resultadosBusca: ResultadoBusca[] = [];
+
+    try {
+      const response = await apiService.buscaGlobal(q);
+      if (response.success && response.data) {
+        const data = response.data as any;
+        const items = Array.isArray(data) ? data : data.resultados || data.results || [];
+
+        for (const item of items) {
+          const tipo = mapApiTipo(item.tipo || item.type);
+          if (!tipo) continue;
+          const cfg = ENTIDADE_CONFIG[tipo];
+          resultadosBusca.push({
+            id: item.id,
+            tipo,
+            titulo: item.titulo || item.nome || item.nomeExibicao || '',
+            subtitulo: item.subtitulo || item.descricao || cfg.label,
+            icone: cfg.icone,
+            iconeBg: cfg.iconeBg,
+            iconeColor: cfg.iconeColor,
+            badge: cfg.label,
+            badgeBg: cfg.badgeBg,
+            badgeColor: cfg.badgeColor,
+            navegarPara: getNavScreen(tipo, item),
+            navegarParams: getNavParams(tipo, item),
+          });
+        }
+      }
+    } catch (e) {
+      console.error('[BuscaGlobal] Erro na busca API:', e);
+    }
+
+    return resultadosBusca;
+  }, []);
+
+  // ==========================================================================
+  // BUSCA COM DEBOUNCE
+  // ==========================================================================
+
+  const executarBusca = useCallback(async (q: string) => {
+    if (!q.trim() || q.trim().length < 2) {
       setResultados([]);
+      setBuscou(false);
+      setOffline(false);
+      return;
+    }
+
+    setBuscando(true);
+    setBuscou(true);
+
+    try {
+      // Tentar API primeiro
+      const apiResultados = await buscaApi(q);
+
+      if (apiResultados.length > 0) {
+        setResultados(apiResultados);
+        setOffline(false);
+      } else {
+        // API retornou vazio ou falhou — tentar busca local
+        const locaisResultados = await buscaLocal(q);
+        setResultados(locaisResultados);
+        setOffline(locaisResultados.length > 0);
+      }
+    } catch {
+      // Fallback para busca local
+      setOffline(true);
+      const locaisResultados = await buscaLocal(q);
+      setResultados(locaisResultados);
     } finally {
       setBuscando(false);
     }
-  }, []);
+  }, [buscaApi, buscaLocal]);
 
   const handleBusca = useCallback((texto: string) => {
     setTermo(texto);
@@ -342,12 +413,20 @@ export default function BuscaGlobalScreen() {
           />
           {buscando && <ActivityIndicator size="small" color="#2563EB" />}
           {termo.length > 0 && !buscando && (
-            <TouchableOpacity onPress={() => { setTermo(''); setResultados([]); setBuscou(false); }}>
+            <TouchableOpacity onPress={() => { setTermo(''); setResultados([]); setBuscou(false); setOffline(false); }}>
               <Ionicons name="close-circle" size={18} color="#CBD5E1" />
             </TouchableOpacity>
           )}
         </View>
       </View>
+
+      {/* Offline indicator */}
+      {offline && resultados.length > 0 && (
+        <View style={st.offlineBanner}>
+          <Ionicons name="cloud-offline" size={14} color="#D97706" />
+          <Text style={st.offlineText}>Modo offline — busca local</Text>
+        </View>
+      )}
 
       {/* Resumo dos resultados */}
       {resultados.length > 0 && (
@@ -414,6 +493,45 @@ export default function BuscaGlobalScreen() {
 }
 
 // ============================================================================
+// HELPERS
+// ============================================================================
+
+function mapApiTipo(tipo: string): TipoEntidade | null {
+  const map: Record<string, TipoEntidade> = {
+    cliente: 'cliente',
+    produto: 'produto',
+    cobranca: 'cobranca',
+    locacao: 'locacao',
+    // Variações possíveis do backend
+    customer: 'cliente',
+    product: 'produto',
+    charge: 'cobranca',
+    rental: 'locacao',
+  };
+  return map[tipo.toLowerCase()] || null;
+}
+
+function getNavScreen(tipo: TipoEntidade, item: any): string {
+  switch (tipo) {
+    case 'cliente': return 'ClienteDetail';
+    case 'produto': return 'ProdutoDetail';
+    case 'cobranca': return 'CobrancaDetail';
+    case 'locacao': return 'LocacaoDetail';
+    default: return '';
+  }
+}
+
+function getNavParams(tipo: TipoEntidade, item: any): Record<string, string> {
+  switch (tipo) {
+    case 'cliente': return { clienteId: item.id || item.clienteId };
+    case 'produto': return { produtoId: item.id || item.produtoId };
+    case 'cobranca': return { cobrancaId: item.id || item.cobrancaId };
+    case 'locacao': return { locacaoId: item.id || item.locacaoId };
+    default: return {};
+  }
+}
+
+// ============================================================================
 // ESTILOS
 // ============================================================================
 
@@ -426,6 +544,10 @@ const st = StyleSheet.create({
   searchBox:  { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14,
                 backgroundColor: '#F8FAFC', borderRadius: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   searchInput:{ flex: 1, fontSize: 16, color: '#1E293B' },
+
+  // Offline
+  offlineBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#FFFBEB', paddingVertical: 8, paddingHorizontal: 16 },
+  offlineText: { fontSize: 12, color: '#D97706', fontWeight: '600' },
 
   // Resumo
   resumoBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },

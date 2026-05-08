@@ -1,6 +1,6 @@
 /**
  * ManutencaoFormScreen.tsx
- * Formulário de cadastro de manutenções / trocas de pano
+ * Formulário de cadastro/edição de manutenções / trocas de pano
  *
  * Funcionalidades:
  * - Seleção de produto (via ProdutoContext)
@@ -8,6 +8,8 @@
  * - Data (date picker)
  * - Descrição (multiline text)
  * - Cliente opcional (select from clientes)
+ * - Modo criar / editar (com preenchimento de campos existentes)
+ * - Delete com confirmação (modo editar)
  * - Permission guards client-side
  * - Audit logging em todas as mutações
  */
@@ -22,6 +24,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -63,7 +66,7 @@ type ManutencaoFormRouteProp = RouteProp<ModalStackParamList, 'ManutencaoForm'>;
 export default function ManutencaoFormScreen() {
   const route = useRoute<ManutencaoFormRouteProp>();
   const navigation = useNavigation();
-  const { registrar, carregando } = useManutencao();
+  const { registrar, atualizar, remover, manutencoes, carregando } = useManutencao();
   const { produtos, carregarProdutos } = useProduto();
   const { clientes, carregarClientes } = useCliente();
   const { user } = useAuth();
@@ -71,6 +74,7 @@ export default function ManutencaoFormScreen() {
 
   const modo = route.params?.modo || 'criar';
   const produtoIdPreSelected = route.params?.produtoId;
+  const manutencaoId = route.params?.manutencaoId;
 
   // Form state
   const [produtoId, setProdutoId] = useState<string | null>(produtoIdPreSelected || null);
@@ -90,6 +94,23 @@ export default function ManutencaoFormScreen() {
     carregarProdutos();
     carregarClientes();
   }, []);
+
+  // ==========================================================================
+  // CARREGAMENTO PARA EDIÇÃO
+  // ==========================================================================
+
+  useEffect(() => {
+    if (modo === 'editar' && manutencaoId) {
+      const manutencao = manutencoes.find(m => m.id === manutencaoId);
+      if (manutencao) {
+        setProdutoId(manutencao.produtoId || null);
+        setTipo(manutencao.tipo || 'manutencao');
+        setData(manutencao.data ? new Date(manutencao.data) : new Date());
+        setDescricao(manutencao.descricao || '');
+        setClienteId(manutencao.clienteId || null);
+      }
+    }
+  }, [modo, manutencaoId, manutencoes]);
 
   // ==========================================================================
   // VALIDAÇÃO
@@ -116,8 +137,8 @@ export default function ManutencaoFormScreen() {
 
   const handleSubmit = useCallback(async () => {
     // Permission guard
-    if (!canDo('manutencoes', 'create')) {
-      Alert.alert('Sem permissão', 'Você não tem permissão para registrar manutenções.');
+    if (!canDo('manutencoes', modo === 'criar' ? 'create' : 'edit')) {
+      Alert.alert('Sem permissão', 'Você não tem permissão para realizar esta ação.');
       return;
     }
 
@@ -131,37 +152,99 @@ export default function ManutencaoFormScreen() {
     const produtoSelecionado = produtos.find(p => String(p.id) === produtoId);
     const clienteSelecionado = clientes.find(c => String(c.id) === clienteId);
 
-    const dados: Omit<Manutencao, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'needsSync' | 'version' | 'deviceId' | 'lastSyncedAt' | 'deletedAt'> = {
-      produtoId: produtoId!,
-      produtoIdentificador: produtoSelecionado?.identificador,
-      produtoTipo: produtoSelecionado?.tipoNome,
-      clienteId: clienteId || undefined,
-      clienteNome: clienteSelecionado?.nomeExibicao,
-      tipo,
-      descricao: descricao || undefined,
-      data: data.toISOString(),
-      registradoPor: user?.nome,
-    };
-
     try {
-      const registro = await registrar(dados);
-      if (registro) {
-        // Audit log
-        await AuditService.logAction('registrar_manutencao', 'manutencao', registro.id, {
-          produtoIdentificador: dados.produtoIdentificador,
-          tipo: dados.tipo,
-          data: dados.data,
-        });
-        Alert.alert('Sucesso', 'Manutenção registrada com sucesso', [
-          { text: 'OK', onPress: () => navigation.goBack() },
-        ]);
+      if (modo === 'criar') {
+        const dados: Omit<Manutencao, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'needsSync' | 'version' | 'deviceId' | 'lastSyncedAt' | 'deletedAt'> = {
+          produtoId: produtoId!,
+          produtoIdentificador: produtoSelecionado?.identificador,
+          produtoTipo: produtoSelecionado?.tipoNome,
+          clienteId: clienteId || undefined,
+          clienteNome: clienteSelecionado?.nomeExibicao,
+          tipo,
+          descricao: descricao || undefined,
+          data: data.toISOString(),
+          registradoPor: user?.nome,
+        };
+
+        const registro = await registrar(dados);
+        if (registro) {
+          // Audit log
+          await AuditService.logAction('registrar_manutencao', 'manutencao', registro.id, {
+            produtoIdentificador: dados.produtoIdentificador,
+            tipo: dados.tipo,
+            data: dados.data,
+          });
+          Alert.alert('Sucesso', 'Manutenção registrada com sucesso', [
+            { text: 'OK', onPress: () => navigation.goBack() },
+          ]);
+        } else {
+          Alert.alert('Erro', 'Não foi possível registrar a manutenção');
+        }
       } else {
-        Alert.alert('Erro', 'Não foi possível registrar a manutenção');
+        // Modo editar
+        const dadosAtualizados: Partial<Omit<Manutencao, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'needsSync' | 'version' | 'deviceId' | 'lastSyncedAt' | 'deletedAt'>> = {
+          produtoId: produtoId!,
+          produtoIdentificador: produtoSelecionado?.identificador,
+          produtoTipo: produtoSelecionado?.tipoNome,
+          clienteId: clienteId || undefined,
+          clienteNome: clienteSelecionado?.nomeExibicao,
+          tipo,
+          descricao: descricao || undefined,
+          data: data.toISOString(),
+        };
+
+        const resultado = await atualizar(manutencaoId!, dadosAtualizados);
+        if (resultado) {
+          // Audit log
+          await AuditService.logAction('editar_manutencao', 'manutencao', manutencaoId!, {
+            produtoIdentificador: dadosAtualizados.produtoIdentificador,
+            tipo: dadosAtualizados.tipo,
+            data: dadosAtualizados.data,
+          });
+          Alert.alert('Sucesso', 'Manutenção atualizada com sucesso', [
+            { text: 'OK', onPress: () => navigation.goBack() },
+          ]);
+        } else {
+          Alert.alert('Erro', 'Não foi possível atualizar a manutenção');
+        }
       }
     } catch (error) {
-      Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao registrar manutenção');
+      Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao salvar manutenção');
     }
-  }, [produtoId, tipo, data, descricao, clienteId, produtos, clientes, user, canDo, validate, registrar, navigation]);
+  }, [modo, manutencaoId, produtoId, tipo, data, descricao, clienteId, produtos, clientes, user, canDo, validate, registrar, atualizar, navigation]);
+
+  // ==========================================================================
+  // DELETE
+  // ==========================================================================
+
+  const handleDelete = useCallback(() => {
+    Alert.alert(
+      'Excluir Manutenção',
+      'Tem certeza que deseja excluir esta manutenção? Esta ação não pode ser desfeita.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const sucesso = await remover(manutencaoId!);
+              if (sucesso) {
+                await AuditService.logAction('excluir_manutencao', 'manutencao', manutencaoId!, {});
+                Alert.alert('Sucesso', 'Manutenção excluída com sucesso', [
+                  { text: 'OK', onPress: () => navigation.goBack() },
+                ]);
+              } else {
+                Alert.alert('Erro', 'Não foi possível excluir a manutenção');
+              }
+            } catch (error) {
+              Alert.alert('Erro', 'Não foi possível excluir a manutenção');
+            }
+          },
+        },
+      ]
+    );
+  }, [manutencaoId, remover, navigation]);
 
   // ==========================================================================
   // OPÇÕES DE SELECT
@@ -273,6 +356,18 @@ export default function ManutencaoFormScreen() {
             />
           </FormSection>
 
+          {/* Botão Excluir (só no modo editar) */}
+          {modo === 'editar' && (
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={handleDelete}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={20} color="#DC2626" />
+              <Text style={styles.deleteButtonText}>Excluir Manutenção</Text>
+            </TouchableOpacity>
+          )}
+
           <View style={styles.footer} />
         </ScrollView>
 
@@ -284,11 +379,13 @@ export default function ManutencaoFormScreen() {
             disabled={carregando}
           >
             {carregando ? (
-              <Text style={styles.saveButtonText}>Salvando...</Text>
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
               <>
                 <Ionicons name="save-outline" size={20} color="#FFFFFF" />
-                <Text style={styles.saveButtonText}>Registrar Manutenção</Text>
+                <Text style={styles.saveButtonText}>
+                  {modo === 'criar' ? 'Registrar Manutenção' : 'Atualizar Manutenção'}
+                </Text>
               </>
             )}
           </TouchableOpacity>
@@ -346,5 +443,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    gap: 8,
+    marginTop: 8,
+  },
+  deleteButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#DC2626',
   },
 });

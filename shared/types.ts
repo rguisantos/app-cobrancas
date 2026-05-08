@@ -26,7 +26,7 @@ export type StatusPagamento = 'Pago' | 'Parcial' | 'Pendente' | 'Atrasado';
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'conflict' | 'error';
 export type SyncDirection = 'push' | 'pull' | 'bidirectional';
-export type EntityType = 'cliente' | 'produto' | 'locacao' | 'cobranca' | 'rota' | 'usuario' | 'manutencao' | 'meta';
+export type EntityType = 'cliente' | 'produto' | 'locacao' | 'cobranca' | 'rota' | 'usuario' | 'manutencao' | 'meta' | 'historicoRelogio' | 'tipoProduto' | 'descricaoProduto' | 'tamanhoProduto' | 'estabelecimento';
 export type ConflictResolutionStrategy = 'local' | 'remote' | 'newest' | 'manual';
 
 export interface SyncMetadata {
@@ -37,6 +37,7 @@ export interface SyncMetadata {
   deviceId: string;
   deviceName: string;
   deviceKey: string;
+  chave: string;           // Identificador de exibição do dispositivo (ex: "DEV-XXXXXX")
 }
 
 export interface SyncableEntity {
@@ -704,8 +705,8 @@ export interface DeviceActivationResponse {
   dispositivo?: {
     id: string;
     nome: string;
-    chave?: string;
-    deviceKey?: string;
+    chave: string;
+    deviceKey: string;
     status: string;
   };
   error?: string;
@@ -775,6 +776,7 @@ export interface SyncResponse {
     usuarios?: UsuarioSyncData[];
     manutencoes?: Manutencao[];
     metas?: Meta[];
+    historicoRelogio?: ProdutoHistoricoRelogio[];
   };
   conflicts?: SyncConflict[];
   errors?: string[];
@@ -803,6 +805,7 @@ export interface SyncSnapshotResponse {
     manutencoes: Manutencao[];
     metas: Meta[];
     estabelecimentos: Estabelecimento[];
+    historicoRelogio: ProdutoHistoricoRelogio[];
   };
 }
 

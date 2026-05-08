@@ -694,6 +694,7 @@ class DatabaseService {
       deviceId: '',
       deviceName: '',
       deviceKey: '',
+      chave: '',
     };
 
     for (const [key, value] of Object.entries(defaultMetadata)) {
@@ -1121,6 +1122,12 @@ class DatabaseService {
         await this.upsertEstabelecimentoFromSync(est);
       }
 
+      // Histórico de Relógio
+      const historicoRelogio = changes.historicoRelogio || [];
+      for (const hr of historicoRelogio) {
+        await this.upsertHistoricoRelogioFromSync(hr);
+      }
+
       // Reconciliar IDs temporários (tmp_/novo_) criados offline com UUIDs reais do servidor
       // Deve rodar APÓS aplicar todos os atributos do pull
       await this.reconciliarAtributosTemporarios();
@@ -1376,6 +1383,18 @@ class DatabaseService {
         ]
       );
     }
+  }
+
+  /**
+   * Upsert de historico_relogio recebido do servidor (SEM criar ChangeLog)
+   */
+  private async upsertHistoricoRelogioFromSync(hr: any): Promise<void> {
+    if (!this.db) return;
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO ${TABLES.HISTORICO_RELOGIO} (id, produtoId, relogioAnterior, relogioNovo, motivo, dataAlteracao, usuarioResponsavel, needsSync)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+      [hr.id, hr.produtoId, hr.relogioAnterior, hr.relogioNovo, hr.motivo, hr.dataAlteracao, hr.usuarioResponsavel]
+    );
   }
 
   /**
@@ -1677,13 +1696,16 @@ class DatabaseService {
   /**
    * Define ID do dispositivo
    */
-  async setDeviceId(deviceId: string, deviceName: string, deviceKey: string): Promise<void> {
-    await this.updateSyncMetadata({
+  async setDeviceId(deviceId: string, deviceName: string, deviceKey: string, chave?: string): Promise<void> {
+    const update: Partial<SyncMetadata> = {
       deviceId,
       deviceName,
       deviceKey,
-    });
-
+    };
+    if (chave) {
+      update.chave = chave;
+    }
+    await this.updateSyncMetadata(update);
   }
 
   // ==========================================================================
@@ -1792,6 +1814,11 @@ class DatabaseService {
       usuario: TABLES.USUARIOS,
       manutencao: TABLES.MANUTENCOES,
       meta: TABLES.METAS,
+      historicoRelogio: TABLES.HISTORICO_RELOGIO,
+      tipoProduto: TABLES.TIPOS_PRODUTO,
+      descricaoProduto: TABLES.DESCRICOES_PRODUTO,
+      tamanhoProduto: TABLES.TAMANHOS_PRODUTO,
+      estabelecimento: TABLES.ESTABELECIMENTOS,
     };
 
     return tableMap[entityType];
@@ -1914,10 +1941,31 @@ class DatabaseService {
   async saveTipoProduto(id: string, nome: string): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
     const now = new Date().toISOString();
+    const deviceId = await this.getDeviceId();
+
+    // Check if this is a create or update
+    const existing = await this.db.getFirstAsync<any>(
+      `SELECT id FROM ${TABLES.TIPOS_PRODUTO} WHERE id = ?`, [id]
+    );
+    const operation = existing ? 'update' : 'create';
+
     await this.db.runAsync(
       `INSERT OR REPLACE INTO ${TABLES.TIPOS_PRODUTO} (id, nome, updatedAt, needsSync) VALUES (?, ?, ?, 1)`,
       [id, nome.trim(), now]
     );
+
+    // Register change_log entry for PUSH pipeline
+    await this.logChange({
+      id: `tipoProduto_${id}_${now}`,
+      entityId: id,
+      entityType: 'tipoProduto',
+      operation,
+      changes: { id, nome: nome.trim() },
+      timestamp: now,
+      deviceId,
+      synced: false,
+    });
+
     console.log('[Database] Tipo de produto salvo:', nome);
   }
 
@@ -1927,10 +1975,30 @@ class DatabaseService {
   async saveDescricaoProduto(id: string, nome: string): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
     const now = new Date().toISOString();
+    const deviceId = await this.getDeviceId();
+
+    const existing = await this.db.getFirstAsync<any>(
+      `SELECT id FROM ${TABLES.DESCRICOES_PRODUTO} WHERE id = ?`, [id]
+    );
+    const operation = existing ? 'update' : 'create';
+
     await this.db.runAsync(
       `INSERT OR REPLACE INTO ${TABLES.DESCRICOES_PRODUTO} (id, nome, updatedAt, needsSync) VALUES (?, ?, ?, 1)`,
       [id, nome.trim(), now]
     );
+
+    // Register change_log entry for PUSH pipeline
+    await this.logChange({
+      id: `descricaoProduto_${id}_${now}`,
+      entityId: id,
+      entityType: 'descricaoProduto',
+      operation,
+      changes: { id, nome: nome.trim() },
+      timestamp: now,
+      deviceId,
+      synced: false,
+    });
+
     console.log('[Database] Descrição de produto salva:', nome);
   }
 
@@ -1940,10 +2008,30 @@ class DatabaseService {
   async saveTamanhoProduto(id: string, nome: string): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
     const now = new Date().toISOString();
+    const deviceId = await this.getDeviceId();
+
+    const existing = await this.db.getFirstAsync<any>(
+      `SELECT id FROM ${TABLES.TAMANHOS_PRODUTO} WHERE id = ?`, [id]
+    );
+    const operation = existing ? 'update' : 'create';
+
     await this.db.runAsync(
       `INSERT OR REPLACE INTO ${TABLES.TAMANHOS_PRODUTO} (id, nome, updatedAt, needsSync) VALUES (?, ?, ?, 1)`,
       [id, nome.trim(), now]
     );
+
+    // Register change_log entry for PUSH pipeline
+    await this.logChange({
+      id: `tamanhoProduto_${id}_${now}`,
+      entityId: id,
+      entityType: 'tamanhoProduto',
+      operation,
+      changes: { id, nome: nome.trim() },
+      timestamp: now,
+      deviceId,
+      synced: false,
+    });
+
     console.log('[Database] Tamanho de produto salvo:', nome);
   }
 
@@ -1957,6 +2045,19 @@ class DatabaseService {
       `UPDATE ${TABLES.TIPOS_PRODUTO} SET deletedAt = ?, needsSync = 1 WHERE id = ?`,
       [now, id]
     );
+
+    // Register change_log entry for PUSH pipeline
+    await this.logChange({
+      id: `tipoProduto_${id}_${now}`,
+      entityId: id,
+      entityType: 'tipoProduto',
+      operation: 'delete',
+      changes: { id, deletedAt: now },
+      timestamp: now,
+      deviceId: await this.getDeviceId(),
+      synced: false,
+    });
+
     console.log('[Database] Tipo de produto removido:', id);
   }
 
@@ -1970,6 +2071,19 @@ class DatabaseService {
       `UPDATE ${TABLES.DESCRICOES_PRODUTO} SET deletedAt = ?, needsSync = 1 WHERE id = ?`,
       [now, id]
     );
+
+    // Register change_log entry for PUSH pipeline
+    await this.logChange({
+      id: `descricaoProduto_${id}_${now}`,
+      entityId: id,
+      entityType: 'descricaoProduto',
+      operation: 'delete',
+      changes: { id, deletedAt: now },
+      timestamp: now,
+      deviceId: await this.getDeviceId(),
+      synced: false,
+    });
+
     console.log('[Database] Descrição de produto removida:', id);
   }
 
@@ -1983,6 +2097,19 @@ class DatabaseService {
       `UPDATE ${TABLES.TAMANHOS_PRODUTO} SET deletedAt = ?, needsSync = 1 WHERE id = ?`,
       [now, id]
     );
+
+    // Register change_log entry for PUSH pipeline
+    await this.logChange({
+      id: `tamanhoProduto_${id}_${now}`,
+      entityId: id,
+      entityType: 'tamanhoProduto',
+      operation: 'delete',
+      changes: { id, deletedAt: now },
+      timestamp: now,
+      deviceId: await this.getDeviceId(),
+      synced: false,
+    });
+
     console.log('[Database] Tamanho de produto removido:', id);
   }
 
@@ -2141,20 +2268,20 @@ class DatabaseService {
 
   // ── ESTABELECIMENTOS ──────────────────────────────────────────────────────
 
-  async getEstabelecimentos(): Promise<Array<{id: string, nome: string}>> {
+  async getEstabelecimentos(): Promise<Array<{id: string, nome: string, endereco?: string, observacao?: string}>> {
     if (!this.db) throw new Error('Database não inicializado');
-    const rows = await this.db.getAllAsync<{id: string, nome: string}>(
-      `SELECT id, nome FROM estabelecimentos WHERE deletedAt IS NULL ORDER BY nome`
+    const rows = await this.db.getAllAsync<{id: string, nome: string, endereco?: string, observacao?: string}>(
+      `SELECT id, nome, endereco, observacao FROM estabelecimentos WHERE deletedAt IS NULL ORDER BY nome`
     );
     return rows;
   }
 
-  async saveEstabelecimento(id: string, nome: string): Promise<void> {
+  async saveEstabelecimento(id: string, nome: string, endereco?: string, observacao?: string): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
     const now = new Date().toISOString();
     await this.db.runAsync(
-      `INSERT OR REPLACE INTO estabelecimentos (id, nome, createdAt, updatedAt, needsSync) VALUES (?, ?, ?, ?, 1)`,
-      [id, nome, now, now]
+      `INSERT OR REPLACE INTO estabelecimentos (id, nome, endereco, observacao, createdAt, updatedAt, needsSync) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [id, nome, endereco || null, observacao || null, now, now]
     );
   }
 

@@ -116,7 +116,19 @@ export default function MaisScreen() {
               <Text style={[s.permTagText, { color: permCfg.text }]}>{permCfg.label}</Text>
             </View>
           </View>
+          <TouchableOpacity style={s.profileEditBtn} onPress={() => navModal('Perfil')}>
+            <Ionicons name="pencil" size={16} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
+
+        {/* ── Conta ─────────────────────────────────────── */}
+        <Text style={s.groupLabel}>CONTA</Text>
+        <MenuGroup>
+          <MenuItem icon="person-circle" iconBg="#EFF6FF" iconColor="#2563EB"
+            title="Meu Perfil"
+            subtitle="Ver e editar suas informações"
+            onPress={() => navModal('Perfil')} />
+        </MenuGroup>
 
         {/* ── Gerenciamento (só admin) ─────────────────────── */}
         {(isAdmin() || user?.tipoPermissao === 'Administrador') && (<>
@@ -168,6 +180,30 @@ export default function MaisScreen() {
             <MenuItem icon="cash-outline"     iconBg="#F0FDF4" iconColor="#16A34A"
               title="Recebimentos"
               subtitle="Cobranças pagas por período" onPress={() => navModal('RelatorioRecebimentos')} />
+            <Sep />
+            <MenuItem icon="today"            iconBg="#DBEAFE" iconColor="#2563EB"
+              title="Rota Diária"
+              subtitle="Cobranças do dia por rota" onPress={() => navModal('RelatorioRotaDiaria')} />
+            <Sep />
+            <MenuItem icon="calendar"         iconBg="#FEF3C7" iconColor="#D97706"
+              title="Por Período"
+              subtitle="Cobranças mensal/semanal" onPress={() => navModal('RelatorioPeriodo')} />
+            <Sep />
+            <MenuItem icon="stats-chart"      iconBg="#EFF6FF" iconColor="#2563EB"
+              title="Financeiro"
+              subtitle="Resumo financeiro geral" onPress={() => navModal('RelatorioFinanceiro')} />
+            <Sep />
+            <MenuItem icon="map"              iconBg="#F5F3FF" iconColor="#7C3AED"
+              title="Desempenho por Rota"
+              subtitle="Comparativo de receita e inadimplência" onPress={() => navModal('RelatorioRotas')} />
+            <Sep />
+            <MenuItem icon="speedometer"      iconBg="#F0F9FF" iconColor="#0891B2"
+              title="Resumo Operacional"
+              subtitle="Cobranças e recebimentos do dia" onPress={() => navModal('RelatorioOperacional')} />
+            <Sep />
+            <MenuItem icon="swap-horizontal"  iconBg="#F5F3FF" iconColor="#7C3AED"
+              title="Comparativo de Períodos"
+              subtitle="Compare dois períodos" onPress={() => navModal('RelatorioComparativo')} />
           </MenuGroup>
         </>)}
 
@@ -189,6 +225,9 @@ export default function MaisScreen() {
           <Sep />
           <MenuItem icon="calendar" iconBg="#FEF3C7" iconColor="#D97706" title="Agenda"
             subtitle="Agenda e compromissos" onPress={() => navModal('Agenda')} />
+          <Sep />
+          <MenuItem icon="map" iconBg="#ECFDF5" iconColor="#0891B2" title="Mapa de Clientes"
+            subtitle="Visualizar clientes por localização" onPress={() => navModal('MapaClientes')} />
         </MenuGroup>
 
         {/* ── Sincronização ───────────────────────────────── */}
@@ -266,6 +305,7 @@ const s = StyleSheet.create({
   profileEmail: { fontSize: 12, color: '#64748B', marginTop: 2 },
   permTag:      { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, marginTop: 6 },
   permTagText:  { fontSize: 11, fontWeight: '700' },
+  profileEditBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center' },
 
   // Groups
   groupLabel:   { fontSize: 11, fontWeight: '700', color: '#94A3B8', letterSpacing: 1, marginBottom: 8, marginLeft: 4, marginTop: 4 },

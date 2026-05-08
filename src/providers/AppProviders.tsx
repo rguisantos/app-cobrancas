@@ -26,6 +26,9 @@ import { CobrancaProvider } from '../contexts/CobrancaContext';
 import { RotaProvider } from '../contexts/RotaContext';
 import { ManutencaoProvider } from '../contexts/ManutencaoContext';
 import { MetaProvider } from '../contexts/MetaContext';
+import { EstabelecimentoProvider } from '../contexts/EstabelecimentoContext';
+import { AtributosProvider } from '../contexts/AtributosContext';
+import { NotificacaoProvider } from '../contexts/NotificacaoContext';
 
 // Config
 import { ENV } from '../config/env';
@@ -80,7 +83,9 @@ function DashboardProviderWrapper({ children }: { children: ReactNode }) {
  *
  * Order (outer → inner):
  *   AuthProvider → SyncProvider → DashboardProvider →
- *   LocacaoProvider → ClienteProvider → ProdutoProvider → CobrancaProvider → RotaProvider
+ *   LocacaoProvider → ClienteProvider → ProdutoProvider → CobrancaProvider →
+ *   RotaProvider → ManutencaoProvider → MetaProvider →
+ *   EstabelecimentoProvider → AtributosProvider → NotificacaoProvider
  *
  * DatabaseProvider is provided at the App level and is NOT included here.
  */
@@ -96,7 +101,13 @@ export function AppProviders({ children }: { children: ReactNode }) {
                   <RotaProvider>
                     <ManutencaoProvider>
                       <MetaProvider>
-                        {children}
+                        <EstabelecimentoProvider>
+                          <AtributosProvider>
+                            <NotificacaoProvider>
+                              {children}
+                            </NotificacaoProvider>
+                          </AtributosProvider>
+                        </EstabelecimentoProvider>
                       </MetaProvider>
                     </ManutencaoProvider>
                   </RotaProvider>

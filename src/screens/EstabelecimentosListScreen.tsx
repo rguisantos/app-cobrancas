@@ -82,16 +82,26 @@ export default function EstabelecimentosListScreen() {
   // ==========================================================================
 
   const handleNovoItem = useCallback(() => {
-    setEditandoItem(null);
-    setNomeItem('');
-    setModalVisible(true);
-  }, []);
+    // Navigate to full-screen form
+    const parent = navigation.getParent();
+    if (parent) {
+      (parent as any).navigate('EstabelecimentoForm', { modo: 'criar' });
+    }
+  }, [navigation]);
 
   const handleEditarItem = useCallback((item: AtributoItem) => {
-    setEditandoItem(item);
-    setNomeItem(item.nome);
-    setModalVisible(true);
-  }, []);
+    // Navigate to full-screen form with existing data
+    const parent = navigation.getParent();
+    if (parent) {
+      (parent as any).navigate('EstabelecimentoForm', {
+        modo: 'editar',
+        estabelecimentoId: item.id,
+        estabelecimentoNome: item.nome,
+        estabelecimentoEndereco: (item as any).endereco || '',
+        estabelecimentoObservacao: (item as any).observacao || '',
+      });
+    }
+  }, [navigation]);
 
   const handleSalvar = useCallback(async () => {
     if (!nomeItem.trim()) {

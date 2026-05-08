@@ -178,9 +178,14 @@ class AuthService {
           const lockoutError: Error & { lockoutInfo?: LockoutInfo } = new Error(
             typeof apiResponse.error === 'string' ? apiResponse.error : 'Conta temporariamente bloqueada'
           );
-          // Tentar extrair informações de lockout do erro estruturado ou da string
-          if ((apiResponse as any).data?.lockoutInfo) {
-            lockoutError.lockoutInfo = (apiResponse as any).data.lockoutInfo;
+          // Prioridade 1: usar lockoutInfo estruturado do corpo da resposta
+          const responseData = apiResponse.data as any;
+          if (responseData?.lockoutInfo) {
+            lockoutError.lockoutInfo = {
+              locked: true,
+              minutosRestantes: responseData.lockoutInfo.minutosRestantes,
+            };
+          // Prioridade 2 (fallback): extrair do texto do erro via regex
           } else if (typeof apiResponse.error === 'string' && apiResponse.error.includes('minutos')) {
             const match = apiResponse.error.match(/(\d+)\s*minutos/);
             if (match) {
@@ -213,7 +218,18 @@ class AuthService {
 
       // 2. Tentar autenticação local (fallback ou modo mock)
       logger.info('[Auth] Tentando autenticação local...');
-      const usuarioLocal = await usuarioRepository.autenticar(email, password);
+      let usuarioLocal: UsuarioLogin | null = null;
+      try {
+        usuarioLocal = await usuarioRepository.autenticar(email, password);
+      } catch (localAuthError: any) {
+        // Se o repositório lançou erro de lockout temporário, propagar para o chamador
+        if (localAuthError?.lockoutInfo) {
+          logger.warn('[Auth] Conta bloqueada localmente (offline)', { email });
+          throw localAuthError;
+        }
+        // Outros erros de autenticação local — tratar como credenciais incorretas
+        logger.warn('[Auth] Erro na autenticação local', { error: localAuthError?.message });
+      }
       
       if (usuarioLocal) {
         // Gerar token local criptograficamente seguro (sem prefixo óbvio)
@@ -259,7 +275,7 @@ class AuthService {
       .join('');
     const timestamp = Date.now().toString(36);
     const userIdHash = usuarioId.slice(0, 8);
-    return `local.${timestamp}.${userIdHash}${randomPart.slice(0, 16)}.${randomPart}`;
+    return `LOCAL_${timestamp}.${userIdHash}${randomPart.slice(0, 16)}.${randomPart}`;
   }
 
   /**
@@ -269,8 +285,9 @@ class AuthService {
    * (header JSON base64url); tokens locais antigos não.
    */
   private isLocalToken(token: string): boolean {
-    if (token.startsWith('local.')) return true;
-    return token.startsWith('ey') && token.split('.').length === 3 && !token.startsWith('eyJ');
+    // Prefixo LOCAL_ é o formato atual; local. é mantido para compatibilidade com tokens antigos
+    if (token.startsWith('LOCAL_') || token.startsWith('local.')) return true;
+    return false;
   }
 
   /**

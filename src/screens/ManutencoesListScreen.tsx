@@ -124,7 +124,14 @@ export default function ManutencoesListScreen() {
     const tipoInfo = TIPO_CONFIG[item.tipo] || TIPO_CONFIG.manutencao;
 
     return (
-      <View style={styles.card}>
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => navigation.navigate('ManutencaoForm', {
+          modo: 'editar',
+          manutencaoId: item.id,
+        })}
+        activeOpacity={0.7}
+      >
         <View style={styles.cardHeader}>
           <View style={styles.cardIcon}>
             <Ionicons name={tipoInfo.icon} size={20} color={tipoInfo.color} />
@@ -177,7 +184,7 @@ export default function ManutencoesListScreen() {
             </View>
           ) : null}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   }, []);
 

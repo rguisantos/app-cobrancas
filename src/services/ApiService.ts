@@ -276,6 +276,7 @@ class ApiService {
 
         return {
           success: false,
+          data: data as T | undefined,
           error: data.message || data.error || `Erro HTTP ${response.status}`,
           statusCode: response.status,
         };
@@ -405,122 +406,57 @@ class ApiService {
   }
 
   /**
-   * Busca mudanças do servidor (PULL)
-   * Requer token JWT para autenticação
-   * CORREÇÃO: Suporta paginação via hasMore — faz pull em loop até receber todos os dados
+   * Busca mudanças do servidor (PULL) — single round only.
+   * 
+   * Requer token JWT para autenticação.
+   * 
+   * NOTE: Pagination is handled by SyncService.pullChanges(), NOT here.
+   * This method does a single POST /api/sync/pull request and returns the
+   * raw response. The caller (SyncService) is responsible for looping with
+   * hasMore pagination. The old pagination logic that was in this method
+   * has been removed to avoid duplicate pagination — SyncService is the
+   * single entry point for PULL operations.
    */
   async pullChanges(payload: PullChangesRequest): Promise<SyncResponse> {
-    // CORREÇÃO: Fazer pull em loop para suportar paginação
-    let allChanges: SyncResponse = {
-      success: true,
-      lastSyncAt: new Date().toISOString(),
-      changes: {
-        clientes: [],
-        produtos: [],
-        locacoes: [],
-        cobrancas: [],
-        rotas: [],
-        usuarios: [],
-        manutencoes: [],
-        metas: [],
-      },
-      conflicts: [],
-      errors: [],
-      tiposProduto: [],
-      descricoesProduto: [],
-      tamanhosProduto: [],
-      estabelecimentos: [],
-    };
+    if (ENV.DEBUG) {
+      console.log(`[API:SYNC:PULL] deviceId=${payload.deviceId}, lastSyncAt=${payload.lastSyncAt}`);
+    }
 
-    let currentLastSyncAt = payload.lastSyncAt;
-    let hasMore = true;
-    let pullRound = 0;
+    // Single round — pagination is handled by SyncService.pullChanges()
+    const response = await this.post<SyncResponse>('/api/sync/pull', payload, 'sync');
 
-    while (hasMore) {
-      pullRound++;
-
-      const response = await this.post<SyncResponse>('/api/sync/pull', {
-        ...payload,
-        lastSyncAt: currentLastSyncAt,
-      }, 'sync');
-
-      if (!response.success || !response.data) {
-        // Se já temos dados de rounds anteriores, retornar o que temos
-        if (pullRound > 1) {
-          allChanges.errors = [...(allChanges.errors || []), response.error || 'Falha em round de pull'];
-          break;
-        }
-        return {
-          success: false,
-          lastSyncAt: new Date().toISOString(),
-          changes: {
-            clientes: [],
-            produtos: [],
-            locacoes: [],
-            cobrancas: [],
-            rotas: [],
-            usuarios: [],
-            manutencoes: [],
-            metas: [],
-          },
-          conflicts: [],
-          errors: [response.error || 'Falha ao buscar mudanças'],
-        };
+    if (!response.success || !response.data) {
+      if (ENV.DEBUG) {
+        console.log(`[API:SYNC:PULL] falha: ${response.error}`);
       }
-
-      const data = response.data;
-      const changes = data.changes || {};
-
-      // Acumular resultados
-      const allCh = allChanges.changes || {};
-      allCh.clientes = [...(allCh.clientes || []), ...(changes.clientes || [])];
-      allCh.produtos = [...(allCh.produtos || []), ...(changes.produtos || [])];
-      allCh.locacoes = [...(allCh.locacoes || []), ...(changes.locacoes || [])];
-      allCh.cobrancas = [...(allCh.cobrancas || []), ...(changes.cobrancas || [])];
-      allCh.rotas = [...(allCh.rotas || []), ...(changes.rotas || [])];
-      allCh.usuarios = [...(allCh.usuarios || []), ...(changes.usuarios || [])];
-      allCh.manutencoes = [...(allCh.manutencoes || []), ...(changes.manutencoes || [])];
-      allCh.metas = [...(allCh.metas || []), ...(changes.metas || [])];
-      allChanges.changes = allCh;
-      allChanges.tiposProduto = [
-        ...(allChanges.tiposProduto || []),
-        ...(data.tiposProduto || []),
-      ];
-      allChanges.descricoesProduto = [
-        ...(allChanges.descricoesProduto || []),
-        ...(data.descricoesProduto || []),
-      ];
-      allChanges.tamanhosProduto = [
-        ...(allChanges.tamanhosProduto || []),
-        ...(data.tamanhosProduto || []),
-      ];
-      allChanges.estabelecimentos = [
-        ...(allChanges.estabelecimentos || []),
-        ...(data.estabelecimentos || []),
-      ];
-      allChanges.lastSyncAt = data.lastSyncAt;
-      allChanges.conflicts = [...(allChanges.conflicts || []), ...(data.conflicts || [])];
-      allChanges.errors = [...(allChanges.errors || []), ...(data.errors || [])];
-      allChanges.isStale = data.isStale;
-
-      // Verificar paginação
-      hasMore = !!data.hasMore;
-      currentLastSyncAt = data.lastSyncAt;
+      return {
+        success: false,
+        lastSyncAt: new Date().toISOString(),
+        changes: {
+          clientes: [],
+          produtos: [],
+          locacoes: [],
+          cobrancas: [],
+          rotas: [],
+          usuarios: [],
+          manutencoes: [],
+          metas: [],
+        },
+        conflicts: [],
+        errors: [response.error || 'Falha ao buscar mudanças'],
+      };
     }
 
     if (ENV.DEBUG) {
-      const changes = allChanges.changes || {};
+      const data = response.data;
+      const changes = data.changes || {};
       const total = (changes.clientes?.length || 0) + (changes.produtos?.length || 0) +
         (changes.locacoes?.length || 0) + (changes.cobrancas?.length || 0) +
         (changes.rotas?.length || 0) + (changes.usuarios?.length || 0) +
-        (changes.manutencoes?.length || 0) + (changes.metas?.length || 0) +
-        (allChanges.tiposProduto?.length || 0) +
-        (allChanges.descricoesProduto?.length || 0) +
-        (allChanges.tamanhosProduto?.length || 0) +
-        (allChanges.estabelecimentos?.length || 0);
-      console.log(`[API:SYNC:PULL] OK — ${pullRound} rounds, ${total} entidades`);
+        (changes.manutencoes?.length || 0) + (changes.metas?.length || 0);
+      console.log(`[API:SYNC:PULL] OK — ${total} entidades, hasMore=${!!data.hasMore}, conflicts=${data.conflicts?.length || 0}, errors=${data.errors?.length || 0}`);
     }
-    return allChanges;
+    return response.data;
   }
 
   /**
@@ -726,6 +662,22 @@ class ApiService {
     return this.post('/api/auth/change-password', { senhaAtual, novaSenha });
   }
 
+  /**
+   * Solicita e-mail de recuperação de senha
+   * Backend: POST /api/auth/forgot-password { email }
+   */
+  async forgotPassword(email: string): Promise<ApiResponse<{ success: boolean; message?: string }>> {
+    return this.post('/api/auth/forgot-password', { email });
+  }
+
+  /**
+   * Redefine a senha usando o token de recuperação
+   * Backend: POST /api/auth/reset-password { token, novaSenha, confirmarSenha }
+   */
+  async resetPassword(token: string, novaSenha: string, confirmarSenha: string): Promise<ApiResponse<{ success: boolean; message?: string }>> {
+    return this.post('/api/auth/reset-password', { token, novaSenha, confirmarSenha });
+  }
+
   // ==========================================================================
   // DASHBOARD
   // ==========================================================================
@@ -769,9 +721,11 @@ class ApiService {
   /**
    * Relatório de inadimplência — clientes com cobranças atrasadas
    */
-  async getRelatorioInadimplencia(filters?: { rotaId?: string }): Promise<ApiResponse<any>> {
+  async getRelatorioInadimplencia(filters?: { rotaId?: string; dataInicio?: string; dataFim?: string }): Promise<ApiResponse<any>> {
     const params = new URLSearchParams();
     if (filters?.rotaId) params.set('rotaId', filters.rotaId);
+    if (filters?.dataInicio) params.set('dataInicio', filters.dataInicio);
+    if (filters?.dataFim) params.set('dataFim', filters.dataFim);
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.get(`/api/relatorios/inadimplencia${query}`);
   }
@@ -779,10 +733,11 @@ class ApiService {
   /**
    * Relatório de estoque — produtos disponíveis (não locados)
    */
-  async getRelatorioEstoque(filters?: { tipoId?: string; estabelecimento?: string }): Promise<ApiResponse<any>> {
+  async getRelatorioEstoque(filters?: { tipoId?: string; estabelecimento?: string; conservacao?: string }): Promise<ApiResponse<any>> {
     const params = new URLSearchParams();
     if (filters?.tipoId) params.set('tipoId', filters.tipoId);
     if (filters?.estabelecimento) params.set('estabelecimento', filters.estabelecimento);
+    if (filters?.conservacao) params.set('conservacao', filters.conservacao);
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.get(`/api/relatorios/estoque${query}`);
   }
@@ -790,8 +745,90 @@ class ApiService {
   /**
    * Relatório de recebimentos — cobranças pagas em um período
    */
-  async getRelatorioRecebimentos(dataInicio: string, dataFim: string): Promise<ApiResponse<any>> {
-    return this.get(`/api/relatorios/recebimentos?dataInicio=${dataInicio}&dataFim=${dataFim}`);
+  async getRelatorioRecebimentos(dataInicio: string, dataFim: string, rotaId?: string): Promise<ApiResponse<any>> {
+    const params: Record<string, string> = { dataInicio, dataFim };
+    if (rotaId) params.rotaId = rotaId;
+    return this.get('/api/relatorios/recebimentos', params);
+  }
+
+  /**
+   * Relatório de manutenções — trocas de pano e manutenções
+   */
+  async getRelatorioManutencoes(params?: { periodo?: string; dataInicio?: string; dataFim?: string; tipo?: string }): Promise<ApiResponse<any>> {
+    return this.get('/api/relatorios/manutencoes', params as Record<string, any>);
+  }
+
+  /**
+   * Relatório de rotas — desempenho por rota
+   */
+  async getRelatorioRotas(params?: { periodo?: string; dataInicio?: string; dataFim?: string }): Promise<ApiResponse<any>> {
+    return this.get('/api/relatorios/rotas', params as Record<string, any>);
+  }
+
+  /**
+   * Relatório operacional — resumo diário
+   */
+  async getRelatorioOperacional(params?: { periodo?: string; dataInicio?: string; dataFim?: string; rotaId?: string }): Promise<ApiResponse<any>> {
+    return this.get('/api/relatorios/operacional', params as Record<string, any>);
+  }
+
+  /**
+   * Relatório comparativo — comparação entre dois períodos
+   */
+  async getRelatorioComparativo(periodo1Inicio: string, periodo1Fim: string, periodo2Inicio: string, periodo2Fim: string, rotaId?: string): Promise<ApiResponse<any>> {
+    const params: Record<string, string> = { periodo1Inicio, periodo1Fim, periodo2Inicio, periodo2Fim };
+    if (rotaId) params.rotaId = rotaId;
+    return this.get('/api/relatorios/comparativo', params);
+  }
+
+  /**
+   * Relatório de locações
+   */
+  async getRelatorioLocacoes(params?: { periodo?: string; dataInicio?: string; dataFim?: string; rotaId?: string }): Promise<ApiResponse<any>> {
+    return this.get('/api/relatorios/locacoes', params as Record<string, any>);
+  }
+
+  /**
+   * Relatório de clientes
+   */
+  async getRelatorioClientes(params?: { periodo?: string; dataInicio?: string; dataFim?: string; rotaId?: string }): Promise<ApiResponse<any>> {
+    return this.get('/api/relatorios/clientes', params as Record<string, any>);
+  }
+
+  /**
+   * Relatório de relógios (histórico de troca)
+   */
+  async getRelatorioRelogios(params?: { periodo?: string; dataInicio?: string; dataFim?: string }): Promise<ApiResponse<any>> {
+    return this.get('/api/relatorios/relogios', params as Record<string, any>);
+  }
+
+  /**
+   * Exporta relatório em PDF, CSV ou XLSX
+   * Retorna blob para download/share
+   */
+  async exportarRelatorio(tipo: string, formato: 'pdf' | 'csv' | 'xlsx', params?: { periodo?: string; dataInicio?: string; dataFim?: string; rotaId?: string }): Promise<ApiResponse<Blob>> {
+    const queryParams: Record<string, string> = { formato, ...(params as Record<string, string> || {}) };
+    const queryString = new URLSearchParams(queryParams).toString();
+    const url = `/api/relatorios/${tipo}/exportar?${queryString}`;
+
+    // Use direct fetch for blob response
+    const fullUrl = `${this.baseURL}${url}`;
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    try {
+      const response = await fetch(fullUrl, { headers });
+      if (!response.ok) {
+        const text = await response.text();
+        return { success: false, error: text || `Erro HTTP ${response.status}`, statusCode: response.status };
+      }
+      const blob = await response.blob();
+      return { success: true, data: blob, statusCode: response.status };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Erro ao exportar' };
+    }
   }
 
   // ==========================================================================
@@ -844,6 +881,42 @@ class ApiService {
    */
   async getHistoricoPagamentos(cobrancaId: string): Promise<ApiResponse<any[]>> {
     return this.get(`/api/historico-pagamentos?cobrancaId=${cobrancaId}`);
+  }
+
+  // ==========================================================================
+  // RECIBOS
+  // ==========================================================================
+
+  /**
+   * Busca recibo completo de uma cobrança (A4)
+   */
+  async getRecibo(cobrancaId: string): Promise<ApiResponse<any>> {
+    return this.get(`/api/cobrancas/${cobrancaId}/recibo`);
+  }
+
+  /**
+   * Busca recibo térmico de uma cobrança (58mm)
+   */
+  async getReciboTermico(cobrancaId: string): Promise<ApiResponse<any>> {
+    return this.get(`/api/cobrancas/${cobrancaId}/recibo-termico`);
+  }
+
+  // ==========================================================================
+  // MAPA
+  // ==========================================================================
+
+  /**
+   * Busca dados do mapa (clientes com coordenadas)
+   */
+  async getMapaData(): Promise<ApiResponse<any>> {
+    return this.get('/api/mapa');
+  }
+
+  /**
+   * Geocodifica um endereço
+   */
+  async geocodificar(endereco: string): Promise<ApiResponse<any>> {
+    return this.get('/api/mapa/geocodificar', { endereco });
   }
 
   // ==========================================================================

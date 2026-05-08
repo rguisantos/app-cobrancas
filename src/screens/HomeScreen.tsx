@@ -7,7 +7,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, RefreshControl, ActivityIndicator,
-  Dimensions, FlatList,
+  Dimensions, FlatList, TextInput,
 } from 'react-native';
 import { Ionicons }     from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -20,6 +20,7 @@ import { useSync }      from '../contexts/SyncContext';
 import { AppTabsParamList } from '../navigation/AppNavigator';
 import SyncIndicator from '../components/SyncIndicator';
 import { formatarMoeda } from '../utils/currency';
+import { ModalStackParamList } from '../navigation/AppNavigator';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 40;
@@ -133,6 +134,11 @@ export default function HomeScreen() {
     if (parent) (parent as any).navigate(screen, params);
   }, [navigation]);
 
+  // Navegar para Busca Global
+  const handleSearchPress = useCallback(() => {
+    navModal('BuscaGlobal');
+  }, [navModal]);
+
   // ─── permissões ───────────────────────────────────────────────────────────
   const podeCadastrarCliente = isAdmin() || hasPermission('clientes', 'mobile');
   const podeCadastrarProduto = isAdmin() || hasPermission('produtos', 'mobile');
@@ -221,8 +227,8 @@ export default function HomeScreen() {
     { key: 'locacao', label: 'Nova Locação', icon: 'add-circle' as const, color: '#9333EA', visible: podeLocar, onPress: () => nav('Clientes') },
     { key: 'cobranca', label: 'Cobrança', icon: 'cash' as const, color: '#16A34A', visible: podeCobrar, onPress: () => nav('Cobrancas') },
     { key: 'produto', label: 'Novo Produto', icon: 'cube' as const, color: '#EA580C', visible: podeCadastrarProduto, onPress: () => navModal('ProdutoForm', { modo: 'criar' }) },
-    { key: 'relogio', label: 'Alterar Relógio', icon: 'timer' as const, color: '#0891B2', visible: podeRelogio, onPress: () => nav('Produtos') },
-    { key: 'config', label: 'Configurações', icon: 'settings' as const, color: '#64748B', visible: isAdmin(), onPress: () => navModal('Settings') },
+    { key: 'mapa', label: 'Mapa Clientes', icon: 'map' as const, color: '#0891B2', visible: true, onPress: () => navModal('MapaClientes') },
+    { key: 'relogio', label: 'Alterar Relógio', icon: 'timer' as const, color: '#64748B', visible: podeRelogio, onPress: () => nav('Produtos') },
   ].filter(a => a.visible);
 
   // ─── indicadores de página ───────────────────────────────────────────────
@@ -275,6 +281,16 @@ export default function HomeScreen() {
             <SyncIndicator status={syncStatus} isSyncing={isSyncing} size="small" />
           </TouchableOpacity>
         </View>
+
+        {/* ── BARRA DE BUSCA ──────────────────────────────────────────── */}
+        <TouchableOpacity
+          style={s.searchBar}
+          onPress={handleSearchPress}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="search" size={20} color="#94A3B8" />
+          <Text style={s.searchPlaceholder}>Buscar clientes, produtos, cobranças...</Text>
+        </TouchableOpacity>
 
         {/* ── INFO BAR: permissão + sync ───────────────────────────────── */}
         <View style={s.infoBar}>
@@ -382,6 +398,62 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* ── SYNC STATUS INDICATOR ─────────────────────────────────────── */}
+        {isSyncing && (
+          <View style={s.syncBanner}>
+            <ActivityIndicator size="small" color="#2563EB" />
+            <Text style={s.syncBannerText}>Sincronizando dados...</Text>
+          </View>
+        )}
+        {mudancasPendentes > 0 && !isSyncing && (
+          <TouchableOpacity style={s.pendingBanner} onPress={() => sincronizar(true)} activeOpacity={0.7}>
+            <Ionicons name="cloud-upload-outline" size={16} color="#2563EB" />
+            <Text style={s.pendingBannerText}>{mudancasPendentes} alterações pendentes — toque para sincronizar</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* ── ATIVIDADE RECENTE ───────────────────────────────────────────── */}
+        <View style={s.sectionHeader}>
+          <Text style={s.secTitle}>Atividade Recente</Text>
+          <TouchableOpacity onPress={() => navModal('RelatorioCobrancas')}>
+            <Text style={s.secSubtitle}>Ver tudo</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={s.activityCard}>
+          <View style={s.activityItem}>
+            <View style={[s.activityIcon, { backgroundColor: '#F0FDF4' }]}>
+              <Ionicons name="cash" size={18} color="#16A34A" />
+            </View>
+            <View style={s.activityInfo}>
+              <Text style={s.activityTitle}>Cobranças hoje</Text>
+              <Text style={s.activitySub}>{metricas?.cobrancasHoje || 0} realizadas</Text>
+            </View>
+            <Text style={s.activityValor}>{formatarMoeda(metricas?.totalRecebidoHoje || 0)}</Text>
+          </View>
+          <View style={s.activityDivisor} />
+          <View style={s.activityItem}>
+            <View style={[s.activityIcon, { backgroundColor: '#FEF2F2' }]}>
+              <Ionicons name="alert-circle" size={18} color="#DC2626" />
+            </View>
+            <View style={s.activityInfo}>
+              <Text style={s.activityTitle}>Pendentes</Text>
+              <Text style={s.activitySub}>Aguardando pagamento</Text>
+            </View>
+            <Text style={[s.activityValor, { color: '#DC2626' }]}>{metricas?.cobrancasPendentes || 0}</Text>
+          </View>
+          <View style={s.activityDivisor} />
+          <View style={s.activityItem}>
+            <View style={[s.activityIcon, { backgroundColor: '#EFF6FF' }]}>
+              <Ionicons name="people" size={18} color="#2563EB" />
+            </View>
+            <View style={s.activityInfo}>
+              <Text style={s.activityTitle}>Clientes ativos</Text>
+              <Text style={s.activitySub}>Total cadastrados</Text>
+            </View>
+            <Text style={s.activityValor}>{metricas?.totalClientes || 0}</Text>
+          </View>
+        </View>
+
         {/* ── ERRO ──────────────────────────────────────────────────── */}
         {erro && (
           <View style={s.errorCard}>
@@ -425,6 +497,29 @@ const s = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
+  },
+
+  // search bar
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  searchPlaceholder: {
+    flex: 1,
+    fontSize: 15,
+    color: '#94A3B8',
   },
 
   // info bar
@@ -570,4 +665,35 @@ const s = StyleSheet.create({
   },
   errorText:       { flex: 1, color: '#DC2626', fontSize: 14 },
   retryText:       { color: '#2563EB', fontSize: 14, fontWeight: '600' },
+
+  // sync banners
+  syncBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#EFF6FF', paddingVertical: 10, paddingHorizontal: 16,
+    borderRadius: 12, marginBottom: 12,
+  },
+  syncBannerText: { fontSize: 13, color: '#2563EB', fontWeight: '600' },
+  pendingBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FFFBEB', paddingVertical: 10, paddingHorizontal: 16,
+    borderRadius: 12, marginBottom: 12,
+  },
+  pendingBannerText: { flex: 1, fontSize: 12, color: '#D97706', fontWeight: '500' },
+
+  // activity
+  activityCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
+  },
+  activityItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8,
+  },
+  activityIcon: {
+    width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center',
+  },
+  activityInfo: { flex: 1 },
+  activityTitle: { fontSize: 14, fontWeight: '600', color: '#1E293B' },
+  activitySub: { fontSize: 12, color: '#94A3B8', marginTop: 1 },
+  activityValor: { fontSize: 16, fontWeight: '800', color: '#1E293B' },
+  activityDivisor: { height: 1, backgroundColor: '#F1F5F9' },
 });

@@ -170,7 +170,8 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   // ==========================================================================
 
   useEffect(() => {
-    if (!token || (token.startsWith('ey') && token.split('.').length === 3)) return; // Não refresh tokens locais
+    // Only refresh real JWTs (not local tokens). Local tokens start with LOCAL_ or local.
+    if (!token || token.startsWith('LOCAL_') || token.startsWith('local.')) return;
 
     const interval = setInterval(async () => {
       try {

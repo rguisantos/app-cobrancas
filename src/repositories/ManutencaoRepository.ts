@@ -42,6 +42,52 @@ class ManutencaoRepository {
     return registro;
   }
 
+  /**
+   * Atualiza uma manutenção existente
+   */
+  async update(id: string, data: Partial<Omit<Manutencao, 'id' | 'createdAt' | 'updatedAt' | 'syncStatus' | 'needsSync' | 'version' | 'deviceId' | 'lastSyncedAt' | 'deletedAt'>>): Promise<Manutencao | null> {
+    try {
+      const existing = await databaseService.getById<Manutencao>('manutencao', id);
+      if (!existing) {
+        console.warn('[ManutencaoRepository] Manutenção não encontrada para atualização:', id);
+        return null;
+      }
+
+      const now = new Date().toISOString();
+      const updated: Manutencao = {
+        ...existing,
+        ...data,
+        syncStatus: 'pending' as SyncStatus,
+        createdAt: existing.createdAt || now,
+        updatedAt: now,
+      };
+
+      await databaseService.update('manutencao', {
+        ...updated,
+        createdAt: updated.createdAt || now,
+      } as any);
+      console.log('[ManutencaoRepository] Manutenção atualizada:', id);
+      return updated;
+    } catch (error) {
+      console.error('[ManutencaoRepository] Erro ao atualizar manutenção:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove uma manutenção (soft delete)
+   */
+  async delete(id: string): Promise<boolean> {
+    try {
+      await databaseService.delete('manutencao', id);
+      console.log('[ManutencaoRepository] Manutenção removida:', id);
+      return true;
+    } catch (error) {
+      console.error('[ManutencaoRepository] Erro ao remover manutenção:', error);
+      return false;
+    }
+  }
+
   async getAll(filters?: ManutencaoFilters): Promise<Manutencao[]> {
     try {
       return await databaseService.getManutencoes(filters) as Manutencao[];
