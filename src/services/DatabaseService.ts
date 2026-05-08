@@ -122,11 +122,14 @@ class DatabaseService {
       // Aguarda 5s antes de "database is locked"
       await this.db.execAsync('PRAGMA busy_timeout = 5000;');
       
-      // Criar tabelas
+      // Criar tabelas (apenas CREATE TABLE, sem índices)
       await this.createTables();
       
       // Executar migrations (adicionar colunas faltantes em bancos existentes)
       await this.runMigrations();
+      
+      // Criar índices (APÓS migrations para garantir que colunas existam)
+      await this.createIndexes();
       
       // Inicializar metadata de sync
       await this.initializeSyncMetadata();
@@ -141,7 +144,9 @@ class DatabaseService {
   }
 
   /**
-   * Cria todas as tabelas do banco
+   * Cria todas as tabelas do banco (APENAS CREATE TABLE, sem índices)
+   * Índices são criados em createIndexes() APÓS runMigrations()
+   * para garantir que colunas como syncStatus já existam.
    */
   private async createTables(): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
@@ -156,7 +161,8 @@ class DatabaseService {
         cpf TEXT,
         rg TEXT,
         nomeCompleto TEXT,
-        cnpj TEXT,        razaoSocial TEXT,
+        cnpj TEXT,
+        razaoSocial TEXT,
         nomeFantasia TEXT,
         inscricaoEstadual TEXT,
         nomeExibicao TEXT,
@@ -178,8 +184,6 @@ class DatabaseService {
         dataCadastro TEXT,
         dataUltimaAlteracao TEXT,
         observacao TEXT,
-        
-        -- Controle de sincronização
         syncStatus TEXT,
         lastSyncedAt TEXT,
         needsSync INTEGER,
@@ -207,15 +211,14 @@ class DatabaseService {
         conservacao TEXT,
         statusProduto TEXT,
         dataFabricacao TEXT,
-        dataUltimaManutencao TEXT,        relatorioUltimaManutencao TEXT,
+        dataUltimaManutencao TEXT,
+        relatorioUltimaManutencao TEXT,
         dataAvaliacao TEXT,
         aprovacao TEXT,
         estabelecimento TEXT,
         observacao TEXT,
         dataCadastro TEXT,
         dataUltimaAlteracao TEXT,
-        
-        -- Controle de sincronização
         syncStatus TEXT,
         lastSyncedAt TEXT,
         needsSync INTEGER,
@@ -251,14 +254,13 @@ class DatabaseService {
         dataUltimaCobranca TEXT,
         trocaPano INTEGER DEFAULT 0,
         dataUltimaManutencao TEXT,
-        
-        -- Controle de sincronização
         syncStatus TEXT,
         lastSyncedAt TEXT,
         needsSync INTEGER,
         version INTEGER,
         deviceId TEXT,
-        createdAt TEXT,        updatedAt TEXT,
+        createdAt TEXT,
+        updatedAt TEXT,
         deletedAt TEXT
       )`,
 
@@ -292,8 +294,6 @@ class DatabaseService {
         dataVencimento TEXT,
         observacao TEXT,
         trocaPano INTEGER DEFAULT 0,
-        
-        -- Controle de sincronização
         syncStatus TEXT,
         lastSyncedAt TEXT,
         needsSync INTEGER,
@@ -435,25 +435,7 @@ class DatabaseService {
         needsSync INTEGER DEFAULT 1
       )`,
 
-      // Sync Metadata
-      `CREATE TABLE IF NOT EXISTS ${TABLES.SYNC_METADATA} (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      )`,
-
-      // Índices para performance
-      `CREATE INDEX IF NOT EXISTS idx_clientes_rota ON ${TABLES.CLIENTES}(rotaId)`,
-      `CREATE INDEX IF NOT EXISTS idx_clientes_status ON ${TABLES.CLIENTES}(status)`,
-      `CREATE INDEX IF NOT EXISTS idx_clientes_sync ON ${TABLES.CLIENTES}(syncStatus, needsSync)`,
-      
-      `CREATE INDEX IF NOT EXISTS idx_produtos_status ON ${TABLES.PRODUTOS}(statusProduto)`,
-      `CREATE INDEX IF NOT EXISTS idx_produtos_sync ON ${TABLES.PRODUTOS}(syncStatus, needsSync)`,
-      
-      `CREATE INDEX IF NOT EXISTS idx_locacoes_cliente ON ${TABLES.LOCACOES}(clienteId)`,
-      `CREATE INDEX IF NOT EXISTS idx_locacoes_produto ON ${TABLES.LOCACOES}(produtoId)`,
-      `CREATE INDEX IF NOT EXISTS idx_locacoes_status ON ${TABLES.LOCACOES}(status)`,
-
-      // Tabela de Histórico de Manutenções (trocas de pano, etc.)
+      // Tabela de Manutenções (trocas de pano, etc.)
       `CREATE TABLE IF NOT EXISTS manutencoes (
         id TEXT PRIMARY KEY,
         produtoId TEXT NOT NULL,
@@ -463,11 +445,10 @@ class DatabaseService {
         clienteNome TEXT,
         locacaoId TEXT,
         cobrancaId TEXT,
-        tipo TEXT NOT NULL,        -- 'trocaPano' | 'manutencao'
+        tipo TEXT NOT NULL,
         descricao TEXT,
         data TEXT NOT NULL,
         registradoPor TEXT,
-        -- Controle de sincronização
         syncStatus TEXT,
         lastSyncedAt TEXT,
         needsSync INTEGER,
@@ -477,13 +458,6 @@ class DatabaseService {
         updatedAt TEXT,
         deletedAt TEXT
       )`,
-      `CREATE INDEX IF NOT EXISTS idx_manutencoes_produto ON manutencoes(produtoId)`,
-      `CREATE INDEX IF NOT EXISTS idx_manutencoes_data ON manutencoes(data)`,
-      `CREATE INDEX IF NOT EXISTS idx_manutencoes_sync ON manutencoes(syncStatus, needsSync)`,
-
-      `CREATE INDEX IF NOT EXISTS idx_historico_relogio_produto ON ${TABLES.HISTORICO_RELOGIO}(produtoId)`,
-      `CREATE INDEX IF NOT EXISTS idx_historico_relogio_data ON ${TABLES.HISTORICO_RELOGIO}(dataAlteracao)`,
-      `CREATE INDEX IF NOT EXISTS idx_historico_relogio_sync ON ${TABLES.HISTORICO_RELOGIO}(needsSync)`,
 
       // Tabela de Metas
       `CREATE TABLE IF NOT EXISTS ${TABLES.METAS} (
@@ -497,7 +471,6 @@ class DatabaseService {
         rotaId TEXT,
         status TEXT NOT NULL DEFAULT 'ativa',
         criadoPor TEXT,
-        -- Controle de sincronização
         syncStatus TEXT,
         lastSyncedAt TEXT,
         needsSync INTEGER,
@@ -507,27 +480,12 @@ class DatabaseService {
         updatedAt TEXT,
         deletedAt TEXT
       )`,
-      `CREATE INDEX IF NOT EXISTS idx_metas_status ON ${TABLES.METAS}(status)`,
-      `CREATE INDEX IF NOT EXISTS idx_metas_periodo ON ${TABLES.METAS}(dataInicio, dataFim)`,
-      `CREATE INDEX IF NOT EXISTS idx_metas_rota ON ${TABLES.METAS}(rotaId)`,
-      `CREATE INDEX IF NOT EXISTS idx_metas_sync ON ${TABLES.METAS}(syncStatus, needsSync)`,
-      `CREATE INDEX IF NOT EXISTS idx_locacoes_sync ON ${TABLES.LOCACOES}(syncStatus, needsSync)`,
-      
-      `CREATE INDEX IF NOT EXISTS idx_cobrancas_locacao ON ${TABLES.COBRANCAS}(locacaoId)`,
-      `CREATE INDEX IF NOT EXISTS idx_cobrancas_cliente ON ${TABLES.COBRANCAS}(clienteId)`,
-      `CREATE INDEX IF NOT EXISTS idx_cobrancas_produto ON ${TABLES.COBRANCAS}(produtoId)`,
-      `CREATE INDEX IF NOT EXISTS idx_cobrancas_status ON ${TABLES.COBRANCAS}(status)`,
-      
-      `CREATE INDEX IF NOT EXISTS idx_change_log_sync ON ${TABLES.CHANGE_LOG}(synced, timestamp)`,
-      `CREATE INDEX IF NOT EXISTS idx_change_log_purge ON ${TABLES.CHANGE_LOG}(synced, syncedAt)`,  // Para purge
-      `CREATE INDEX IF NOT EXISTS idx_change_log_entity ON ${TABLES.CHANGE_LOG}(entityId, entityType)`,
-      
-      `CREATE INDEX IF NOT EXISTS idx_usuarios_email ON ${TABLES.USUARIOS}(email)`,
-      `CREATE INDEX IF NOT EXISTS idx_usuarios_status ON ${TABLES.USUARIOS}(status)`,
-      `CREATE INDEX IF NOT EXISTS idx_usuarios_sync ON ${TABLES.USUARIOS}(syncStatus, needsSync)`,
-      
-      `CREATE INDEX IF NOT EXISTS idx_rotas_status ON ${TABLES.ROTAS}(status)`,
-      `CREATE INDEX IF NOT EXISTS idx_rotas_sync ON ${TABLES.ROTAS}(syncStatus, needsSync)`,
+
+      // Sync Metadata
+      `CREATE TABLE IF NOT EXISTS ${TABLES.SYNC_METADATA} (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )`,
     ];
 
     for (const table of tables) {
@@ -546,22 +504,68 @@ class DatabaseService {
   }
 
   /**
-   * Executa migrations para adicionar colunas faltantes em bancos existentes
-   * Isso garante compatibilidade com versões anteriores do app
+   * Executa migrations para adicionar colunas faltantes em bancos existentes.
+   * Isso garante compatibilidade com versões anteriores do app.
+   *
+   * IMPORTANTE: Tabelas criadas por versões antigas podem NÃO ter as colunas
+   * de sincronização (syncStatus, lastSyncedAt, needsSync, version, deviceId,
+   * createdAt, updatedAt, deletedAt). Essas migrations garantem que todas
+   * as colunas existam antes da criação de índices.
    */
   private async runMigrations(): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
-    
+
     console.log('[Database] Verificando migrations...');
-    
+
+    // Colunas de sincronização que DEVEM existir em todas as tabelas syncáveis
+    const SYNC_COLUMNS = [
+      { name: 'syncStatus', sql: 'TEXT' },
+      { name: 'lastSyncedAt', sql: 'TEXT' },
+      { name: 'needsSync', sql: 'INTEGER DEFAULT 0' },
+      { name: 'version', sql: 'INTEGER DEFAULT 1' },
+      { name: 'deviceId', sql: "TEXT DEFAULT ''" },
+      { name: 'createdAt', sql: 'TEXT' },
+      { name: 'updatedAt', sql: 'TEXT' },
+      { name: 'deletedAt', sql: 'TEXT' },
+    ];
+
+    // Tabelas que devem ter as colunas de sincronização
+    const SYNCABLE_TABLES = [
+      TABLES.CLIENTES,
+      TABLES.PRODUTOS,
+      TABLES.LOCACOES,
+      TABLES.COBRANCAS,
+      TABLES.ROTAS,
+      TABLES.USUARIOS,
+      TABLES.TIPOS_PRODUTO,
+      TABLES.DESCRICOES_PRODUTO,
+      TABLES.TAMANHOS_PRODUTO,
+      TABLES.ESTABELECIMENTOS,
+      TABLES.METAS,
+      'manutencoes',
+    ];
+
     // Lista de migrations a executar
-    const migrations = [
-      // Migration 1: Adicionar coluna produtoId na tabela cobrancas
+    const migrations: Array<{ name: string; sql: string }> = [];
+
+    // ── Migrations de colunas de sincronização para TODAS as tabelas ──
+    for (const tableName of SYNCABLE_TABLES) {
+      for (const col of SYNC_COLUMNS) {
+        migrations.push({
+          name: `add_${col.name}_to_${tableName}`,
+          sql: `ALTER TABLE ${tableName} ADD COLUMN ${col.name} ${col.sql}`,
+        });
+      }
+    }
+
+    // ── Migrations específicas (colunas de negócio) ──
+    migrations.push(
+      // Adicionar coluna produtoId na tabela cobrancas
       {
         name: 'add_produtoId_to_cobrancas',
         sql: `ALTER TABLE ${TABLES.COBRANCAS} ADD COLUMN produtoId TEXT`,
       },
-      // Migration 2: Adicionar colunas enriquecidas na tabela rotas
+      // Colunas enriquecidas na tabela rotas
       {
         name: 'add_cor_to_rotas',
         sql: `ALTER TABLE ${TABLES.ROTAS} ADD COLUMN cor TEXT DEFAULT '#2563EB'`,
@@ -578,33 +582,12 @@ class DatabaseService {
         name: 'add_observacao_to_rotas',
         sql: `ALTER TABLE ${TABLES.ROTAS} ADD COLUMN observacao TEXT`,
       },
-      // Migration 3: Adicionar coluna trocaPano na tabela cobrancas
+      // Coluna trocaPano na tabela cobrancas
       {
         name: 'add_trocaPano_to_cobrancas',
         sql: `ALTER TABLE ${TABLES.COBRANCAS} ADD COLUMN trocaPano INTEGER DEFAULT 0`,
       },
-      // Migration 4: Adicionar sync fields na tabela manutencoes
-      {
-        name: 'add_syncStatus_to_manutencoes',
-        sql: `ALTER TABLE manutencoes ADD COLUMN syncStatus TEXT`,
-      },
-      {
-        name: 'add_lastSyncedAt_to_manutencoes',
-        sql: `ALTER TABLE manutencoes ADD COLUMN lastSyncedAt TEXT`,
-      },
-      {
-        name: 'add_needsSync_to_manutencoes',
-        sql: `ALTER TABLE manutencoes ADD COLUMN needsSync INTEGER DEFAULT 0`,
-      },
-      {
-        name: 'add_version_to_manutencoes',
-        sql: `ALTER TABLE manutencoes ADD COLUMN version INTEGER DEFAULT 1`,
-      },
-      {
-        name: 'add_deviceId_to_manutencoes',
-        sql: `ALTER TABLE manutencoes ADD COLUMN deviceId TEXT DEFAULT ''`,
-      },
-      // Migration 5: Adicionar campos enriquecidos em estabelecimentos
+      // Campos enriquecidos em estabelecimentos
       {
         name: 'add_endereco_to_estabelecimentos',
         sql: `ALTER TABLE ${TABLES.ESTABELECIMENTOS} ADD COLUMN endereco TEXT`,
@@ -613,7 +596,7 @@ class DatabaseService {
         name: 'add_observacao_to_estabelecimentos',
         sql: `ALTER TABLE ${TABLES.ESTABELECIMENTOS} ADD COLUMN observacao TEXT`,
       },
-      // Migration 6: Criar tabela historico_relogio para registro de alterações de relógio
+      // Criar tabela historico_relogio
       {
         name: 'create_historico_relogio_table',
         sql: `CREATE TABLE IF NOT EXISTS ${TABLES.HISTORICO_RELOGIO} (
@@ -627,23 +610,182 @@ class DatabaseService {
           needsSync INTEGER DEFAULT 1
         )`,
       },
-      // Migration 7: Corrigir tipo de ultimaLeituraRelogio de INTEGER para REAL
+      // Corrigir tipo de ultimaLeituraRelogio
       {
         name: 'fix_ultimaLeituraRelogio_to_real',
         sql: `ALTER TABLE ${TABLES.LOCACOES} ADD COLUMN ultimaLeituraRelogio REAL`,
       },
-      // Migration 8: Adicionar tentativasLoginFalhas na tabela usuarios
+      // Adicionar tentativasLoginFalhas na tabela usuarios
       {
         name: 'add_tentativasLoginFalhas_to_usuarios',
         sql: `ALTER TABLE ${TABLES.USUARIOS} ADD COLUMN tentativasLoginFalhas INTEGER DEFAULT 0`,
       },
-      // Migration 9: Adicionar bloqueadoAte na tabela usuarios
+      // Adicionar bloqueadoAte na tabela usuarios
       {
         name: 'add_bloqueadoAte_to_usuarios',
         sql: `ALTER TABLE ${TABLES.USUARIOS} ADD COLUMN bloqueadoAte TEXT`,
       },
-    ];
-    
+      // Colunas de negócio adicionais em clientes
+      {
+        name: 'add_tipoPessoa_to_clientes',
+        sql: `ALTER TABLE ${TABLES.CLIENTES} ADD COLUMN tipoPessoa TEXT`,
+      },
+      {
+        name: 'add_identificador_to_clientes',
+        sql: `ALTER TABLE ${TABLES.CLIENTES} ADD COLUMN identificador TEXT`,
+      },
+      {
+        name: 'add_rg_to_clientes',
+        sql: `ALTER TABLE ${TABLES.CLIENTES} ADD COLUMN rg TEXT`,
+      },
+      {
+        name: 'add_razaoSocial_to_clientes',
+        sql: `ALTER TABLE ${TABLES.CLIENTES} ADD COLUMN razaoSocial TEXT`,
+      },
+      {
+        name: 'add_nomeFantasia_to_clientes',
+        sql: `ALTER TABLE ${TABLES.CLIENTES} ADD COLUMN nomeFantasia TEXT`,
+      },
+      {
+        name: 'add_inscricaoEstadual_to_clientes',
+        sql: `ALTER TABLE ${TABLES.CLIENTES} ADD COLUMN inscricaoEstadual TEXT`,
+      },
+      {
+        name: 'add_nomeExibicao_to_clientes',
+        sql: `ALTER TABLE ${TABLES.CLIENTES} ADD COLUMN nomeExibicao TEXT`,
+      },
+      {
+        name: 'add_contatos_to_clientes',
+        sql: `ALTER TABLE ${TABLES.CLIENTES} ADD COLUMN contatos TEXT`,
+      },
+      // Colunas adicionais em produtos
+      {
+        name: 'add_codigoCH_to_produtos',
+        sql: `ALTER TABLE ${TABLES.PRODUTOS} ADD COLUMN codigoCH TEXT`,
+      },
+      {
+        name: 'add_codigoABLF_to_produtos',
+        sql: `ALTER TABLE ${TABLES.PRODUTOS} ADD COLUMN codigoABLF TEXT`,
+      },
+      {
+        name: 'add_conservacao_to_produtos',
+        sql: `ALTER TABLE ${TABLES.PRODUTOS} ADD COLUMN conservacao TEXT`,
+      },
+      {
+        name: 'add_dataFabricacao_to_produtos',
+        sql: `ALTER TABLE ${TABLES.PRODUTOS} ADD COLUMN dataFabricacao TEXT`,
+      },
+      {
+        name: 'add_dataUltimaManutencao_to_produtos',
+        sql: `ALTER TABLE ${TABLES.PRODUTOS} ADD COLUMN dataUltimaManutencao TEXT`,
+      },
+      {
+        name: 'add_relatorioUltimaManutencao_to_produtos',
+        sql: `ALTER TABLE ${TABLES.PRODUTOS} ADD COLUMN relatorioUltimaManutencao TEXT`,
+      },
+      {
+        name: 'add_dataAvaliacao_to_produtos',
+        sql: `ALTER TABLE ${TABLES.PRODUTOS} ADD COLUMN dataAvaliacao TEXT`,
+      },
+      {
+        name: 'add_aprovacao_to_produtos',
+        sql: `ALTER TABLE ${TABLES.PRODUTOS} ADD COLUMN aprovacao TEXT`,
+      },
+      {
+        name: 'add_estabelecimento_to_produtos',
+        sql: `ALTER TABLE ${TABLES.PRODUTOS} ADD COLUMN estabelecimento TEXT`,
+      },
+      // Colunas adicionais em locacoes
+      {
+        name: 'add_produtoTipo_to_locacoes',
+        sql: `ALTER TABLE ${TABLES.LOCACOES} ADD COLUMN produtoTipo TEXT`,
+      },
+      {
+        name: 'add_dataPrimeiraCobranca_to_locacoes',
+        sql: `ALTER TABLE ${TABLES.LOCACOES} ADD COLUMN dataPrimeiraCobranca TEXT`,
+      },
+      {
+        name: 'add_trocaPano_to_locacoes',
+        sql: `ALTER TABLE ${TABLES.LOCACOES} ADD COLUMN trocaPano INTEGER DEFAULT 0`,
+      },
+      {
+        name: 'add_dataUltimaManutencao_to_locacoes',
+        sql: `ALTER TABLE ${TABLES.LOCACOES} ADD COLUMN dataUltimaManutencao TEXT`,
+      },
+      // Colunas adicionais em cobrancas
+      {
+        name: 'add_produtoIdentificador_to_cobrancas',
+        sql: `ALTER TABLE ${TABLES.COBRANCAS} ADD COLUMN produtoIdentificador TEXT`,
+      },
+      // Colunas adicionais em usuarios
+      {
+        name: 'add_tipoPermissao_to_usuarios',
+        sql: `ALTER TABLE ${TABLES.USUARIOS} ADD COLUMN tipoPermissao TEXT`,
+      },
+      {
+        name: 'add_permissoesWeb_to_usuarios',
+        sql: `ALTER TABLE ${TABLES.USUARIOS} ADD COLUMN permissoesWeb TEXT`,
+      },
+      {
+        name: 'add_permissoesMobile_to_usuarios',
+        sql: `ALTER TABLE ${TABLES.USUARIOS} ADD COLUMN permissoesMobile TEXT`,
+      },
+      {
+        name: 'add_rotasPermitidas_to_usuarios',
+        sql: `ALTER TABLE ${TABLES.USUARIOS} ADD COLUMN rotasPermitidas TEXT`,
+      },
+      {
+        name: 'add_bloqueado_to_usuarios',
+        sql: `ALTER TABLE ${TABLES.USUARIOS} ADD COLUMN bloqueado INTEGER`,
+      },
+      {
+        name: 'add_dataUltimoAcesso_to_usuarios',
+        sql: `ALTER TABLE ${TABLES.USUARIOS} ADD COLUMN dataUltimoAcesso TEXT`,
+      },
+      {
+        name: 'add_ultimoAcessoDispositivo_to_usuarios',
+        sql: `ALTER TABLE ${TABLES.USUARIOS} ADD COLUMN ultimoAcessoDispositivo TEXT`,
+      },
+      // Colunas adicionais em manutencoes
+      {
+        name: 'add_produtoIdentificador_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN produtoIdentificador TEXT`,
+      },
+      {
+        name: 'add_produtoTipo_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN produtoTipo TEXT`,
+      },
+      {
+        name: 'add_clienteId_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN clienteId TEXT`,
+      },
+      {
+        name: 'add_clienteNome_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN clienteNome TEXT`,
+      },
+      {
+        name: 'add_locacaoId_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN locacaoId TEXT`,
+      },
+      {
+        name: 'add_cobrancaId_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN cobrancaId TEXT`,
+      },
+      {
+        name: 'add_descricao_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN descricao TEXT`,
+      },
+      {
+        name: 'add_registradoPor_to_manutencoes',
+        sql: `ALTER TABLE manutencoes ADD COLUMN registradoPor TEXT`,
+      },
+      // Colunas adicionais em metas
+      {
+        name: 'add_criadoPor_to_metas',
+        sql: `ALTER TABLE ${TABLES.METAS} ADD COLUMN criadoPor TEXT`,
+      },
+    );
+
     // Verificar e executar cada migration
     for (const migration of migrations) {
       try {
@@ -653,39 +795,109 @@ class DatabaseService {
           `SELECT value FROM ${TABLES.SYNC_METADATA} WHERE key = ?`,
           [metaKey]
         );
-        
+
         if (existing?.value === 'done') {
-          console.log(`[Database] Migration ${migration.name} já executada`);
           continue;
         }
-        
+
         // Executar migration
         console.log(`[Database] Executando migration: ${migration.name}`);
         await this.db.execAsync(migration.sql);
-        
+
         // Marcar como executada
         await this.db.runAsync(
           `INSERT OR REPLACE INTO ${TABLES.SYNC_METADATA} (key, value) VALUES (?, 'done')`,
           [metaKey]
         );
-        
-        console.log(`[Database] Migration ${migration.name} concluída`);
       } catch (error: any) {
-        // Ignorar erro se a coluna já existir
-        if (error?.message?.includes('duplicate column') || error?.message?.includes('already exists')) {
-          console.log(`[Database] Migration ${migration.name}: coluna já existe`);
+        // Ignorar erro se a coluna/tabela já existir
+        const msg = error?.message || '';
+        if (msg.includes('duplicate column') || msg.includes('already exists')) {
           // Marcar como executada mesmo assim
           await this.db.runAsync(
             `INSERT OR REPLACE INTO ${TABLES.SYNC_METADATA} (key, value) VALUES (?, 'done')`,
             [`migration_${migration.name}`]
-          );
+          ).catch(() => {}); // ignorar erro ao marcar
         } else {
-          console.error(`[Database] Erro na migration ${migration.name}:`, error);
+          console.warn(`[Database] Migration ${migration.name}: ${msg}`);
         }
       }
     }
-    
+
     console.log('[Database] Migrations verificadas');
+  }
+
+  /**
+   * Cria índices para performance.
+   * DEVE ser chamado APÓS runMigrations() para garantir que todas as
+   * colunas referenciadas (como syncStatus, needsSync) já existam.
+   */
+  private async createIndexes(): Promise<void> {
+    if (!this.db) throw new Error('Database não inicializado');
+
+    const indexes = [
+      // Clientes
+      `CREATE INDEX IF NOT EXISTS idx_clientes_rota ON ${TABLES.CLIENTES}(rotaId)`,
+      `CREATE INDEX IF NOT EXISTS idx_clientes_status ON ${TABLES.CLIENTES}(status)`,
+      `CREATE INDEX IF NOT EXISTS idx_clientes_sync ON ${TABLES.CLIENTES}(syncStatus, needsSync)`,
+
+      // Produtos
+      `CREATE INDEX IF NOT EXISTS idx_produtos_status ON ${TABLES.PRODUTOS}(statusProduto)`,
+      `CREATE INDEX IF NOT EXISTS idx_produtos_sync ON ${TABLES.PRODUTOS}(syncStatus, needsSync)`,
+
+      // Locações
+      `CREATE INDEX IF NOT EXISTS idx_locacoes_cliente ON ${TABLES.LOCACOES}(clienteId)`,
+      `CREATE INDEX IF NOT EXISTS idx_locacoes_produto ON ${TABLES.LOCACOES}(produtoId)`,
+      `CREATE INDEX IF NOT EXISTS idx_locacoes_status ON ${TABLES.LOCACOES}(status)`,
+      `CREATE INDEX IF NOT EXISTS idx_locacoes_sync ON ${TABLES.LOCACOES}(syncStatus, needsSync)`,
+
+      // Cobranças
+      `CREATE INDEX IF NOT EXISTS idx_cobrancas_locacao ON ${TABLES.COBRANCAS}(locacaoId)`,
+      `CREATE INDEX IF NOT EXISTS idx_cobrancas_cliente ON ${TABLES.COBRANCAS}(clienteId)`,
+      `CREATE INDEX IF NOT EXISTS idx_cobrancas_produto ON ${TABLES.COBRANCAS}(produtoId)`,
+      `CREATE INDEX IF NOT EXISTS idx_cobrancas_status ON ${TABLES.COBRANCAS}(status)`,
+
+      // Rotas
+      `CREATE INDEX IF NOT EXISTS idx_rotas_status ON ${TABLES.ROTAS}(status)`,
+      `CREATE INDEX IF NOT EXISTS idx_rotas_sync ON ${TABLES.ROTAS}(syncStatus, needsSync)`,
+
+      // Usuários
+      `CREATE INDEX IF NOT EXISTS idx_usuarios_email ON ${TABLES.USUARIOS}(email)`,
+      `CREATE INDEX IF NOT EXISTS idx_usuarios_status ON ${TABLES.USUARIOS}(status)`,
+      `CREATE INDEX IF NOT EXISTS idx_usuarios_sync ON ${TABLES.USUARIOS}(syncStatus, needsSync)`,
+
+      // Manutenções
+      `CREATE INDEX IF NOT EXISTS idx_manutencoes_produto ON manutencoes(produtoId)`,
+      `CREATE INDEX IF NOT EXISTS idx_manutencoes_data ON manutencoes(data)`,
+      `CREATE INDEX IF NOT EXISTS idx_manutencoes_sync ON manutencoes(syncStatus, needsSync)`,
+
+      // Metas
+      `CREATE INDEX IF NOT EXISTS idx_metas_status ON ${TABLES.METAS}(status)`,
+      `CREATE INDEX IF NOT EXISTS idx_metas_periodo ON ${TABLES.METAS}(dataInicio, dataFim)`,
+      `CREATE INDEX IF NOT EXISTS idx_metas_rota ON ${TABLES.METAS}(rotaId)`,
+      `CREATE INDEX IF NOT EXISTS idx_metas_sync ON ${TABLES.METAS}(syncStatus, needsSync)`,
+
+      // Histórico Relógio
+      `CREATE INDEX IF NOT EXISTS idx_historico_relogio_produto ON ${TABLES.HISTORICO_RELOGIO}(produtoId)`,
+      `CREATE INDEX IF NOT EXISTS idx_historico_relogio_data ON ${TABLES.HISTORICO_RELOGIO}(dataAlteracao)`,
+      `CREATE INDEX IF NOT EXISTS idx_historico_relogio_sync ON ${TABLES.HISTORICO_RELOGIO}(needsSync)`,
+
+      // Change Log
+      `CREATE INDEX IF NOT EXISTS idx_change_log_sync ON ${TABLES.CHANGE_LOG}(synced, timestamp)`,
+      `CREATE INDEX IF NOT EXISTS idx_change_log_purge ON ${TABLES.CHANGE_LOG}(synced, syncedAt)`,
+      `CREATE INDEX IF NOT EXISTS idx_change_log_entity ON ${TABLES.CHANGE_LOG}(entityId, entityType)`,
+    ];
+
+    for (const indexSql of indexes) {
+      try {
+        await this.db.execAsync(indexSql);
+      } catch (idxError: any) {
+        // Índices não são críticos — logar mas não falhar a inicialização
+        console.warn(`[Database] Índice não criado (não crítico): ${idxError?.message}`);
+      }
+    }
+
+    console.log('[Database] Índices verificados');
   }
 
   /**
