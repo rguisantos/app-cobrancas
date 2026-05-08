@@ -73,20 +73,20 @@ const STATUS_MAP: Record<string, { icon: string; color: string; label: string }>
 };
 
 const TABLES_TO_COUNT = [
-  { table: 'clientes', label: 'Clientes' },
-  { table: 'produtos', label: 'Produtos' },
-  { table: 'locacoes', label: 'Locações' },
-  { table: 'cobrancas', label: 'Cobranças' },
-  { table: 'rotas', label: 'Rotas' },
-  { table: 'usuarios', label: 'Usuários' },
-  { table: 'manutencoes', label: 'Manutenções' },
-  { table: 'metas', label: 'Metas' },
-  { table: 'estabelecimentos', label: 'Estabelecimentos' },
-  { table: 'tipos_produto', label: 'Tipos Produto' },
-  { table: 'descricoes_produto', label: 'Descrições' },
-  { table: 'tamanhos_produto', label: 'Tamanhos' },
-  { table: 'change_log', label: 'Change Log' },
-  { table: 'sync_metadata', label: 'Sync Meta' },
+  { table: 'clientes', label: 'Clientes', hasDeletedAt: true },
+  { table: 'produtos', label: 'Produtos', hasDeletedAt: true },
+  { table: 'locacoes', label: 'Locações', hasDeletedAt: true },
+  { table: 'cobrancas', label: 'Cobranças', hasDeletedAt: true },
+  { table: 'rotas', label: 'Rotas', hasDeletedAt: true },
+  { table: 'usuarios', label: 'Usuários', hasDeletedAt: true },
+  { table: 'manutencoes', label: 'Manutenções', hasDeletedAt: true },
+  { table: 'metas', label: 'Metas', hasDeletedAt: true },
+  { table: 'estabelecimentos', label: 'Estabelecimentos', hasDeletedAt: true },
+  { table: 'tipos_produto', label: 'Tipos Produto', hasDeletedAt: true },
+  { table: 'descricoes_produto', label: 'Descrições', hasDeletedAt: true },
+  { table: 'tamanhos_produto', label: 'Tamanhos', hasDeletedAt: true },
+  { table: 'change_log', label: 'Change Log', hasDeletedAt: false },
+  { table: 'sync_metadata', label: 'Sync Meta', hasDeletedAt: false },
 ];
 
 // ============================================================================
@@ -179,18 +179,24 @@ export default function SyncStatusScreen() {
   const loadTableCounts = useCallback(async () => {
     try {
       const counts: TableCount[] = [];
-      for (const { table, label } of TABLES_TO_COUNT) {
+      for (const { table, label, hasDeletedAt } of TABLES_TO_COUNT) {
         try {
           const totalResult = await databaseService.getFirstAsync<{ cnt: number }>(
             `SELECT COUNT(*) as cnt FROM ${table}`, []
           );
-          const activeResult = await databaseService.getFirstAsync<{ cnt: number }>(
-            `SELECT COUNT(*) as cnt FROM ${table} WHERE deletedAt IS NULL`, []
-          );
+          // Só query deletedAt IS NULL para tabelas que têm essa coluna
+          // change_log e sync_metadata NÃO têm deletedAt — causava ERR_INTERNAL_SQLITE_ERROR
+          let active = totalResult?.cnt || 0;
+          if (hasDeletedAt) {
+            const activeResult = await databaseService.getFirstAsync<{ cnt: number }>(
+              `SELECT COUNT(*) as cnt FROM ${table} WHERE deletedAt IS NULL`, []
+            );
+            active = activeResult?.cnt || 0;
+          }
           counts.push({
             table: label,
             total: totalResult?.cnt || 0,
-            active: activeResult?.cnt || 0,
+            active,
           });
         } catch {
           counts.push({ table: label, total: -1, active: -1 });
