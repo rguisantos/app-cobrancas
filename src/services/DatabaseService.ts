@@ -56,6 +56,9 @@ class DatabaseService {
   private isInitialized = false;
   private initPromise: Promise<void> | null = null;
 
+  /** Cache de colunas por tabela — evita PRAGMA table_info a cada upsert */
+  private tableColumnsCache: Map<string, Set<string>> = new Map();
+
   /**
    * Verifica se o banco está pronto
    */
@@ -73,6 +76,61 @@ class DatabaseService {
       return;
     }
     throw new Error('Banco de dados não foi inicializado');
+  }
+
+  /**
+   * Obtém as colunas de uma tabela (com cache).
+   * Usa PRAGMA table_info na primeira chamada e cacheia o resultado.
+   * Essencial para filtrar campos do servidor que não existem no SQLite local,
+   * evitando erros "table has no column named X" que causam rollback da transação.
+   */
+  async getTableColumns(tableName: string): Promise<Set<string>> {
+    const cached = this.tableColumnsCache.get(tableName);
+    if (cached) return cached;
+
+    if (!this.db) throw new Error('Database não inicializado');
+
+    try {
+      const columns = await this.db.getAllAsync<{ name: string }>(
+        `PRAGMA table_info(${tableName})`
+      );
+      const columnSet = new Set(columns.map(c => c.name));
+      this.tableColumnsCache.set(tableName, columnSet);
+      return columnSet;
+    } catch (error) {
+      console.error(`[Database] Erro ao obter colunas de ${tableName}:`, error);
+      return new Set();
+    }
+  }
+
+  /**
+   * Filtra dados para conter apenas colunas que existem na tabela SQLite.
+   * Previne erros "table has no column named X" quando o servidor envia
+   * campos que não existem no schema local (ex: campos novos no Prisma
+   * que ainda não tiveram migration no mobile).
+   */
+  async filterColumnsForTable(tableName: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const tableColumns = await this.getTableColumns(tableName);
+    if (tableColumns.size === 0) {
+      // Se não conseguiu obter colunas, passar dados sem filtro (comportamento anterior)
+      return data;
+    }
+
+    const filtered: Record<string, unknown> = {};
+    const removedFields: string[] = [];
+    for (const [key, value] of Object.entries(data)) {
+      if (tableColumns.has(key)) {
+        filtered[key] = value;
+      } else {
+        removedFields.push(key);
+      }
+    }
+
+    if (removedFields.length > 0) {
+      logger.warn(`[Database] Campos do servidor removidos (não existem em ${tableName}): ${removedFields.join(', ')}`);
+    }
+
+    return filtered;
   }
 
   // ==========================================================================
@@ -136,6 +194,8 @@ class DatabaseService {
       await this.initializeSyncMetadata();
       
       this.isInitialized = true;
+      // Limpar cache de colunas (pode ter mudado após migrations)
+      this.tableColumnsCache.clear();
       console.log('[Database] Banco inicializado com sucesso!');
       
     } catch (error) {
@@ -1277,31 +1337,40 @@ class DatabaseService {
     logger.info(`[Database] Aplicando ${total} mudanças remotas — lastSyncAt: ${response.lastSyncAt?.substring(0, 19)}`);
 
     await this.runTransaction(async () => {
+      // Contadores de sucesso/falha para diagnóstico
+      let successCount = 0;
+      let failCount = 0;
+
       // Aplicar mudanças de cada entidade usando upsert direto
       
       // Clientes
       for (const cliente of changes.clientes || []) {
-        await this.upsertFromSync('cliente', cliente);
+        const ok = await this.upsertFromSync('cliente', cliente);
+        if (ok) successCount++; else failCount++;
       }
 
       // Produtos
       for (const produto of changes.produtos || []) {
-        await this.upsertFromSync('produto', produto);
+        const ok = await this.upsertFromSync('produto', produto);
+        if (ok) successCount++; else failCount++;
       }
 
       // Locações
       for (const locacao of changes.locacoes || []) {
-        await this.upsertFromSync('locacao', locacao);
+        const ok = await this.upsertFromSync('locacao', locacao);
+        if (ok) successCount++; else failCount++;
       }
 
       // Cobranças
       for (const cobranca of changes.cobrancas || []) {
-        await this.upsertFromSync('cobranca', cobranca);
+        const ok = await this.upsertFromSync('cobranca', cobranca);
+        if (ok) successCount++; else failCount++;
       }
 
       // Rotas
       for (const rota of changes.rotas || []) {
-        await this.upsertFromSync('rota', rota);
+        const ok = await this.upsertFromSync('rota', rota);
+        if (ok) successCount++; else failCount++;
       }
 
       // Usuários - sincronizar permissões alteradas no web
@@ -1361,6 +1430,13 @@ class DatabaseService {
         lastSyncAt: response.lastSyncAt,
         lastPullAt: new Date().toISOString(),
       });
+
+      // Log de resultado da transação
+      if (failCount > 0) {
+        logger.error(`[Database] applyRemoteChanges: ${successCount} sucessos, ${failCount} FALHAS — verifique os logs acima para detalhes`);
+      } else {
+        logger.info(`[Database] applyRemoteChanges: ${successCount} registros aplicados com sucesso`);
+      }
     });
 
     // Always log post-apply counts for debug terminal
@@ -1389,31 +1465,42 @@ class DatabaseService {
   /**
    * Upsert de entidade recebida do servidor (SEM criar ChangeLog)
    *
-   * IMPORTANTE: Verifica existência SEM o filtro deletedAt IS NULL,
-   * pois o servidor pode enviar um registro que foi reativado
-   * (localmente soft-deletado mas ativo no servidor).
-   * Nesse caso, faz UPDATE limpando o deletedAt.
+   * IMPORTANTE:
+   * 1. Verifica existência SEM o filtro deletedAt IS NULL,
+   *    pois o servidor pode enviar um registro que foi reativado
+   *    (localmente soft-deletado mas ativo no servidor).
+   * 2. Filtra campos usando PRAGMA table_info para evitar erros
+   *    "table has no column named X" que causam rollback total.
+   * 3. NÃO faz throw em caso de erro — apenas loga. Isso evita que
+   *    um registro com problema cause rollback de TODOS os dados do sync.
    */
-  private async upsertFromSync(entityType: EntityType, entity: any): Promise<void> {
-    if (!this.db) throw new Error('Database não inicializado');
+  private async upsertFromSync(entityType: EntityType, entity: any): Promise<boolean> {
+    if (!this.db) {
+      logger.error('[Database] upsertFromSync: banco não inicializado');
+      return false;
+    }
 
     const tableName = this.getTableName(entityType);
-    const now = new Date().toISOString();
+    if (!tableName) {
+      logger.error(`[Database] upsertFromSync: tabela não encontrada para entityType "${entityType}"`);
+      return false;
+    }
 
     // Preparar dados
     const data = { ...entity };
     delete data.id;
 
-    // CORREÇÃO: Remover campos que não existem na tabela SQLite local.
-    // 'tipo' não existe na tabela 'rotas' — o servidor pode enviá-lo mas o SQLite não tem a coluna.
-    // Outras entidades usam 'tipo' como campo mas rotas não.
-    if (entityType === 'rota') {
-      delete data.tipo;
+    // CORREÇÃO: Filtrar campos que não existem na tabela SQLite local.
+    // Isso previne erros "table has no column named X" que causariam
+    // rollback de TODA a transação de applyRemoteChanges.
+    const filteredData = await this.filterColumnsForTable(tableName, data);
+
+    // Garantir que deletedAt seja null (não string "null") se o registro está ativo
+    if (filteredData.deletedAt === undefined || filteredData.deletedAt === null) {
+      filteredData.deletedAt = null;
     }
 
     // Verificar se o registro existe NO BANCO (sem filtro de deletedAt).
-    // getById usa deletedAt IS NULL, o que faria INSERT falhar se o registro
-    // existe mas está soft-deletado. Query direta resolve isso.
     let existing: any = null;
     try {
       existing = await this.db.getFirstAsync(
@@ -1425,14 +1512,16 @@ class DatabaseService {
     }
 
     try {
+      const serialized = serializeForDB(filteredData);
+      const fields = Object.keys(serialized);
+
+      if (fields.length === 0) {
+        logger.warn(`[Database] upsertFromSync: nenhum campo válido para ${entityType}:${entity.id}`);
+        return false;
+      }
+
       if (existing) {
-        // Se o registro existe (mesmo soft-deletado), fazer UPDATE.
-        // Garantir que deletedAt seja limpo se o servidor diz que está ativo.
-        if (data.deletedAt === undefined || data.deletedAt === null) {
-          data.deletedAt = null;
-        }
-        const serialized = serializeForDB(data);
-        const fields = Object.keys(serialized);
+        // UPDATE
         const setClause = fields.map((field) => `${field} = ?`).join(', ');
         const values = fields.map((field) => serialized[field]);
 
@@ -1440,11 +1529,8 @@ class DatabaseService {
           `UPDATE ${tableName} SET ${setClause} WHERE id = ?`,
           [...values, entity.id]
         );
-        console.log(`[Database] UPDATE ${entityType}:${entity.id} realizado`);
       } else {
         // INSERT
-        const serialized = serializeForDB(data);
-        const fields = Object.keys(serialized);
         const placeholders = fields.map(() => '?').join(', ');
         const values = fields.map((field) => serialized[field]);
 
@@ -1452,11 +1538,17 @@ class DatabaseService {
           `INSERT INTO ${tableName} (id, ${fields.join(', ')}) VALUES (?, ${placeholders})`,
           [entity.id, ...values]
         );
-        console.log(`[Database] INSERT ${entityType}:${entity.id} realizado`);
       }
-    } catch (error) {
-      console.error(`[Database] ❌ ERRO ao salvar ${entityType}:${entity.id}:`, error);
-      throw error;
+      return true;
+    } catch (error: any) {
+      // CORREÇÃO CRÍTICA: NÃO fazer throw! Se este registro falhar,
+      // logar o erro mas continuar processando os outros. Se fizermos
+      // throw, a transação inteira de applyRemoteChanges faz rollback
+      // e TODOS os dados do sync são perdidos.
+      const errMsg = error?.message || String(error);
+      logger.error(`[Database] ❌ ERRO ao salvar ${entityType}:${entity.id}: ${errMsg}`);
+      logger.error(`[Database] Campos enviados: ${Object.keys(filteredData).join(', ')}`);
+      return false;
     }
   }
 
@@ -1557,11 +1649,15 @@ class DatabaseService {
    */
   private async upsertTipoProdutoFromSync(tipo: any): Promise<void> {
     if (!this.db) return;
-    await this.db.runAsync(
-      `INSERT OR REPLACE INTO ${TABLES.TIPOS_PRODUTO} (id, nome, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
-       VALUES (?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
-      [tipo.id, tipo.nome, tipo.lastSyncedAt || new Date().toISOString(), tipo.version || 1, tipo.deviceId || '', tipo.createdAt || new Date().toISOString(), tipo.updatedAt || new Date().toISOString(), tipo.deletedAt || null]
-    );
+    try {
+      await this.db.runAsync(
+        `INSERT OR REPLACE INTO ${TABLES.TIPOS_PRODUTO} (id, nome, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
+        [tipo.id, tipo.nome, tipo.lastSyncedAt || new Date().toISOString(), tipo.version || 1, tipo.deviceId || '', tipo.createdAt || new Date().toISOString(), tipo.updatedAt || new Date().toISOString(), tipo.deletedAt || null]
+      );
+    } catch (error: any) {
+      logger.error(`[Database] Erro upsertTipoProduto ${tipo.id}: ${error?.message || error}`);
+    }
   }
 
   /**
@@ -1569,11 +1665,15 @@ class DatabaseService {
    */
   private async upsertDescricaoProdutoFromSync(desc: any): Promise<void> {
     if (!this.db) return;
-    await this.db.runAsync(
-      `INSERT OR REPLACE INTO ${TABLES.DESCRICOES_PRODUTO} (id, nome, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
-       VALUES (?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
-      [desc.id, desc.nome, desc.lastSyncedAt || new Date().toISOString(), desc.version || 1, desc.deviceId || '', desc.createdAt || new Date().toISOString(), desc.updatedAt || new Date().toISOString(), desc.deletedAt || null]
-    );
+    try {
+      await this.db.runAsync(
+        `INSERT OR REPLACE INTO ${TABLES.DESCRICOES_PRODUTO} (id, nome, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
+        [desc.id, desc.nome, desc.lastSyncedAt || new Date().toISOString(), desc.version || 1, desc.deviceId || '', desc.createdAt || new Date().toISOString(), desc.updatedAt || new Date().toISOString(), desc.deletedAt || null]
+      );
+    } catch (error: any) {
+      logger.error(`[Database] Erro upsertDescricaoProduto ${desc.id}: ${error?.message || error}`);
+    }
   }
 
   /**
@@ -1581,11 +1681,15 @@ class DatabaseService {
    */
   private async upsertTamanhoProdutoFromSync(tam: any): Promise<void> {
     if (!this.db) return;
-    await this.db.runAsync(
-      `INSERT OR REPLACE INTO ${TABLES.TAMANHOS_PRODUTO} (id, nome, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
-       VALUES (?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
-      [tam.id, tam.nome, tam.lastSyncedAt || new Date().toISOString(), tam.version || 1, tam.deviceId || '', tam.createdAt || new Date().toISOString(), tam.updatedAt || new Date().toISOString(), tam.deletedAt || null]
-    );
+    try {
+      await this.db.runAsync(
+        `INSERT OR REPLACE INTO ${TABLES.TAMANHOS_PRODUTO} (id, nome, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
+        [tam.id, tam.nome, tam.lastSyncedAt || new Date().toISOString(), tam.version || 1, tam.deviceId || '', tam.createdAt || new Date().toISOString(), tam.updatedAt || new Date().toISOString(), tam.deletedAt || null]
+      );
+    } catch (error: any) {
+      logger.error(`[Database] Erro upsertTamanhoProduto ${tam.id}: ${error?.message || error}`);
+    }
   }
 
   /**
@@ -1593,51 +1697,52 @@ class DatabaseService {
    */
   private async upsertEstabelecimentoFromSync(est: any): Promise<void> {
     if (!this.db) return;
+    try {
+      const existing = await this.getById<any>('estabelecimento' as EntityType, est.id);
+      const now = new Date().toISOString();
 
-    const existing = await this.getById<any>('estabelecimento' as EntityType, est.id);
-    const now = new Date().toISOString();
+      if (existing) {
+        const serialized = serializeForDB({
+          nome: est.nome,
+          endereco: est.endereco || null,
+          observacao: est.observacao || null,
+          syncStatus: 'synced',
+          lastSyncedAt: est.lastSyncedAt || now,
+          needsSync: 0,
+          version: est.version || 1,
+          deviceId: est.deviceId || '',
+          updatedAt: est.updatedAt || now,
+          deletedAt: est.deletedAt || null,
+        });
+        const fields = Object.keys(serialized);
+        const setClause = fields.map((field) => `${field} = ?`).join(', ');
+        const values = fields.map((field) => serialized[field]);
 
-    if (existing) {
-      // UPDATE
-      const serialized = serializeForDB({
-        nome: est.nome,
-        endereco: est.endereco || null,
-        observacao: est.observacao || null,
-        syncStatus: 'synced',
-        lastSyncedAt: est.lastSyncedAt || now,
-        needsSync: 0,
-        version: est.version || 1,
-        deviceId: est.deviceId || '',
-        updatedAt: est.updatedAt || now,
-        deletedAt: est.deletedAt || null,
-      });
-      const fields = Object.keys(serialized);
-      const setClause = fields.map((field) => `${field} = ?`).join(', ');
-      const values = fields.map((field) => serialized[field]);
-
-      await this.db.runAsync(
-        `UPDATE ${TABLES.ESTABELECIMENTOS} SET ${setClause} WHERE id = ?`,
-        [...values, est.id]
-      );
-    } else {
-      // INSERT
-      await this.db.runAsync(
-        `INSERT INTO ${TABLES.ESTABELECIMENTOS}
-         (id, nome, endereco, observacao, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
-         VALUES (?, ?, ?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
-        [
-          est.id,
-          est.nome,
-          est.endereco || null,
-          est.observacao || null,
-          est.lastSyncedAt || now,
-          est.version || 1,
-          est.deviceId || '',
-          est.createdAt || now,
-          est.updatedAt || now,
-          est.deletedAt || null,
-        ]
-      );
+        await this.db.runAsync(
+          `UPDATE ${TABLES.ESTABELECIMENTOS} SET ${setClause} WHERE id = ?`,
+          [...values, est.id]
+        );
+      } else {
+        await this.db.runAsync(
+          `INSERT INTO ${TABLES.ESTABELECIMENTOS}
+           (id, nome, endereco, observacao, syncStatus, lastSyncedAt, needsSync, version, deviceId, createdAt, updatedAt, deletedAt)
+           VALUES (?, ?, ?, ?, 'synced', ?, 0, ?, ?, ?, ?, ?)`,
+          [
+            est.id,
+            est.nome,
+            est.endereco || null,
+            est.observacao || null,
+            est.lastSyncedAt || now,
+            est.version || 1,
+            est.deviceId || '',
+            est.createdAt || now,
+            est.updatedAt || now,
+            est.deletedAt || null,
+          ]
+        );
+      }
+    } catch (error: any) {
+      logger.error(`[Database] Erro upsertEstabelecimento ${est.id}: ${error?.message || error}`);
     }
   }
 
@@ -1646,11 +1751,15 @@ class DatabaseService {
    */
   private async upsertHistoricoRelogioFromSync(hr: any): Promise<void> {
     if (!this.db) return;
-    await this.db.runAsync(
-      `INSERT OR REPLACE INTO ${TABLES.HISTORICO_RELOGIO} (id, produtoId, relogioAnterior, relogioNovo, motivo, dataAlteracao, usuarioResponsavel, needsSync)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-      [hr.id, hr.produtoId, hr.relogioAnterior, hr.relogioNovo, hr.motivo, hr.dataAlteracao, hr.usuarioResponsavel]
-    );
+    try {
+      await this.db.runAsync(
+        `INSERT OR REPLACE INTO ${TABLES.HISTORICO_RELOGIO} (id, produtoId, relogioAnterior, relogioNovo, motivo, dataAlteracao, usuarioResponsavel, needsSync)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+        [hr.id, hr.produtoId, hr.relogioAnterior, hr.relogioNovo, hr.motivo, hr.dataAlteracao, hr.usuarioResponsavel]
+      );
+    } catch (error: any) {
+      logger.error(`[Database] Erro upsertHistoricoRelogio ${hr.id}: ${error?.message || error}`);
+    }
   }
 
   /**
@@ -1665,6 +1774,7 @@ class DatabaseService {
   private async upsertUsuarioFromSync(usuario: any): Promise<void> {
     if (!this.db) return;
 
+    try {
     // Converter objetos JSON para string
     const permissoesWeb = typeof usuario.permissoesWeb === 'object'
       ? JSON.stringify(usuario.permissoesWeb)
@@ -1750,6 +1860,9 @@ class DatabaseService {
         ]
       );
     }
+    } catch (error: any) {
+      logger.error(`[Database] Erro upsertUsuario ${usuario.id}: ${error?.message || error}`);
+    }
   }
 
   // ==========================================================================
@@ -1762,6 +1875,7 @@ class DatabaseService {
   private async upsertManutencaoFromSync(manutencao: any): Promise<void> {
     if (!this.db) return;
 
+    try {
     const existing = await this.getById<any>('manutencao' as EntityType, manutencao.id);
     const now = new Date().toISOString();
 
@@ -1823,6 +1937,9 @@ class DatabaseService {
         ]
       );
     }
+    } catch (error: any) {
+      logger.error(`[Database] Erro upsertManutencao ${manutencao.id}: ${error?.message || error}`);
+    }
   }
 
   /**
@@ -1831,6 +1948,7 @@ class DatabaseService {
   private async upsertMetaFromSync(meta: any): Promise<void> {
     if (!this.db) return;
 
+    try {
     const existing = await this.getById<any>('meta' as EntityType, meta.id);
     const now = new Date().toISOString();
 
@@ -1887,6 +2005,9 @@ class DatabaseService {
           meta.deletedAt || null,
         ]
       );
+    }
+    } catch (error: any) {
+      logger.error(`[Database] Erro upsertMeta ${meta.id}: ${error?.message || error}`);
     }
   }
 
