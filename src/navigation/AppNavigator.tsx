@@ -2,36 +2,32 @@
  * AppNavigator.tsx
  * Navegação principal do aplicativo mobile
  * Integração: Auth + Permissões + Contexts + Tipos
- * 
+ *
  * Estrutura:
  * - AuthStack: Login, Recuperação de Senha
  * - AppTabs: Navegação principal (Home, Clientes, Produtos, Cobranças, Mais)
  * - ModalStack: Telas em modal (Detalhes, Formulários)
- * 
- * OFFLINE-FIRST: A verificação de ativação do dispositivo prioriza o estado
- * local (SQLite). Se o dispositivo já foi ativado antes (possui deviceId e
- * deviceKey localmente), o usuário vai direto para o app, mesmo offline.
- * A verificação com o servidor é feita apenas quando online, em background,
- * sem bloquear a navegação.
+ *
+ * 3-BRANCH NAVIGATION (driven by AuthContext):
+ *   1. !isAuthenticated           → Login screen (AuthStack)
+ *   2. isAuthenticated && !isDeviceActivated → DeviceActivation screen
+ *   3. isAuthenticated && isDeviceActivated  → App (main tabs + modals)
+ *
+ * NO-DOWNGRADE RULE: Once the user enters the main app, they are never
+ * kicked back to DeviceActivation on app resume — we trust local state.
  */
 
-import React, { useCallback, useState, useEffect, useRef } from 'react';
-import { View, ActivityIndicator, useColorScheme, Text, AppState, AppStateStatus, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { View, ActivityIndicator, useColorScheme, Text } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { createBottomTabNavigator, BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import NetInfo from '@react-native-community/netinfo';
+
 
 // Contexts
 import { useAuth } from '../contexts/AuthContext';
 import { useSync } from '../contexts/SyncContext';
-
-// Services
-import { apiService } from '../services/ApiService';
-import { databaseService } from '../services/DatabaseService';
-import logger from '../utils/logger';
 
 // Types
 import { TipoPermissaoUsuario, PermissoesUsuario } from '../types';
@@ -127,14 +123,7 @@ const DarkNavTheme = {
   },
 };
 
-// ============================================================================
-// CHAVES DE PERSISTÊNCIA
-// ============================================================================
 
-/** Persiste validação do servidor (sobrevive a remounts e restarts) */
-const SERVER_VALIDATION_KEY = '@cobrancas:serverDeviceValidation';
-/** Flag local que indica que o dispositivo já foi ativado com sucesso pelo menos uma vez */
-const DEVICE_ACTIVATED_KEY = '@cobrancas:device_activated';
 
 // ============================================================================
 // TIPOS DE NAVEGAÇÃO
@@ -626,280 +615,68 @@ function ModalNavigator() {
 }
 
 // ============================================================================
-// ROOT NAVIGATOR - OFFLINE-FIRST AUTH + DEVICE ACTIVATION
+// ROOT NAVIGATOR - 3-BRANCH NAVIGATION
 // ============================================================================
 //
-// Three-branch navigation:
-//   1. Not authenticated → Login screen (Auth)
-//   2. Authenticated but device NOT activated (no local deviceId) → DeviceActivation screen
-//   3. Authenticated AND device activated (has local deviceId) → App tabs
+// Three-branch navigation (driven by AuthContext):
+//   1. !isAuthenticated           → Login screen (AuthStack)
+//   2. isAuthenticated && !isDeviceActivated → DeviceActivation screen
+//   3. isAuthenticated && isDeviceActivated  → App (main tabs + modals)
 //
-// Offline-first principles:
-//   - Local state (SQLite) is the primary source of truth for activation status
-//   - If the device has been previously activated (deviceId + deviceKey exist locally),
-//     the user goes directly to the app, even when offline
-//   - Server verification happens only when online, as a background check
-//   - On app resume from background: never downgrade the navigation state
-//     (if user was in the app, they stay in the app)
+// No-downgrade rule: Once the user reaches the main app, they are never
+// kicked back to DeviceActivation on app resume — we trust local state.
+// The ref `hasEnteredAppRef` ensures this even if isDeviceActivated
+// briefly flips during a re-check.
 // ============================================================================
 
 export function AppNavigator() {
-  const { user, isLoading, isAuthenticated, isSignout, token, logout } = useAuth();
-  const { status: syncStatus, dispositivo } = useSync();
+  const {
+    isLoading,
+    isAuthenticated,
+    isSignout,
+    isDeviceActivated,
+    isCheckingDevice,
+    refreshDeviceActivation,
+    logout,
+  } = useAuth();
+  const { status: syncStatus } = useSync();
   const colorScheme = useColorScheme();
   const theme = colorScheme === 'dark' ? DarkNavTheme : LightNavTheme;
-  
-  // Estado para verificação de ativação do dispositivo
-  const [checkingDevice, setCheckingDevice] = useState(true);
-  const [deviceActivated, setDeviceActivated] = useState(false);
-  const [checkError, setCheckError] = useState<string | null>(null);
 
-  // Refs para controle de fluxo
-  const lastAuthStateRef = useRef<string>('');
-  const isCheckingRef = useRef(false);
-  // Ref para rastrear se o usuário já entrou no app nesta sessão.
-  // Uma vez no app, nunca fazer downgrade ao voltar do background.
+  // ── No-downgrade guard ─────────────────────────────────────────────────
+  // Once the user has entered the main app in this session, never kick them
+  // back to DeviceActivation. Reset only on explicit logout.
   const hasEnteredAppRef = useRef(false);
-  // Ref para rastrear rechecks pendentes
-  const pendingRecheckRef = useRef(false);
-  // Trigger para forçar re-verificação
-  const [recheckTrigger, setRecheckTrigger] = useState(0);
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // No mount: carregar estado persistido (offline-first)
-  // Se o dispositivo já foi ativado numa sessão anterior, confiar
-  // otimisticamente e ir direto para o app.
-  // ═══════════════════════════════════════════════════════════════════════
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        // Check both the activation flag and the server validation key
-        const [activatedFlag, serverValidation] = await Promise.all([
-          AsyncStorage.getItem(DEVICE_ACTIVATED_KEY),
-          AsyncStorage.getItem(SERVER_VALIDATION_KEY),
-        ]);
+    if (isAuthenticated && isDeviceActivated) {
+      hasEnteredAppRef.current = true;
+    }
+    if (!isAuthenticated) {
+      hasEnteredAppRef.current = false;
+    }
+  }, [isAuthenticated, isDeviceActivated]);
 
-        if (mounted && (activatedFlag === 'true' || serverValidation === 'active')) {
-          logger.info('[AppNavigator] Dispositivo previamente ativado — acesso offline-first até re-verificação');
-          setDeviceActivated(true);
-          hasEnteredAppRef.current = true;
-        }
-      } catch (e) {
-        // Ignorar erro de leitura — a verificação completa resolverá
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
+  // Effective activation: once entered the app, stay in the app
+  const effectiveDeviceActivated = hasEnteredAppRef.current || isDeviceActivated;
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // Verificação offline-first de ativação do dispositivo
-  //
-  // ESTRATÉGIA:
-  // 1. Verificar estado LOCAL primeiro (SQLite)
-  //    - Se tem deviceId + deviceKey → dispositivo ativado, ir ao app
-  // 2. Só verificar com o servidor se ONLINE
-  //    - Se online, verificar se o servidor diz que precisa ativação
-  //    - Se o servidor confirmar ativo, manter
-  //    - Se o servidor disser que precisa ativação, fazer downgrade
-  // 3. Se offline, confiar no estado local
-  // ═══════════════════════════════════════════════════════════════════════
+  // ── Poll device activation while on DeviceActivation screen ─────────────
+  // When the user is authenticated but not yet device-activated, periodically
+  // re-check so we detect when DeviceActivationScreen completes activation.
   useEffect(() => {
-    const currentAuthState = `${isAuthenticated}-${isSignout}`;
+    if (!isAuthenticated || effectiveDeviceActivated) return;
 
-    // Evitar re-verificação se o estado de auth não mudou E não há trigger
-    if (currentAuthState === lastAuthStateRef.current && recheckTrigger === 0) {
-      return;
-    }
-    if (currentAuthState !== lastAuthStateRef.current) {
-      lastAuthStateRef.current = currentAuthState;
-    }
+    const interval = setInterval(() => {
+      refreshDeviceActivation();
+    }, 3000);
 
-    // Evitar re-entrância
-    if (isCheckingRef.current) {
-      pendingRecheckRef.current = true;
-      return;
-    }
+    return () => clearInterval(interval);
+  }, [isAuthenticated, effectiveDeviceActivated, refreshDeviceActivation]);
 
-    const checkDeviceStatus = async () => {
-      // ── Branch 1: Não autenticado → resetar tudo ──
-      if (!isAuthenticated || isSignout) {
-        setCheckingDevice(false);
-        setDeviceActivated(false);
-        hasEnteredAppRef.current = false;
-        try {
-          await AsyncStorage.multiRemove([SERVER_VALIDATION_KEY, DEVICE_ACTIVATED_KEY]);
-        } catch {}
-        return;
-      }
-
-      isCheckingRef.current = true;
-
-      // Determinar se este é um recheck (app voltou do background)
-      const isRecheck = recheckTrigger > 0;
-
-      logger.info(`[AppNavigator] Verificando status do dispositivo...${isRecheck ? ' (recheck - sem downgrade)' : ' (verificação inicial)'}`);
-
-      // Mostrar loading apenas na verificação inicial (evita flicker em rechecks)
-      if (!isRecheck) {
-        setCheckingDevice(true);
-      }
-
-      try {
-        // ── Passo 1: Verificar estado LOCAL (SQLite) ──
-        const metadata = await databaseService.getSyncMetadata();
-        const localActivated = !!(metadata.deviceId && metadata.deviceKey);
-
-        logger.info('[AppNavigator] Dados locais (sync_metadata):', {
-          deviceId: metadata.deviceId,
-          hasDeviceKey: !!metadata.deviceKey,
-          localActivated,
-        });
-
-        if (localActivated) {
-          // ── Dispositivo ativado localmente → ir ao app ──
-          logger.info('[AppNavigator] Dispositivo ativado localmente — acesso garantido (offline-first)');
-          setDeviceActivated(true);
-          hasEnteredAppRef.current = true;
-
-          // Persistir flag de ativação para próximos cold starts
-          try {
-            await AsyncStorage.setItem(DEVICE_ACTIVATED_KEY, 'true');
-            await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'active');
-          } catch {}
-
-          // ── Passo 2 (background): Verificar com servidor APENAS se online ──
-          // Não bloquear a navegação. Fazer a verificação em background.
-          const netInfo = await NetInfo.fetch();
-          if (netInfo.isConnected) {
-            logger.info('[AppNavigator] Online — verificando status com servidor em background...');
-            try {
-              const response = await apiService.verificarStatusDispositivo(metadata.deviceKey);
-              logger.info('[AppNavigator] Resposta do servidor:', response.data);
-
-              if (response.success && response.data?.needsActivation === true) {
-                // Servidor diz que precisa ativação — mas respeitar regra de no-downgrade
-                // Em rechecks (background → foreground), NÃO fazer downgrade.
-                // Apenas na verificação inicial ou se o usuário não entrou no app ainda.
-                if (!hasEnteredAppRef.current && !isRecheck) {
-                  logger.warn('[AppNavigator] Servidor requer ativação — fazendo downgrade');
-                  setDeviceActivated(false);
-                  hasEnteredAppRef.current = false;
-                  try {
-                    await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'inactive');
-                    await AsyncStorage.setItem(DEVICE_ACTIVATED_KEY, 'false');
-                  } catch {}
-                } else {
-                  logger.info('[AppNavigator] Servidor requer ativação, mas usuário já no app — mantendo estado (no downgrade on resume)');
-                }
-              } else if (response.success && response.data?.needsActivation === false) {
-                // Servidor confirmou ativo — atualizar persisted state
-                logger.info('[AppNavigator] Servidor confirmou dispositivo ativo');
-                try {
-                  await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'active');
-                  await AsyncStorage.setItem(DEVICE_ACTIVATED_KEY, 'true');
-                } catch {}
-              }
-            } catch (serverError) {
-              // API falhou (servidor temporariamente indisponível, etc.)
-              // Manter estado local — NÃO fazer downgrade
-              logger.warn('[AppNavigator] Servidor indisponível — mantendo estado local de ativação');
-            }
-          } else {
-            logger.info('[AppNavigator] Offline — confiando no estado local (offline-first)');
-          }
-
-          setCheckingDevice(false);
-          return;
-        }
-
-        // ── Branch 2: Sem dados locais (dispositivo não ativado) ──
-        logger.info('[AppNavigator] Sem metadados do dispositivo localmente — precisa ativação');
-
-        // Antes de mostrar a tela de ativação, tentar verificar com o servidor
-        // caso estejamos online e o dispositivo tenha sido ativado em outro momento
-        const netInfo = await NetInfo.fetch();
-        if (netInfo.isConnected) {
-          logger.info('[AppNavigator] Online — verificando se há ativação pendente no servidor...');
-          try {
-            const response = await apiService.verificarStatusDispositivo();
-            if (response.success && response.data?.needsActivation === false) {
-              // Servidor diz que não precisa ativação — mas não temos dados locais
-              // Isso não deve acontecer normalmente, mas se acontecer,
-              // ainda precisamos dos dados locais para funcionar offline
-              logger.info('[AppNavigator] Servidor diz que não precisa ativação, mas sem dados locais — precisa ativação para obter credenciais');
-            }
-          } catch {
-            // Ignorar erro do servidor
-          }
-        }
-
-        // Precisa de ativação
-        setDeviceActivated(false);
-        try {
-          await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'inactive');
-          await AsyncStorage.setItem(DEVICE_ACTIVATED_KEY, 'false');
-        } catch {}
-        setCheckingDevice(false);
-
-      } catch (error) {
-        logger.error('[AppNavigator] Erro ao verificar ativação:', error);
-        // Em caso de erro local, NÃO fazer downgrade se o usuário já estava no app
-        if (!hasEnteredAppRef.current) {
-          setDeviceActivated(false);
-          setCheckError(error instanceof Error ? error.message : 'Erro ao verificar dispositivo');
-          try {
-            await AsyncStorage.setItem(DEVICE_ACTIVATED_KEY, 'false');
-          } catch {}
-        }
-        setCheckingDevice(false);
-      } finally {
-        isCheckingRef.current = false;
-
-        // Se um recheck foi bloqueado enquanto esta verificação estava em andamento,
-        // executá-lo agora.
-        if (pendingRecheckRef.current) {
-          pendingRecheckRef.current = false;
-          logger.info('[AppNavigator] Executando recheck pendente após verificação completar');
-          setRecheckTrigger(prev => prev + 1);
-        }
-      }
-    };
-
-    checkDeviceStatus();
-  }, [isAuthenticated, isSignout, recheckTrigger]);
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Listener para mudanças de estado do app (background → foreground)
-  //
-  // OFFLINE-FIRST: Ao voltar do background, NÃO fazer downgrade do estado
-  // de navegação. Se o usuário estava no app, continua no app.
-  // Apenas verificar com servidor se online, em background.
-  // ═══════════════════════════════════════════════════════════════════════
-  useEffect(() => {
-    const appStateRef = { current: AppState.currentState };
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      const prev = appStateRef.current;
-      appStateRef.current = nextAppState;
-
-      if ((prev === 'background' || prev === 'inactive') && nextAppState === 'active') {
-        // Se o usuário já entrou no app, não precisamos re-verificar
-        // a ativação — ele pode estar offline e a verificação falharia.
-        // Apenas disparamos uma verificação em background se online.
-        if (hasEnteredAppRef.current) {
-          logger.info('[AppNavigator] App voltou ao foreground — usuário já no app, verificação em background (sem downgrade)');
-        } else {
-          logger.info('[AppNavigator] App voltou ao foreground — disparando verificação de ativação');
-        }
-        setRecheckTrigger(prev => prev + 1);
-      }
-    });
-
-    return () => subscription.remove();
-  }, []);
-
-  // Enquanto carrega auth ou verifica dispositivo, mostra loading
-  if (isLoading || checkingDevice) {
+  // ── Loading screen ─────────────────────────────────────────────────────
+  // Show loading while auth is initializing OR while checking device
+  // activation (but NOT if the user has already entered the app — no flicker).
+  if (isLoading || (isAuthenticated && isCheckingDevice && !hasEnteredAppRef.current)) {
     return (
       <NavigationContainer theme={theme}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background }}>
@@ -911,63 +688,25 @@ export function AppNavigator() {
       </NavigationContainer>
     );
   }
-  
-  // Mostrar erro se houver — com opções de retry e logout
-  if (checkError && isAuthenticated && !isSignout) {
-    return (
-      <NavigationContainer theme={theme}>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background, padding: 20 }}>
-          <Ionicons name="alert-circle" size={48} color="#EF4444" />
-          <Text style={{ marginTop: 16, color: '#EF4444', fontSize: 18, fontWeight: '600', textAlign: 'center' }}>
-            Erro ao verificar dispositivo
-          </Text>
-          <Text style={{ marginTop: 8, color: theme.colors.text, fontSize: 14, textAlign: 'center', opacity: 0.7 }}>
-            {checkError}
-          </Text>
-          <View style={{ marginTop: 24, gap: 12, width: '100%', maxWidth: 280 }}>
-            <TouchableOpacity
-              onPress={() => {
-                setCheckError(null);
-                setCheckingDevice(true);
-                // Forçar re-verificação resetando o ref e incrementando o trigger
-                lastAuthStateRef.current = '';
-                setRecheckTrigger(prev => prev + 1);
-              }}
-              style={{ backgroundColor: theme.colors.primary, borderRadius: 8, padding: 14, alignItems: 'center' }}
-            >
-              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>Tentar novamente</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={async () => {
-                await logout();
-              }}
-              style={{ borderWidth: 1, borderColor: '#EF4444', borderRadius: 8, padding: 14, alignItems: 'center' }}
-            >
-              <Text style={{ color: '#EF4444', fontWeight: '600', fontSize: 15 }}>Sair da conta</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </NavigationContainer>
-    );
-  }
 
+  // ── 3-branch navigation ────────────────────────────────────────────────
   return (
     <NavigationContainer theme={theme}>
       <RootStack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
-        {/* Branch 1: Não autenticado → Login */}
         {!isAuthenticated || isSignout ? (
+          /* Branch 1: Not authenticated → Login */
           <RootStack.Screen name="Auth" component={AuthNavigator} />
-        ) : !deviceActivated ? (
-          /* Branch 2: Autenticado mas dispositivo NÃO ativado (sem deviceId local) → DeviceActivation */
+        ) : !effectiveDeviceActivated ? (
+          /* Branch 2: Authenticated but device NOT activated → DeviceActivation */
           <RootStack.Screen name="DeviceActivation" component={DeviceActivationScreen} />
         ) : (
-          /* Branch 3: Autenticado E dispositivo ativado (tem deviceId local) → App principal */
+          /* Branch 3: Authenticated AND device activated → Main app */
           <RootStack.Screen name="App" component={ModalNavigator} />
         )}
       </RootStack.Navigator>
-      
-      {/* Overlay de sincronização (opcional) */}
-      {isAuthenticated && deviceActivated && syncStatus === 'syncing' && (
+
+      {/* Sync overlay (optional visual indicator) */}
+      {isAuthenticated && effectiveDeviceActivated && syncStatus === 'syncing' && (
         <SyncOverlay />
       )}
     </NavigationContainer>

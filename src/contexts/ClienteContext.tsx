@@ -11,7 +11,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useCa
 import { Cliente, ClienteListItem, ClienteFilters } from '../types';
 import { clienteRepository } from '../repositories/ClienteRepository';
 import { useDatabase } from './DatabaseContext';
-import syncEvents from '../utils/sync-events';
+import { useSync } from './SyncContext';
 
 // ============================================================================
 // INTERFACES
@@ -66,6 +66,7 @@ interface ClienteProviderProps {
 export function ClienteProvider({ children }: ClienteProviderProps) {
   // Verificar se o banco está pronto
   const { isReady } = useDatabase();
+  const { syncVersion } = useSync();
   
   // Estado
   const [clientes, setClientes] = useState<ClienteListItem[]>([]);
@@ -252,20 +253,11 @@ export function ClienteProvider({ children }: ClienteProviderProps) {
 
   useEffect(() => {
     // Só carregar dados quando o banco estiver pronto
+    // syncVersion triggers reload after every successful sync
     if (isReady) {
       carregarClientes();
     }
-  }, [carregarClientes, isReady]);
-
-  // CORREÇÃO: Recarregar dados quando o sync completar
-  // Sem isso, os clientes ficam vazios na UI mesmo após o sync ter baixado dados
-  useEffect(() => {
-    const unsubscribe = syncEvents.onSyncComplete(() => {
-      console.log('[ClienteContext] Sync completo — recarregando clientes');
-      carregarClientes();
-    });
-    return unsubscribe;
-  }, [carregarClientes]);
+  }, [carregarClientes, isReady, syncVersion]);
 
   // ==========================================================================
   // ESTADO DO CONTEXT

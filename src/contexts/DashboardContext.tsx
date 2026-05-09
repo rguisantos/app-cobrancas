@@ -4,7 +4,7 @@
  * Integração: Repositórios + Services + Tipos
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { useDatabase } from './DatabaseContext';
 import { useSync } from './SyncContext';
 import { 
@@ -19,7 +19,6 @@ import { clienteRepository } from '../repositories/ClienteRepository';
 import { produtoRepository } from '../repositories/ProdutoRepository';
 import { locacaoRepository } from '../repositories/LocacaoRepository';
 import { cobrancaRepository } from '../repositories/CobrancaRepository';
-import { apiService } from '../services/ApiService';
 import { databaseService } from '../services/DatabaseService';
 
 // ============================================================================
@@ -95,10 +94,7 @@ export function DashboardProvider({
 }: DashboardProviderProps) {
   // Estado
   const { isReady } = useDatabase();
-  const { isSyncing, status: syncStatus, syncVersion } = useSync();
-  
-  // Ref para rastrear quando a sincronização termina
-  const wasSyncingRef = useRef(false);
+  const { syncVersion } = useSync();
 
     const [mobile, setMobile] = useState<DashboardMobileData | null>(null);
   const [web, setWeb] = useState<DashboardWebData | null>(null);
@@ -300,8 +296,8 @@ export function DashboardProvider({
   /**
    * Carrega dashboard mobile
    * Estratégia OFFLINE-FIRST:
-   * 1) Carrega IMEDIATAMENTE do SQLite (sem esperar API)
-   * 2) Tenta API em background para atualizar dados (não bloqueia UI)
+   * Carrega IMEDIATAMENTE do SQLite (sem esperar API)
+   * Sync mechanism already updates SQLite with fresh data.
    */
   const carregarDashboardMobile = useCallback(async () => {
     setCarregando(true);
@@ -323,20 +319,6 @@ export function DashboardProvider({
       setMetricas(metricasCalculadas);
       setUltimaAtualizacao(new Date().toISOString());
       console.log('[DashboardContext] Dashboard mobile carregado do SQLite local');
-
-      // 2) Tentar API em background para atualizar (não bloqueia UI)
-      apiService.getDashboardMobile().then(response => {
-        if (response.success && response.data) {
-          const data = response.data as DashboardMobileData;
-          setMobile(data);
-          setMetricas(data.metricas);
-          setUltimaAtualizacao(data.dataAtualizacao || new Date().toISOString());
-          console.log('[DashboardContext] Dashboard mobile atualizado da API (background)');
-        }
-      }).catch(() => {
-        // Silenciosamente ignorar — já temos dados locais
-        console.log('[DashboardContext] API indisponível — usando dados locais');
-      });
     } catch (error) {
       console.error('[DashboardContext] Erro ao carregar dashboard mobile:', error);
 
@@ -363,7 +345,7 @@ export function DashboardProvider({
 
   /**
    * Carrega dashboard web
-   * Estratégia OFFLINE-FIRST: SQLite primeiro, API em background
+   * Estratégia OFFLINE-FIRST: SQLite only (sync mechanism updates SQLite)
    */
   const carregarDashboardWeb = useCallback(async () => {
     setCarregando(true);
@@ -390,18 +372,6 @@ export function DashboardProvider({
       setWeb(dashboardWeb);
       setUltimaAtualizacao(new Date().toISOString());
       console.log('[DashboardContext] Dashboard web carregado do SQLite local');
-
-      // 2) Tentar API em background para atualizar (não bloqueia UI)
-      apiService.getDashboardWeb().then(response => {
-        if (response.success && response.data) {
-          setWeb(response.data);
-          setUltimaAtualizacao(new Date().toISOString());
-          console.log('[DashboardContext] Dashboard web atualizado da API (background)');
-        }
-      }).catch(() => {
-        // Silenciosamente ignorar — já temos dados locais
-        console.log('[DashboardContext] API indisponível — usando dados locais');
-      });
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao carregar dashboard web';
       setErro(mensagem);
@@ -497,20 +467,7 @@ export function DashboardProvider({
     if (isReady) carregarDashboardMobile();
   }, [isReady, carregarDashboardMobile, syncVersion]);
 
-  // Recarregar métricas quando a sincronização terminar
-  useEffect(() => {
-    // Atualizar ref com estado atual de sync
-    if (isSyncing) {
-      wasSyncingRef.current = true;
-    }
-    
-    // Se estava sincronizando e agora não está mais, recarregar métricas
-    if (wasSyncingRef.current && !isSyncing && syncStatus === 'synced') {
-      console.log('[DashboardContext] Sincronização terminou - recarregando métricas...');
-      wasSyncingRef.current = false;
-      carregarDashboardMobile();
-    }
-  }, [isSyncing, syncStatus, carregarDashboardMobile]);
+
 
   // ==========================================================================
   // ESTADO DO CONTEXT

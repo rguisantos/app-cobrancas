@@ -1,24 +1,31 @@
 /**
  * SyncService.ts
- * Serviço de sincronização bidirecional - Mobile ↔ Web
+ * Serviço de sincronização bidirecional - Mobile <-> Web
  * Arquitetura: Offline-first com SQLite local + PostgreSQL remoto
+ *
+ * REWRITE NOTES:
+ * - Removed auto-sync (moved to SyncContext only)
+ * - Removed syncEvents dependency (SyncContext uses syncVersion exclusively)
+ * - Added robust error serialization (no more `{}` errors)
+ * - Added structured logging for debugging
+ * - Kept: mutex, pagination, snapshot recovery, ALLOWED_FIELDS filtering,
+ *         batch marking, version updates
  */
 
-import { 
-  SyncMetadata, 
-  ChangeLog, 
-  SyncResponse, 
+import {
+  SyncMetadata,
+  ChangeLog,
+  SyncResponse,
   SyncConflict,
   EntityType,
   UpdatedVersion,
 } from '../types';
 import { databaseService } from './DatabaseService';
 import { apiService } from './ApiService';
-import { ENV } from '../config/env';
 import logger from '../utils/logger';
 
 // ============================================================================
-// TIPOS E INTERFACES
+// TYPES & INTERFACES
 // ============================================================================
 
 export interface SyncProgress {
@@ -41,7 +48,7 @@ export interface SyncResult {
 type SyncEventListener = (progress: SyncProgress) => void;
 
 // ============================================================================
-// FIX #4: ALLOWED_FIELDS — mirrors backend sync-helpers.ts ALLOWED_FIELDS
+// ALLOWED_FIELDS — mirrors backend sync-helpers.ts
 // Used to filter outgoing PUSH payload changes to only include fields
 // the server accepts, reducing payload size and preventing server-side errors.
 // ============================================================================
@@ -125,17 +132,85 @@ const ALLOWED_FIELDS: Record<string, Set<string>> = {
 
 // Pull pagination limits
 const MAX_PULL_ROUNDS = 20;
-const ABSOLUTE_MAX_ROUNDS = 30; // Hard cap — if hit, something is very wrong
+const ABSOLUTE_MAX_ROUNDS = 30;
+
+// ============================================================================
+// ERROR SERIALIZATION
+// ============================================================================
+
+/**
+ * Robust error serialization — never produces empty `{}` strings.
+ * Handles: Error instances, plain objects, non-enumerable props, HTTP errors.
+ */
+function serializeError(error: unknown): string {
+  if (error === null || error === undefined) {
+    return 'Erro desconhecido (null/undefined)';
+  }
+
+  if (error instanceof Error) {
+    return error.message || error.name || 'Erro desconhecido (Error sem mensagem)';
+  }
+
+  if (typeof error === 'string') {
+    return error || 'Erro desconhecido (string vazia)';
+  }
+
+  if (typeof error === 'number' || typeof error === 'boolean') {
+    return String(error);
+  }
+
+  if (typeof error === 'object') {
+    const errObj = error as Record<string, unknown>;
+
+    // Try common error properties in priority order
+    const message =
+      errObj.message ||
+      errObj.error ||
+      errObj.statusText ||
+      (errObj.data as Record<string, unknown>)?.error ||
+      (errObj.data as Record<string, unknown>)?.message ||
+      errObj.detail ||
+      errObj.description ||
+      null;
+
+    if (typeof message === 'string' && message.length > 0) {
+      return message;
+    }
+
+    // Try JSON stringify, but check for empty result
+    try {
+      const json = JSON.stringify(error);
+      if (json && json !== '{}' && json !== '""') {
+        return json;
+      }
+    } catch {
+      // JSON.stringify can fail on circular refs
+    }
+
+    // Last resort: use String() which calls toString()
+    const str = String(error);
+    if (str && str !== '[object Object]') {
+      return str;
+    }
+
+    // Extract constructor name for debugging
+    const ctorName = error?.constructor?.name;
+    if (ctorName && ctorName !== 'Object') {
+      return `Erro do tipo ${ctorName} (sem mensagem)`;
+    }
+
+    return 'Erro inesperado (objeto sem propriedades serializáveis)';
+  }
+
+  return `Erro inesperado: ${String(error)}`;
+}
 
 /**
  * Filter change fields to only include allowed fields for the given entity type.
- * Removes fields like 'id', 'createdAt', 'cpfCnpj', 'rgIe', 'locacaoAtiva', 'estaLocado'
- * that the server would reject or ignore.
  */
 function filterChangeFields(entityType: string, changes: Record<string, unknown>): Record<string, unknown> {
   const allowed = ALLOWED_FIELDS[entityType];
   if (!allowed) {
-    // Unknown entity type — pass through unchanged (backward compat)
     logger.warn(`[Sync] No ALLOWED_FIELDS for entityType "${entityType}" — passing all fields`);
     return changes;
   }
@@ -150,22 +225,21 @@ function filterChangeFields(entityType: string, changes: Record<string, unknown>
 }
 
 // ============================================================================
-// CLASSE SYNC SERVICE
+// SYNC SERVICE CLASS
 // ============================================================================
 
 class SyncService {
   private syncInProgress = false;
   private syncPromise: Promise<SyncResult> | null = null;
   private listeners: SyncEventListener[] = [];
-  private autoSyncInterval: NodeJS.Timeout | null = null;
   private cancellationRequested = false;
 
   // ==========================================================================
-  // CONFIGURAÇÃO
+  // LISTENER MANAGEMENT
   // ==========================================================================
 
   /**
-   * Adiciona listener para eventos de sincronização
+   * Adiciona listener para eventos de progresso de sincronização
    */
   addListener(listener: SyncEventListener): () => void {
     this.listeners.push(listener);
@@ -178,48 +252,29 @@ class SyncService {
    * Notifica listeners sobre progresso
    */
   private notify(progress: SyncProgress): void {
-    this.listeners.forEach(listener => listener(progress));
-  }
-
-  /**
-   * Inicia sincronização automática
-   */
-  startAutoSync(intervalMinutes: number = ENV.SYNC_INTERVAL): void {
-    if (this.autoSyncInterval) {
-      clearInterval(this.autoSyncInterval);
-    }
-
-    this.autoSyncInterval = setInterval(() => {
-      this.sync();
-    }, intervalMinutes * 60 * 1000);
-
-    logger.info('[Sync] Auto-sync iniciado', { intervalMinutes });
-  }
-
-  /**
-   * Para sincronização automática
-   */
-  stopAutoSync(): void {
-    if (this.autoSyncInterval) {
-      clearInterval(this.autoSyncInterval);
-      this.autoSyncInterval = null;
-      logger.info('[Sync] Auto-sync parado');
+    for (const listener of this.listeners) {
+      try {
+        listener(progress);
+      } catch (err) {
+        logger.error('[Sync] Listener error:', serializeError(err));
+      }
     }
   }
 
   // ==========================================================================
-  // SINCRONIZAÇÃO PRINCIPAL
+  // MAIN SYNC
   // ==========================================================================
 
   /**
-   * Executa sincronização completa (push + pull)
+   * Executa sincronização completa (push + pull).
+   *
+   * Mutex: if a sync is already in progress, returns the same Promise
+   * instead of rejecting. Prevents race conditions between auto-sync,
+   * manual sync, and sync-on-resume.
    */
   async sync(): Promise<SyncResult> {
-    // CORREÇÃO: Mutex baseado em Promise — se já existe sync em andamento,
-    // aguardar a mesma Promise em vez de rejeitar. Evita race condition
-    // entre auto-sync, sync manual e sync on resume.
     if (this.syncPromise) {
-      logger.warn('[Sync] Sincronização já em andamento — aguardando conclusão');
+      logger.warn('[Sync] Sync already in progress — awaiting existing promise');
       return this.syncPromise;
     }
 
@@ -233,7 +288,7 @@ class SyncService {
   }
 
   /**
-   * Implementação interna da sincronização (chamada via mutex)
+   * Internal sync implementation (called via mutex)
    */
   private async _doSync(): Promise<SyncResult> {
     this.syncInProgress = true;
@@ -243,15 +298,15 @@ class SyncService {
     let conflicts: SyncConflict[] = [];
 
     try {
-      logger.info('[Sync] Iniciando sincronização...');
+      logger.info('[Sync] Starting sync...');
 
-      // Verificar se o dispositivo está registrado
+      // Verify device is registered
       const isRegistered = await this.ensureDeviceRegistered();
       if (!isRegistered) {
         throw new Error('Dispositivo não registrado. Faça login primeiro.');
       }
 
-      // Fase 1: PUSH - Enviar mudanças locais
+      // Phase 1: PUSH — send local changes
       this.notify({
         phase: 'pushing',
         total: 0,
@@ -268,7 +323,7 @@ class SyncService {
       conflicts = pushResult.conflicts;
       errors.push(...pushResult.errors);
 
-      // Fase 2: PULL - Receber mudanças remotas
+      // Phase 2: PULL — receive remote changes
       this.notify({
         phase: 'pulling',
         total: 0,
@@ -283,7 +338,6 @@ class SyncService {
       }
       pulled = pullResult.pulled;
       errors.push(...pullResult.errors);
-      // FIX #1: Merge pull conflicts into the overall sync result
       if (pullResult.conflicts && pullResult.conflicts.length > 0) {
         conflicts = [...conflicts, ...pullResult.conflicts];
       }
@@ -292,10 +346,10 @@ class SyncService {
       try {
         await databaseService.purgeOldChangeLogs(30);
       } catch (purgeError) {
-        logger.warn('[Sync] Falha no purge de changelogs:', purgeError);
+        logger.warn('[Sync] Changelog purge failed:', serializeError(purgeError));
       }
 
-      // Atualizar metadata
+      // Update metadata
       const now = new Date().toISOString();
       await databaseService.updateSyncMetadata({
         lastSyncAt: now,
@@ -312,7 +366,12 @@ class SyncService {
         errors,
       });
 
-      logger.info('[Sync] Concluída', { pushed, pulled, conflicts: conflicts.length });
+      logger.info('[Sync] Completed', {
+        pushed,
+        pulled,
+        conflicts: conflicts.length,
+        errors: errors.length,
+      });
 
       return {
         success: errors.length === 0,
@@ -324,9 +383,9 @@ class SyncService {
       };
 
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
-      errors.push(errorMsg || 'Erro desconhecido');
-      logger.error('[Sync] Erro:', errorMsg);
+      const errorMsg = serializeError(error);
+      errors.push(errorMsg);
+      logger.error('[Sync] Error:', errorMsg);
 
       this.notify({
         phase: 'error',
@@ -351,7 +410,7 @@ class SyncService {
   }
 
   /**
-   * Cancela a sincronização em andamento sem afetar outras chamadas da API.
+   * Cancela a sincronização em andamento
    */
   cancelSync(): void {
     this.cancellationRequested = true;
@@ -365,6 +424,10 @@ class SyncService {
     });
   }
 
+  // ==========================================================================
+  // PUSH
+  // ==========================================================================
+
   /**
    * Envia mudanças locais para o servidor (PUSH)
    */
@@ -374,32 +437,27 @@ class SyncService {
     let conflicts: SyncConflict[] = [];
 
     try {
-      // Buscar mudanças pendentes
       const pendingChanges = await databaseService.getPendingChanges();
-      
+
       if (pendingChanges.length === 0) {
-        logger.info('[Sync/Push] Nenhuma mudança pendente');
+        logger.info('[Sync/Push] No pending changes');
         return { pushed: 0, conflicts: [], errors: [] };
       }
 
-      logger.info('[Sync/Push] Enviando mudanças...', { count: pendingChanges.length });
+      logger.info('[Sync/Push] Sending changes...', { count: pendingChanges.length });
 
-      // Preparar payload
       const metadata = await databaseService.getSyncMetadata();
-      
-      // FIX #4: Filter changes using ALLOWED_FIELDS before sending to server
-      // Converter tipos do SQLite para tipos esperados pela API
+
+      // Filter changes using ALLOWED_FIELDS before sending to server
       const payload = {
         deviceId: metadata.deviceId,
         deviceKey: metadata.deviceKey,
         lastSyncAt: metadata.lastSyncAt,
         changes: pendingChanges.map(change => {
-          // Parse changes if string (from SQLite)
-          const rawChanges: Record<string, unknown> = typeof change.changes === 'string' 
-            ? JSON.parse(change.changes) 
+          const rawChanges: Record<string, unknown> = typeof change.changes === 'string'
+            ? JSON.parse(change.changes)
             : change.changes;
 
-          // Filter fields to only include what the server accepts
           const filteredChanges = filterChangeFields(change.entityType, rawChanges);
 
           return {
@@ -410,15 +468,12 @@ class SyncService {
             changes: filteredChanges,
             timestamp: change.timestamp,
             deviceId: change.deviceId,
-            // Converter synced de number (0/1) para boolean
             synced: Boolean(change.synced),
-            // Converter syncedAt null para undefined
             syncedAt: change.syncedAt || undefined,
           };
         }),
       };
 
-      // Enviar para o servidor
       const response = await apiService.pushChanges(payload);
 
       if (!response.success) {
@@ -426,20 +481,22 @@ class SyncService {
         return { pushed: 0, conflicts: [], errors };
       }
 
-      // Processar resposta
+      // Process response
       conflicts = response.conflicts || [];
-      
-      // CORREÇÃO: Atualizar versões locais com base no updatedVersions retornado pelo servidor
+
+      // Update local versions based on updatedVersions from server
       const updatedVersions = response.updatedVersions || [];
       for (const uv of updatedVersions) {
         try {
           const tableName = this.getTableName(uv.entityType as EntityType);
-          await databaseService.runAsync(
-            `UPDATE ${tableName} SET version = ? WHERE id = ?`,
-            [uv.newVersion, uv.entityId]
-          );
+          if (tableName) {
+            await databaseService.runAsync(
+              `UPDATE ${tableName} SET version = ? WHERE id = ?`,
+              [uv.newVersion, uv.entityId]
+            );
+          }
         } catch (err) {
-          logger.error(`[Sync/Push] Erro ao atualizar versão de ${uv.entityType}:${uv.entityId}:`, err);
+          logger.error(`[Sync/Push] Version update error ${uv.entityType}:${uv.entityId}:`, serializeError(err));
         }
       }
 
@@ -448,62 +505,58 @@ class SyncService {
       await this.batchMarkAsSynced(changeIds);
       pushed = changeIds.length;
 
-      // Atualizar status das entidades locais (batched)
+      // Mark entities as synced (batched by entity type)
       await this.markEntitiesAsSynced(pendingChanges);
 
-      logger.info('[Sync/Push] Mudanças enviadas', { pushed, conflicts: conflicts.length });
+      logger.info('[Sync/Push] Changes sent', { pushed, conflicts: conflicts.length });
 
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
-      errors.push(errorMsg || 'Erro no push');
-      logger.error('[Sync/Push] Erro:', errorMsg);
+      errors.push(serializeError(error));
+      logger.error('[Sync/Push] Error:', serializeError(error));
     }
 
     return { pushed, conflicts, errors };
   }
 
+  // ==========================================================================
+  // PULL
+  // ==========================================================================
+
   /**
    * Recebe mudanças do servidor (PULL)
-   * 
-   * FIX #1: Now handles conflicts and errors from PULL response
-   * FIX #2: Increased max rounds from 10 to 20 with no-progress detection
-   * FIX #3: Applies updatedVersions from PULL response
+   * Handles stale device detection, incremental pagination, and snapshot recovery.
    */
   async pullChanges(): Promise<{ pulled: number; errors: string[]; conflicts: SyncConflict[] }> {
     const errors: string[] = [];
     const allConflicts: SyncConflict[] = [];
     let pulled = 0;
-    // MAX_PULL_ROUNDS and ABSOLUTE_MAX_ROUNDS defined at module level
 
     try {
       const metadata = await databaseService.getSyncMetadata();
-      
+
       const payload = {
         deviceId: metadata.deviceId,
         deviceKey: metadata.deviceKey,
         lastSyncAt: metadata.lastSyncAt || new Date(0).toISOString(),
       };
 
-      // ═══════════════════════════════════════════════════════════════════
-      // FIX: Detectar device estale ANTES do pull incremental.
-      // Se o lastSyncAt é muito antigo (> 30 dias), o pull incremental
-      // retorna vazio (porque o deviceId do device exclui seus próprios
-      // registros). Nesse caso, ir direto ao snapshot.
-      // ═══════════════════════════════════════════════════════════════════
+      // Detect stale device: if lastSyncAt is >30 days old, pull incremental
+      // may return empty (because deviceId filter excludes own records).
+      // In that case, go straight to snapshot.
       const lastSyncDate = new Date(payload.lastSyncAt);
       const diasOffline = (Date.now() - lastSyncDate.getTime()) / (1000 * 60 * 60 * 24);
       const STALE_THRESHOLD_DAYS = 30;
 
       if (diasOffline > STALE_THRESHOLD_DAYS) {
-        logger.warn(`[Sync/Pull] Device estale (${Math.round(diasOffline)} dias) — usando snapshot direto`);
+        logger.warn(`[Sync/Pull] Stale device (${Math.round(diasOffline)} days offline) — trying snapshot`);
+
         try {
           const snapshotResult = await this.syncFromSnapshot();
           if (snapshotResult > 0) {
             pulled = snapshotResult;
-            logger.info(`[Sync/Pull] Snapshot aplicado: ${pulled} registros`);
+            logger.info(`[Sync/Pull] Snapshot applied: ${pulled} records`);
           } else {
-            logger.warn('[Sync/Pull] Snapshot retornou 0 registros — tentando pull incremental como fallback');
-            // Fallback: tentar pull incremental mesmo para device estale
+            logger.warn('[Sync/Pull] Snapshot returned 0 — falling back to incremental');
             const incrementalResult = await this._doIncrementalPull(metadata, payload.lastSyncAt);
             pulled = incrementalResult.pulled;
             errors.push(...incrementalResult.errors);
@@ -512,8 +565,7 @@ class SyncService {
             }
           }
         } catch (snapError) {
-          logger.error('[Sync/Pull] Snapshot falhou, tentando pull incremental:', snapError);
-          // Fallback: tentar pull incremental
+          logger.error('[Sync/Pull] Snapshot failed, falling back to incremental:', serializeError(snapError));
           const incrementalResult = await this._doIncrementalPull(metadata, payload.lastSyncAt);
           pulled = incrementalResult.pulled;
           errors.push(...incrementalResult.errors);
@@ -525,9 +577,7 @@ class SyncService {
         return { pulled, errors, conflicts: allConflicts };
       }
 
-      // ═══════════════════════════════════════════════════════════════════
-      // Pull incremental normal (device NÃO estale)
-      // ═══════════════════════════════════════════════════════════════════
+      // Normal incremental pull (device NOT stale)
       const incrementalResult = await this._doIncrementalPull(metadata, payload.lastSyncAt);
       pulled = incrementalResult.pulled;
       errors.push(...incrementalResult.errors);
@@ -536,16 +586,15 @@ class SyncService {
       }
 
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
-      errors.push(errorMsg || 'Erro no pull');
-      logger.error('[Sync/Pull] Erro:', errorMsg);
+      errors.push(serializeError(error));
+      logger.error('[Sync/Pull] Error:', serializeError(error));
     }
 
     return { pulled, errors, conflicts: allConflicts };
   }
 
   /**
-   * Pull incremental com paginação (extraído de pullChanges)
+   * Incremental pull with pagination (extracted from pullChanges)
    */
   private async _doIncrementalPull(
     metadata: { deviceId: string; deviceKey: string },
@@ -576,17 +625,16 @@ class SyncService {
       do {
         round++;
 
-        // FIX #2: Hard cap against infinite loops
+        // Hard cap against infinite loops
         if (round > ABSOLUTE_MAX_ROUNDS) {
-          logger.error(`[Sync/Pull] ABORT: exceeded absolute max of ${ABSOLUTE_MAX_ROUNDS} rounds — possible server bug with hasMore always true`);
-          errors.push(`Sincronização abortada: ${ABSOLUTE_MAX_ROUNDS} rodadas excedidas. Dados restantes serão sincronizados na próxima vez.`);
-          // Consider snapshot recovery if we hit this
+          logger.error(`[Sync/Pull] ABORT: exceeded absolute max of ${ABSOLUTE_MAX_ROUNDS} rounds`);
+          errors.push(`Sincronização abortada: ${ABSOLUTE_MAX_ROUNDS} rodadas excedidas.`);
           logger.warn('[Sync/Pull] Triggering snapshot recovery due to excessive rounds');
           try {
             const snapshotResult = await this.syncFromSnapshot();
             if (snapshotResult) pulled += snapshotResult;
           } catch (snapErr) {
-            logger.error('[Sync/Pull] Snapshot recovery also failed:', snapErr);
+            logger.error('[Sync/Pull] Snapshot recovery also failed:', serializeError(snapErr));
           }
           break;
         }
@@ -604,27 +652,27 @@ class SyncService {
           break;
         }
 
-        // FIX #1: Handle conflicts and errors in PULL response
+        // Handle conflicts and errors in PULL response
         if (response.conflicts && response.conflicts.length > 0) {
           allConflicts.push(...response.conflicts);
-          logger.warn(`[Sync/Pull] ${response.conflicts.length} conflitos recebidos no round ${round}`);
+          logger.warn(`[Sync/Pull] ${response.conflicts.length} conflicts in round ${round}`);
           for (const conflict of response.conflicts) {
-            logger.warn(`[Sync/Pull] Conflito: ${conflict.entityType}:${conflict.entityId} — tipo: ${conflict.conflictType}`);
+            logger.warn(`[Sync/Pull] Conflict: ${conflict.entityType}:${conflict.entityId} — type: ${conflict.conflictType}`);
           }
         }
         if (response.errors && response.errors.length > 0) {
           errors.push(...response.errors);
-          logger.warn(`[Sync/Pull] ${response.errors.length} erros no round ${round}:`, response.errors);
+          logger.warn(`[Sync/Pull] ${response.errors.length} errors in round ${round}:`, response.errors);
         }
 
-        // FIX #3: Collect updatedVersions from PULL response
+        // Collect updatedVersions from PULL response
         if (response.updatedVersions && response.updatedVersions.length > 0) {
           allUpdatedVersions.push(...response.updatedVersions);
         }
 
         const changes = response.changes || {};
-        
-        // Acumular mudanças de cada entidade
+
+        // Accumulate changes per entity type
         const changeKeys = ['clientes', 'produtos', 'locacoes', 'cobrancas', 'rotas', 'usuarios', 'manutencoes', 'metas', 'historicoRelogio'] as const;
         for (const key of changeKeys) {
           if (changes[key] && Array.isArray(changes[key])) {
@@ -632,18 +680,18 @@ class SyncService {
           }
         }
 
-        // Acumular dados auxiliares
+        // Accumulate auxiliary data
         if (response.tiposProduto) allTiposProduto.push(...response.tiposProduto);
         if (response.descricoesProduto) allDescricoesProduto.push(...response.descricoesProduto);
         if (response.tamanhosProduto) allTamanhosProduto.push(...response.tamanhosProduto);
         if (response.estabelecimentos) allEstabelecimentos.push(...response.estabelecimentos);
 
-        // Atualizar cursor para próxima página
+        // Update cursor for next page
         finalLastSyncAt = response.lastSyncAt || finalLastSyncAt;
         hasMore = response.hasMore || false;
         currentLastSyncAt = finalLastSyncAt;
 
-        // FIX #2: Detect no-progress loops (hasMore=true but no new data)
+        // Detect no-progress loops (hasMore=true but no new data)
         const currentTotal =
           allChanges.clientes.length + allChanges.produtos.length +
           allChanges.locacoes.length + allChanges.cobrancas.length +
@@ -653,7 +701,7 @@ class SyncService {
         if (currentTotal === prevTotal && hasMore) {
           noProgressCount++;
           if (noProgressCount >= 3) {
-            logger.error(`[Sync/Pull] ABORT: ${noProgressCount} rounds com hasMore=true mas sem novos dados — possível bug no servidor`);
+            logger.error(`[Sync/Pull] ABORT: ${noProgressCount} rounds with hasMore=true but no new data`);
             errors.push('Sincronização parcial: servidor reportando dados pendentes mas não enviando novos registros');
             break;
           }
@@ -663,13 +711,13 @@ class SyncService {
         prevTotal = currentTotal;
 
         if (round >= MAX_PULL_ROUNDS && hasMore) {
-          logger.warn(`[Sync/Pull] Atingido limite de ${MAX_PULL_ROUNDS} rodadas — hasMore=true mas parando para evitar loop infinito`);
-          errors.push(`Sincronização parcial: ${MAX_PULL_ROUNDS} rodadas atingidas, dados restantes serão sincronizados na próxima vez`);
+          logger.warn(`[Sync/Pull] Reached limit of ${MAX_PULL_ROUNDS} rounds — hasMore=true but stopping`);
+          errors.push(`Sincronização parcial: ${MAX_PULL_ROUNDS} rodadas atingidas, dados restantes na próxima vez`);
           break;
         }
       } while (hasMore);
 
-      // Contar total de mudanças
+      // Count total changes
       pulled =
         allChanges.clientes.length +
         allChanges.produtos.length +
@@ -682,9 +730,9 @@ class SyncService {
         allChanges.historicoRelogio.length +
         allEstabelecimentos.length;
 
-      // FIX #3: Apply updatedVersions from PULL response (same logic as PUSH)
+      // Apply updatedVersions from PULL response
       if (allUpdatedVersions.length > 0) {
-        logger.info(`[Sync/Pull] Aplicando ${allUpdatedVersions.length} atualizações de versão do servidor`);
+        logger.info(`[Sync/Pull] Applying ${allUpdatedVersions.length} version updates from server`);
         for (const uv of allUpdatedVersions) {
           try {
             const tableName = this.getTableName(uv.entityType as EntityType);
@@ -695,12 +743,12 @@ class SyncService {
               );
             }
           } catch (err) {
-            logger.error(`[Sync/Pull] Erro ao atualizar versão de ${uv.entityType}:${uv.entityId}:`, err);
+            logger.error(`[Sync/Pull] Version update error ${uv.entityType}:${uv.entityId}:`, serializeError(err));
           }
         }
       }
 
-      // Aplicar mudanças acumuladas se houver
+      // Apply accumulated changes if any
       if (pulled > 0) {
         await databaseService.applyRemoteChanges({
           success: true,
@@ -713,8 +761,8 @@ class SyncService {
         });
       }
 
-      // Log detalhado dos dados baixados para debug
-      logger.info('[Sync/Pull] Mudanças recebidas', {
+      // Detailed log for debugging
+      logger.info('[Sync/Pull] Changes received', {
         pulled,
         rounds: round,
         conflicts: allConflicts.length,
@@ -733,52 +781,41 @@ class SyncService {
       });
 
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
-      errors.push(errorMsg || 'Erro no pull');
-      logger.error('[Sync/Pull] Erro:', errorMsg);
+      errors.push(serializeError(error));
+      logger.error('[Sync/Pull] Error:', serializeError(error));
     }
 
     return { pulled, errors, conflicts: allConflicts };
   }
 
   // ==========================================================================
-  // REGISTRO DO DISPOSITIVO
+  // DEVICE REGISTRATION
   // ==========================================================================
 
   /**
-   * Garante que o dispositivo está registrado
+   * Garante que o dispositivo está registrado.
+   * NOTE: registerDevice() removed — activation is now via PIN on DeviceActivationScreen.
    */
   async ensureDeviceRegistered(): Promise<boolean> {
     try {
       const metadata = await databaseService.getSyncMetadata();
-      
-      // Fonte única de verdade: sync_metadata local (SQLite)
       if (metadata.deviceId && metadata.deviceKey) {
         return true;
       }
-
-      // Sem metadados locais completos: precisa de ativação
-      logger.warn('[Sync] Dispositivo não registrado. Precisa de ativação via PIN.');
+      logger.warn('[Sync] Device not registered — activation via PIN required');
       return false;
     } catch (error) {
-      logger.error('[Sync] Erro ao verificar registro:', error);
+      logger.error('[Sync] Device registration check error:', serializeError(error));
       return false;
     }
   }
 
-  // NOTE: registerDevice() and its helper methods (generateDeviceId, generateDeviceKey,
-  // getDeviceName, getDeviceType) have been REMOVED.
-  // The new activation flow is:
-  //   1. Admin creates device on web panel (with DEV-XXXXXX key and 6-digit PIN)
-  //   2. Mobile activates via POST /api/dispositivos/ativar (using key + PIN)
-  // See: DeviceActivationScreen, ativarDispositivo() in ApiService.
-
   // ==========================================================================
-  // AUXILIARES
+  // HELPERS
   // ==========================================================================
 
   /**
-   * Batch mark change logs as synced — single SQL statement instead of N individual calls.
+   * Batch mark change logs as synced — single SQL statement.
    */
   private async batchMarkAsSynced(changeIds: string[]): Promise<void> {
     if (changeIds.length === 0) return;
@@ -790,13 +827,12 @@ class SyncService {
         [now, ...changeIds]
       );
     } catch (error) {
-      logger.error('[Sync] Erro ao marcar changelogs como sincronizados (batch):', error);
-      // Fallback: mark one by one
+      logger.error('[Sync] Batch mark synced failed, falling back to individual:', serializeError(error));
       for (const id of changeIds) {
         try {
           await databaseService.markAsSynced(id);
         } catch (err) {
-          logger.error(`[Sync] Erro ao marcar changelog ${id}:`, err);
+          logger.error(`[Sync] Individual mark synced ${id} failed:`, serializeError(err));
         }
       }
     }
@@ -808,7 +844,6 @@ class SyncService {
   private async markEntitiesAsSynced(changes: ChangeLog[]): Promise<void> {
     if (changes.length === 0) return;
 
-    // Group by entity type
     const byType: Record<string, string[]> = {};
     for (const change of changes) {
       if (!byType[change.entityType]) byType[change.entityType] = [];
@@ -817,17 +852,18 @@ class SyncService {
 
     const now = new Date().toISOString();
 
-    // Batch update per type
     for (const [entityType, ids] of Object.entries(byType)) {
       try {
         const tableName = this.getTableName(entityType as EntityType);
-        const placeholders = ids.map(() => '?').join(',');
-        await databaseService.runAsync(
-          `UPDATE ${tableName} SET syncStatus = 'synced', lastSyncedAt = ?, needsSync = 0 WHERE id IN (${placeholders})`,
-          [now, ...ids]
-        );
+        if (tableName) {
+          const placeholders = ids.map(() => '?').join(',');
+          await databaseService.runAsync(
+            `UPDATE ${tableName} SET syncStatus = 'synced', lastSyncedAt = ?, needsSync = 0 WHERE id IN (${placeholders})`,
+            [now, ...ids]
+          );
+        }
       } catch (error) {
-        logger.error(`[Sync] Erro ao marcar ${entityType} como synced (batch):`, error);
+        logger.error(`[Sync] Batch entity sync mark failed for ${entityType}:`, serializeError(error));
       }
     }
   }
@@ -855,27 +891,27 @@ class SyncService {
   }
 
   /**
-   * CORREÇÃO: Sincroniza a partir de snapshot completo (para device estale)
-   * Busca todos os dados ativos do servidor e aplica localmente
+   * Sincroniza a partir de snapshot completo (para device stale).
+   * Busca todos os dados ativos do servidor e aplica localmente.
    */
   async syncFromSnapshot(): Promise<number> {
     try {
       const metadata = await databaseService.getSyncMetadata();
       if (!metadata.deviceId || !metadata.deviceKey) {
-        logger.error('[Sync/Snapshot] Dispositivo não registrado');
+        logger.error('[Sync/Snapshot] Device not registered');
         return 0;
       }
 
-      logger.info('[Sync/Snapshot] Buscando snapshot completo...');
+      logger.info('[Sync/Snapshot] Fetching full snapshot...');
       const response = await apiService.getSnapshot(metadata.deviceId, metadata.deviceKey);
 
       if (!response.success || !response.data?.snapshot) {
-        logger.error('[Sync/Snapshot] Falha ao buscar snapshot:', response.error);
+        logger.error('[Sync/Snapshot] Failed:', response.error);
         return 0;
       }
 
       const snapshot = response.data.snapshot;
-      const total = 
+      const total =
         (snapshot.clientes?.length || 0) +
         (snapshot.produtos?.length || 0) +
         (snapshot.locacoes?.length || 0) +
@@ -886,8 +922,6 @@ class SyncService {
         (snapshot.metas?.length || 0) +
         (snapshot.historicoRelogio?.length || 0);
 
-      // CORREÇÃO: Aplicar como mudanças remotas incluindo TODAS as entidades
-      // Antes faltavam manutencoes e metas, causando perda de dados em snapshot recovery
       await databaseService.applyRemoteChanges({
         success: true,
         lastSyncAt: response.data.lastSyncAt,
@@ -908,10 +942,10 @@ class SyncService {
         estabelecimentos: snapshot.estabelecimentos || [],
       });
 
-      logger.info('[Sync/Snapshot] Snapshot aplicado', { total });
+      logger.info('[Sync/Snapshot] Applied', { total });
       return total;
     } catch (error) {
-      logger.error('[Sync/Snapshot] Erro:', error);
+      logger.error('[Sync/Snapshot] Error:', serializeError(error));
       return 0;
     }
   }
@@ -940,9 +974,8 @@ class SyncService {
    * Força sincronização completa (re-download de todos os dados)
    */
   async fullSync(): Promise<SyncResult> {
-    logger.info('[Sync] Iniciando sincronização completa...');
+    logger.info('[Sync] Starting full sync...');
 
-    // Resetar metadata para forçar download completo
     await databaseService.updateSyncMetadata({
       lastSyncAt: new Date(0).toISOString(),
     });
@@ -979,7 +1012,7 @@ class SyncService {
 
       return response.success;
     } catch (error) {
-      logger.error('[Sync] Erro ao resolver conflito:', error);
+      logger.error('[Sync] Conflict resolution error:', serializeError(error));
       return false;
     }
   }
@@ -991,20 +1024,20 @@ class SyncService {
     try {
       const metadata = await databaseService.getSyncMetadata();
       const response = await apiService.getConflitosPendentes(metadata.deviceId);
-      
+
       if (response.success && response.data) {
         return response.data;
       }
       return [];
     } catch (error) {
-      logger.error('[Sync] Erro ao buscar conflitos:', error);
+      logger.error('[Sync] Pending conflicts fetch error:', serializeError(error));
       return [];
     }
   }
 }
 
 // ============================================================================
-// EXPORTAÇÃO
+// EXPORT
 // ============================================================================
 
 export const syncService = new SyncService();

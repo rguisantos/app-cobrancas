@@ -19,6 +19,7 @@ const SECURE_KEYS = {
   ACCESS_TOKEN: 'cobrancas_access_token',
   REFRESH_TOKEN: 'cobrancas_refresh_token',
   BIOMETRIC_ENABLED: 'cobrancas_biometric_enabled',
+  LOCAL_SESSION: 'cobrancas_local_session',
 } as const;
 
 // Chaves do AsyncStorage (dados não sensíveis)
@@ -153,6 +154,44 @@ class SecureStorageService {
     }
   }
 
+  // ─── Local Session Flag ──────────────────────────────────────────
+
+  /**
+   * Set whether the current session is a local-only session (offline login).
+   * Stored alongside tokens — no prefix-based token detection needed.
+   */
+  async setLocalSessionFlag(isLocal: boolean): Promise<void> {
+    try {
+      if (await this.checkAvailability()) {
+        await SecureStore.setItemAsync(
+          SECURE_KEYS.LOCAL_SESSION,
+          isLocal ? 'true' : 'false'
+        );
+      } else {
+        await AsyncStorage.setItem('cobrancas_local_session', isLocal ? 'true' : 'false');
+      }
+    } catch (error) {
+      logger.error('[SecureStorage] Error saving local session flag:', error);
+    }
+  }
+
+  /**
+   * Check whether the current session is a local-only session.
+   */
+  async isLocalSession(): Promise<boolean> {
+    try {
+      let value: string | null = null;
+      if (await this.checkAvailability()) {
+        value = await SecureStore.getItemAsync(SECURE_KEYS.LOCAL_SESSION);
+      } else {
+        value = await AsyncStorage.getItem('cobrancas_local_session');
+      }
+      return value === 'true';
+    } catch {
+      return false;
+    }
+  }
+
   // ─── Dados do usuário (AsyncStorage — não sensíveis) ───────────────
 
   async saveUser(userJson: string): Promise<void> {
@@ -181,11 +220,17 @@ class SecureStorageService {
         await SecureStore.deleteItemAsync(SECURE_KEYS.REFRESH_TOKEN).catch(() => {});
       }
       
+      // Clear local session flag from SecureStore
+      if (await this.checkAvailability()) {
+        await SecureStore.deleteItemAsync(SECURE_KEYS.LOCAL_SESSION).catch(() => {});
+      }
+
       // Limpar dados do AsyncStorage
       await AsyncStorage.multiRemove([
         ASYNC_KEYS.TOKEN,
         ASYNC_KEYS.USER,
         'cobrancas_refresh_token',
+        'cobrancas_local_session',
       ]);
     } catch (error) {
       logger.error('[SecureStorage] Erro ao limpar dados de auth:', error);

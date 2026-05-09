@@ -79,7 +79,7 @@ export function DatabaseProvider({ children }: DatabaseProviderProps) {
           
           // 3. Inicializar usuário admin (erros internos são capturados pelo AuthService)
           try {
-            await AuthService.inicializar();
+            await AuthService.initialize();
             logger.info('[DatabaseContext] Auth inicializado');
           } catch (authErr) {
             logger.warn('[DatabaseContext] Erro ao inicializar auth (não crítico):', authErr);

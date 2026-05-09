@@ -1,43 +1,46 @@
 /**
  * AuthContext.tsx
- * Contexto de Autenticação com persistência segura
- * Offline-first com sincronização
- * 
- * Refatorado para:
- * - Usar SecureStore para tokens
- * - Usar endpoint de refresh token
- * - Suportar autenticação biométrica
- * - Feedback de lockout e rate limiting
- * - Offline-first: funciona sem rede usando dados locais
+ *
+ * Complete rewrite — simplified offline-first auth context.
+ *
+ * Key design decisions:
+ * - NO LOCAL_ token prefix — uses a `isLocalSession` flag in SecureStore instead
+ * - API-first login, local bcrypt fallback only on network errors
+ * - Proactive token refresh every 12 minutes (token expires at 15 min)
+ * - 3-branch navigation: NotAuth → Auth; Auth/noDevice → DeviceActivation; Auth+Device → App
+ * - Biometric auth is 100% offline
+ * - Lockout/rate-limiting handled by the API when online
  */
 
-import React, { createContext, useState, useCallback, useEffect, useContext, ReactNode } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, {
+  createContext,
+  useState,
+  useCallback,
+  useEffect,
+  useContext,
+  useRef,
+  ReactNode,
+} from 'react';
 
-// Imports dos tipos e serviços
 import { Usuario, TipoPermissaoUsuario, PermissoesUsuario } from '../types';
 import { databaseService } from '../services/DatabaseService';
 import authService from '../services/AuthService';
 import { apiService } from '../services/ApiService';
-import { syncService } from '../services/SyncService';
 import { secureStorage } from '../services/SecureStorage';
 import logger from '../utils/logger';
 
 // ============================================================================
-// CONFIGURAÇÃO E CONSTANTES
+// CONSTANTS
 // ============================================================================
 
-const STORAGE_KEYS = {
-  TOKEN: '@cobrancas:token',         // Compatibilidade com versão anterior
-  USER: '@cobrancas:user',
-  DEVICE: '@cobrancas:device',
-};
+/** Refresh the JWT every 12 minutes (it expires at 15 min) */
+const REFRESH_INTERVAL_MS = 12 * 60 * 1000;
 
-// Intervalo de refresh proativo (antes do token expirar)
-const REFRESH_INTERVAL_MS = 12 * 60 * 1000; // 12 minutos (token expira em 15min)
+/** Check connectivity every 30 seconds */
+const CONNECTIVITY_CHECK_MS = 30 * 1000;
 
 // ============================================================================
-// INTERFACES
+// TYPES
 // ============================================================================
 
 export interface LockoutInfo {
@@ -46,16 +49,22 @@ export interface LockoutInfo {
 }
 
 export interface AuthContextType {
-  // Estado
+  // State
   user: Usuario | null;
   token: string | null;
   isLoading: boolean;
   isSignout: boolean;
   isAuthenticated: boolean;
-  lockoutInfo: LockoutInfo | null;
+  isLocalSession: boolean;
   isOffline: boolean;
-  
-  // Ações
+  lockoutInfo: LockoutInfo | null;
+
+  // Device activation
+  isDeviceActivated: boolean;
+  isCheckingDevice: boolean;
+  refreshDeviceActivation: () => Promise<void>;
+
+  // Actions
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -63,19 +72,29 @@ export interface AuthContextType {
   setBiometricEnabled: (enabled: boolean) => Promise<void>;
   isBiometricAvailable: () => Promise<{ available: boolean; enabled: boolean }>;
   setUser: (user: Usuario | null) => void;
-  
-  // Utilitários
-  hasPermission: (module: keyof PermissoesUsuario['web'] | keyof PermissoesUsuario['mobile'], platform: 'web' | 'mobile') => boolean;
+
+  // Permissions
+  hasPermission: (
+    module: keyof PermissoesUsuario['web'] | keyof PermissoesUsuario['mobile'],
+    platform: 'web' | 'mobile',
+  ) => boolean;
   canAccessRota: (rotaId: string) => boolean;
   isAdmin: () => boolean;
 }
 
 // ============================================================================
-// CRIAÇÃO DO CONTEXT
+// CONTEXT
 // ============================================================================
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+/**
+ * Convert a LoginResponse.user shape into the full Usuario type.
+ */
 const toUsuario = (
   authUser: {
     id: string;
@@ -85,7 +104,7 @@ const toUsuario = (
     permissoes: PermissoesUsuario;
     rotasPermitidas: string[];
     status: 'Ativo' | 'Inativo';
-  }
+  },
 ): Usuario => ({
   id: authUser.id,
   tipo: 'usuario',
@@ -107,13 +126,24 @@ const toUsuario = (
 });
 
 /**
- * Verifica se há conectividade com a API.
- * Tenta um health check leve; se falhar com erro de rede, considera offline.
+ * Lightweight connectivity check via API health endpoint.
  */
 async function checkConnectivity(): Promise<boolean> {
   try {
     const response = await apiService.healthCheck();
     return response.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check whether the device is activated by reading sync_metadata from SQLite.
+ */
+async function checkDeviceActivation(): Promise<boolean> {
+  try {
+    const metadata = await databaseService.getSyncMetadata();
+    return !!(metadata.deviceId && metadata.deviceKey);
   } catch {
     return false;
   }
@@ -129,85 +159,99 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
+  // ── Core auth state ──
   const [user, setUserState] = useState<Usuario | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSignout, setIsSignout] = useState(false);
-  const [lockoutInfo, setLockoutInfo] = useState<LockoutInfo | null>(null);
+  const [isLocalSession, setIsLocalSession] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
+  const [lockoutInfo, setLockoutInfo] = useState<LockoutInfo | null>(null);
+
+  // ── Device activation state ──
+  const [isDeviceActivated, setIsDeviceActivated] = useState(false);
+  const [isCheckingDevice, setIsCheckingDevice] = useState(false);
+
+  // ── Refs for interval management ──
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const connectivityIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wasOfflineRef = useRef(false);
 
   // ==========================================================================
-  // setUser — permite que serviços externos (sync) atualizem o usuário
+  // setUser — allows external services (e.g. sync) to update the user
   // ==========================================================================
 
   const setUser = useCallback((newUser: Usuario | null) => {
     setUserState(newUser);
     if (newUser) {
       secureStorage.saveUser(JSON.stringify(newUser)).catch(err => {
-        logger.warn('[Auth] Falha ao salvar usuário no SecureStorage via setUser', err);
+        logger.warn('[Auth] Failed to save user to SecureStorage via setUser', err);
       });
     }
   }, []);
 
   // ==========================================================================
-  // BOOTSTRAP - Restaurar sessão ao iniciar
+  // BOOTSTRAP — restore session on app start
   // ==========================================================================
 
   const bootstrap = useCallback(async () => {
     try {
       setIsLoading(true);
-      logger.info('[Auth] Iniciando bootstrap...');
+      logger.info('[Auth] Bootstrap starting...');
 
-      // Inicializar o banco de dados e authService
-      await authService.inicializar();
+      // Initialize the database and auth service
+      await authService.initialize();
 
-      // Restaurar sessão do SecureStore
+      // Restore session from SecureStore
       const savedToken = await secureStorage.getAccessToken();
       const savedUserJson = await secureStorage.getUser();
+      const savedIsLocal = await secureStorage.isLocalSession();
 
       if (savedToken && savedUserJson) {
         const parsedUser = JSON.parse(savedUserJson) as Usuario;
-        
-        // Sincronizar token com ApiService
+
+        // Sync token with ApiService
         apiService.setToken(savedToken);
-        logger.info('[Auth] Token sincronizado com ApiService no bootstrap');
-        
         setToken(savedToken);
         setUserState(parsedUser);
+        setIsLocalSession(savedIsLocal);
         setIsSignout(false);
-        
-        logger.info('[Auth] Sessão restaurada', { user: parsedUser.nome, role: parsedUser.tipoPermissao });
-        
+
+        logger.info('[Auth] Session restored', {
+          user: parsedUser.nome,
+          role: parsedUser.tipoPermissao,
+          isLocal: savedIsLocal,
+        });
+
         onAuthChange?.(parsedUser);
 
-        // OFFLINE-FIRST: Verificar conectividade antes de tentar refresh proativo.
-        // Se offline, pular refresh — a sessão local é suficiente para trabalhar.
-        // O refresh será tentado quando a rede estiver disponível (veja o useEffect abaixo).
+        // Check connectivity — if online, try proactive token refresh
         const hasNetwork = await checkConnectivity();
         setIsOffline(!hasNetwork);
+        wasOfflineRef.current = !hasNetwork;
 
-        if (!hasNetwork) {
-          logger.info('[Auth] Sem conectividade no bootstrap — sessão local mantida, refresh adiado');
-        } else if (!savedToken.startsWith('LOCAL_') && !savedToken.startsWith('local.')) {
+        if (hasNetwork && !savedIsLocal) {
           try {
-            logger.info('[Auth] Tentando refresh proativo no bootstrap...');
+            logger.info('[Auth] Proactive token refresh on bootstrap...');
             const newToken = await authService.refreshToken();
-            if (newToken) {
-              setToken(newToken);
-              apiService.setToken(newToken);
-              logger.info('[Auth] Token refreshed com sucesso no bootstrap');
-            }
+            setToken(newToken);
+            logger.info('[Auth] Token refreshed on bootstrap');
           } catch (refreshError) {
-            logger.warn('[Auth] Refresh proativo falhou no bootstrap — sessão pode estar expirada:', refreshError);
-            // Não fazer logout aqui — o interceptor do ApiService lidará com isso
+            logger.warn('[Auth] Proactive refresh failed on bootstrap:', refreshError);
+            // Don't force logout — the ApiService interceptor handles 401s
           }
         }
+
+        // Check device activation
+        const activated = await checkDeviceActivation();
+        setIsDeviceActivated(activated);
+
       } else {
         setIsSignout(true);
-        logger.info('[Auth] Nenhuma sessão ativa');
+        logger.info('[Auth] No active session');
       }
     } catch (error) {
-      logger.error('[Auth] Erro no bootstrap', error);
+      logger.error('[Auth] Bootstrap error', error);
       setIsSignout(true);
     } finally {
       setIsLoading(false);
@@ -219,78 +263,104 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   }, [bootstrap]);
 
   // ==========================================================================
-  // MONITORAMENTO DE CONECTIVIDADE — tentar refresh quando voltar online
+  // CONNECTIVITY MONITORING — try refresh when coming back online
   // ==========================================================================
 
   useEffect(() => {
     if (!token || isSignout) return;
 
-    // Verificar conectividade periodicamente e tentar refresh quando voltar online
-    const connectivityInterval = setInterval(async () => {
+    connectivityIntervalRef.current = setInterval(async () => {
       try {
         const hasNetwork = await checkConnectivity();
-        const wasOffline = isOffline;
+        const wasOffline = wasOfflineRef.current;
+        wasOfflineRef.current = !hasNetwork;
         setIsOffline(!hasNetwork);
 
-        // Se acabou de voltar online e temos um token JWT real, tentar refresh
-        if (wasOffline && hasNetwork && token && !token.startsWith('LOCAL_') && !token.startsWith('local.')) {
-          logger.info('[Auth] Conectividade restaurada — tentando refresh do token...');
+        // Just came back online with a real JWT — refresh it
+        if (wasOffline && hasNetwork && token && !isLocalSession) {
+          logger.info('[Auth] Connectivity restored — refreshing token...');
           try {
             const newToken = await authService.refreshToken();
-            if (newToken) {
-              setToken(newToken);
-              apiService.setToken(newToken);
-              logger.info('[Auth] Token refreshed após reconexão');
-            }
+            setToken(newToken);
+            logger.info('[Auth] Token refreshed after reconnection');
           } catch (refreshError) {
-            logger.warn('[Auth] Falha no refresh após reconexão:', refreshError);
+            logger.warn('[Auth] Refresh after reconnection failed:', refreshError);
           }
         }
       } catch {
         // Silently ignore — connectivity check failed
       }
-    }, 30 * 1000); // Verificar a cada 30 segundos
+    }, CONNECTIVITY_CHECK_MS);
 
-    return () => clearInterval(connectivityInterval);
-  }, [token, isOffline, isSignout]);
+    return () => {
+      if (connectivityIntervalRef.current) {
+        clearInterval(connectivityIntervalRef.current);
+      }
+    };
+  }, [token, isSignout, isLocalSession]);
 
   // ==========================================================================
-  // REFRESH TOKEN PROATIVO
+  // PROACTIVE TOKEN REFRESH — every 12 minutes
   // ==========================================================================
 
   useEffect(() => {
-    // Only refresh real JWTs (not local tokens). Local tokens start with LOCAL_ or local.
-    // Skip entirely if offline.
-    if (!token || token.startsWith('LOCAL_') || token.startsWith('local.') || isOffline) return;
+    // Only refresh real JWTs, not local sessions
+    if (!token || isLocalSession || isOffline) return;
 
-    const interval = setInterval(async () => {
+    refreshIntervalRef.current = setInterval(async () => {
       try {
-        // Verificar conectividade antes de tentar refresh
         const hasNetwork = await checkConnectivity();
         setIsOffline(!hasNetwork);
-        
+        wasOfflineRef.current = !hasNetwork;
+
         if (!hasNetwork) {
-          logger.info('[Auth] Sem conectividade — refresh proativo adiado');
+          logger.info('[Auth] Offline — proactive refresh deferred');
           return;
         }
 
-        logger.info('[Auth] Refresh proativo do token...');
+        logger.info('[Auth] Proactive token refresh...');
         const newToken = await authService.refreshToken();
         setToken(newToken);
       } catch (error) {
-        logger.warn('[Auth] Falha no refresh proativo:', error);
-        
-        // Se o erro for de rede, marcar como offline
+        logger.warn('[Auth] Proactive refresh failed:', error);
         if (error instanceof TypeError) {
           setIsOffline(true);
+          wasOfflineRef.current = true;
         }
-        // Se o refresh falhar, a sessão pode estar expirada
-        // O interceptor do ApiService vai lidar com isso na próxima requisição
       }
     }, REFRESH_INTERVAL_MS);
 
-    return () => clearInterval(interval);
-  }, [token, isOffline]);
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    };
+  }, [token, isLocalSession, isOffline]);
+
+  // ==========================================================================
+  // DEVICE ACTIVATION CHECK — when auth state changes
+  // ==========================================================================
+
+  useEffect(() => {
+    const checkDevice = async () => {
+      if (!token || !user || isSignout) {
+        setIsDeviceActivated(false);
+        return;
+      }
+
+      setIsCheckingDevice(true);
+      try {
+        const activated = await checkDeviceActivation();
+        setIsDeviceActivated(activated);
+      } catch (error) {
+        logger.warn('[Auth] Device activation check failed', error);
+      } finally {
+        setIsCheckingDevice(false);
+      }
+    };
+
+    checkDevice();
+  }, [token, user, isSignout]);
 
   // ==========================================================================
   // LOGIN
@@ -300,41 +370,45 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
     try {
       setIsLoading(true);
       setLockoutInfo(null);
-      logger.info('[Auth] ====== INICIANDO LOGIN ======', { email });
+      logger.info('[Auth] Login starting', { email });
 
       const response = await authService.login(email, password);
+      const { token: newToken, isLocalSession: isLocal, user: usuarioLogado } = response;
 
-      const { token: newToken, user: usuarioLogado } = response;
-
-      logger.info('[Auth] Login bem-sucedido', { token: newToken ? 'recebido' : 'nulo', userId: usuarioLogado.id });
-
-      // Passar token para o ApiService
+      // Pass token to ApiService
       apiService.setToken(newToken);
 
-      // Salvar dados do usuário no SecureStorage
+      // Persist to SecureStore
       await secureStorage.saveAccessToken(newToken);
       await secureStorage.saveUser(JSON.stringify(usuarioLogado));
+      await secureStorage.setLocalSessionFlag(isLocal);
 
-      // Atualizar estado
-      setToken(newToken);
+      // Update state
       const usuarioContexto = toUsuario(usuarioLogado);
+      setToken(newToken);
       setUserState(usuarioContexto);
+      setIsLocalSession(isLocal);
       setIsSignout(false);
+      setIsOffline(isLocal); // Local session implies offline
 
-      // Após login bem-sucedido, marcar como online
-      setIsOffline(false);
+      logger.info('[Auth] Login complete', {
+        email,
+        role: usuarioLogado.tipoPermissao,
+        isLocal,
+      });
 
-      logger.info('[Auth] Login completo', { email, role: usuarioLogado.tipoPermissao });
-      
       onAuthChange?.(usuarioContexto);
 
+      // Check device activation after login
+      const activated = await checkDeviceActivation();
+      setIsDeviceActivated(activated);
+
     } catch (error: any) {
-      // Verificar se é erro de lockout
       if (error?.lockoutInfo) {
         setLockoutInfo(error.lockoutInfo);
       }
       const mensagem = error instanceof Error ? error.message : 'Erro ao fazer login';
-      logger.error('[Auth] Erro no login', error);
+      logger.error('[Auth] Login error', error);
       throw new Error(mensagem);
     } finally {
       setIsLoading(false);
@@ -342,44 +416,45 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   }, [onAuthChange]);
 
   // ==========================================================================
-  // BIOMETRIC LOGIN — offline-first, sem chamadas de API
+  // BIOMETRIC LOGIN — 100% offline, no API calls
   // ==========================================================================
 
   const biometricLogin = useCallback(async (): Promise<boolean> => {
     try {
       setIsLoading(true);
 
-      // O fluxo biométrico é inteiramente local:
-      // 1. Verificar se biometria está habilitada
-      // 2. Autenticar via hardware biométrico
-      // 3. Restaurar sessão do SecureStore
-      // 4. Carregar dados frescos do SQLite local
-      // Nenhuma chamada de API é feita.
       const success = await authService.authenticateWithBiometrics();
-      
+
       if (success) {
         const savedToken = await secureStorage.getAccessToken();
         const savedUserJson = await secureStorage.getUser();
-        
+        const savedIsLocal = await secureStorage.isLocalSession();
+
         if (savedToken && savedUserJson) {
           const parsedUser = JSON.parse(savedUserJson) as Usuario;
           apiService.setToken(savedToken);
           setToken(savedToken);
           setUserState(parsedUser);
+          setIsLocalSession(savedIsLocal);
           setIsSignout(false);
           onAuthChange?.(parsedUser);
-          logger.info('[Auth] Login biométrico bem-sucedido');
+          logger.info('[Auth] Biometric login successful');
 
-          // Verificar conectividade em background (não bloquear o login)
+          // Check connectivity in background
           checkConnectivity().then(hasNetwork => {
             setIsOffline(!hasNetwork);
+            wasOfflineRef.current = !hasNetwork;
           });
+
+          // Check device activation
+          const activated = await checkDeviceActivation();
+          setIsDeviceActivated(activated);
         }
       }
-      
+
       return success;
     } catch (error) {
-      logger.error('[Auth] Erro no login biométrico', error);
+      logger.error('[Auth] Biometric login error', error);
       return false;
     } finally {
       setIsLoading(false);
@@ -401,116 +476,141 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   const logout = useCallback(async () => {
     try {
       setIsLoading(true);
-      logger.info('[Auth] Realizando logout');
+      logger.info('[Auth] Logging out');
 
       await authService.logout();
 
-      // Limpar estado
       setToken(null);
       setUserState(null);
       setIsSignout(true);
+      setIsLocalSession(false);
       setLockoutInfo(null);
       setIsOffline(false);
+      setIsDeviceActivated(false);
+      wasOfflineRef.current = false;
 
-      logger.info('[Auth] Logout realizado (dispositivo permanece ativado)');
-      
+      logger.info('[Auth] Logout complete (device activation preserved)');
+
       onAuthChange?.(null);
 
     } catch (error) {
-      logger.error('[Auth] Erro no logout', error);
+      logger.error('[Auth] Logout error', error);
       setToken(null);
       setUserState(null);
       setIsSignout(true);
+      setIsLocalSession(false);
+      setIsDeviceActivated(false);
     } finally {
       setIsLoading(false);
     }
   }, [onAuthChange]);
 
   // ==========================================================================
-  // REFRESH DE DADOS DO USUÁRIO — offline-first
+  // REFRESH USER DATA — offline-first
   // ==========================================================================
 
   const refreshUser = useCallback(async () => {
     if (!user) return;
 
     try {
-      let usuarioServidor: any = null;
+      let serverUser: any = null;
 
-      // Tentar buscar do servidor apenas se houver conectividade
       const hasNetwork = await checkConnectivity();
       setIsOffline(!hasNetwork);
+      wasOfflineRef.current = !hasNetwork;
 
       if (hasNetwork) {
         try {
           const response = await apiService.getUsuarioAtual();
           if (response.success && response.data) {
-            usuarioServidor = response.data;
-            logger.info('[Auth] Dados do usuário atualizados do servidor');
+            serverUser = response.data;
+            logger.info('[Auth] User data refreshed from server');
           }
         } catch {
-          logger.warn('[Auth] Erro ao buscar dados do servidor — usando dados locais');
+          logger.warn('[Auth] Failed to fetch from server — using local data');
           setIsOffline(true);
+          wasOfflineRef.current = true;
         }
       } else {
-        logger.info('[Auth] Offline — usando dados locais do usuário');
+        logger.info('[Auth] Offline — using local user data');
       }
 
-      if (usuarioServidor) {
-        const usuarioAtualizado = toUsuario({
-          id: usuarioServidor.id,
-          email: usuarioServidor.email,
-          nome: usuarioServidor.nome,
-          tipoPermissao: usuarioServidor.tipoPermissao,
-          permissoes: usuarioServidor.permissoes,
-          rotasPermitidas: usuarioServidor.rotasPermitidas,
-          status: usuarioServidor.status,
+      if (serverUser) {
+        const updatedUser = toUsuario({
+          id: serverUser.id,
+          email: serverUser.email,
+          nome: serverUser.nome,
+          tipoPermissao: serverUser.tipoPermissao,
+          permissoes: serverUser.permissoes,
+          rotasPermitidas: serverUser.rotasPermitidas,
+          status: serverUser.status,
         });
-        setUserState(usuarioAtualizado);
-        await secureStorage.saveUser(JSON.stringify(usuarioAtualizado));
+        setUserState(updatedUser);
+        await secureStorage.saveUser(JSON.stringify(updatedUser));
 
-        if (usuarioServidor.status !== 'Ativo' || usuarioServidor.bloqueado) {
-          logger.warn('[Auth] Usuário bloqueado/inativo no servidor — forçando logout');
+        // If server says user is inactive/blocked, force logout
+        if (serverUser.status !== 'Ativo' || serverUser.bloqueado) {
+          logger.warn('[Auth] User blocked/inactive on server — forcing logout');
           await logout();
           return;
         }
       } else {
-        // OFFLINE-FIRST: Usar dados do SQLite local como fallback
-        // Isso garante que o refreshUser() não falhe quando offline
-        const usuarioLocal = await authService.getUsuarioLogado();
-        if (usuarioLocal) {
-          const usuarioAtualizado = toUsuario(usuarioLocal);
-          setUserState(usuarioAtualizado);
-          logger.info('[Auth] Usuário atualizado do cache local (offline)');
+        // Offline — try local SQLite data
+        const localUser = await authService.getLoggedInUser();
+        if (localUser) {
+          setUserState(toUsuario(localUser));
+          logger.info('[Auth] User refreshed from local cache');
         }
       }
     } catch (error) {
-      logger.error('[Auth] Erro ao atualizar usuário', error);
-      // Não propagar erro — em modo offline-first, refreshUser não deve falhar
+      logger.error('[Auth] Error refreshing user', error);
+      // Don't throw — in offline-first mode, refreshUser should not fail
     }
   }, [user, logout]);
 
   // ==========================================================================
-  // VERIFICAÇÃO DE PERMISSÕES
+  // REFRESH DEVICE ACTIVATION — for use by DeviceActivationScreen & AppNavigator
   // ==========================================================================
 
-  const hasPermission = useCallback((
-    module: keyof PermissoesUsuario['web'] | keyof PermissoesUsuario['mobile'],
-    platform: 'web' | 'mobile'
-  ): boolean => {
-    if (!user) return false;
-    
-    if (user.tipoPermissao === 'Administrador') return true;
-    
-    const perms = user.permissoes?.[platform];
-    return perms ? (perms as any)[module] ?? false : false;
-  }, [user]);
+  const refreshDeviceActivation = useCallback(async () => {
+    if (!token || !user || isSignout) {
+      setIsDeviceActivated(false);
+      return;
+    }
+
+    setIsCheckingDevice(true);
+    try {
+      const activated = await checkDeviceActivation();
+      setIsDeviceActivated(activated);
+    } catch (error) {
+      logger.warn('[Auth] Device activation refresh failed', error);
+    } finally {
+      setIsCheckingDevice(false);
+    }
+  }, [token, user, isSignout]);
+
+  // ==========================================================================
+  // PERMISSION CHECKS
+  // ==========================================================================
+
+  const hasPermission = useCallback(
+    (
+      module: keyof PermissoesUsuario['web'] | keyof PermissoesUsuario['mobile'],
+      platform: 'web' | 'mobile',
+    ): boolean => {
+      if (!user) return false;
+      if (user.tipoPermissao === 'Administrador') return true;
+
+      const perms = user.permissoes?.[platform];
+      return perms ? (perms as any)[module] ?? false : false;
+    },
+    [user],
+  );
 
   const canAccessRota = useCallback((rotaId: string): boolean => {
     if (!user) return false;
-    
     if (user.tipoPermissao === 'Administrador') return true;
-    
-    // Normalizar tipos para comparação consistente (string vs number)
+
     const rotaIdStr = String(rotaId);
     return user.rotasPermitidas?.some(r => String(r) === rotaIdStr) ?? false;
   }, [user]);
@@ -526,17 +626,26 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   const isAuthenticated = !!token && !!user && user.status === 'Ativo';
 
   // ==========================================================================
-  // VALOR DO CONTEXT
+  // CONTEXT VALUE
   // ==========================================================================
 
   const value: AuthContextType = {
+    // State
     user,
     token,
     isLoading,
     isSignout,
     isAuthenticated,
-    lockoutInfo,
+    isLocalSession,
     isOffline,
+    lockoutInfo,
+
+    // Device activation
+    isDeviceActivated,
+    isCheckingDevice,
+    refreshDeviceActivation,
+
+    // Actions
     login,
     logout,
     refreshUser,
@@ -544,6 +653,8 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
     setBiometricEnabled: handleSetBiometricEnabled,
     isBiometricAvailable: handleIsBiometricAvailable,
     setUser,
+
+    // Permissions
     hasPermission,
     canAccessRota,
     isAdmin,
@@ -553,16 +664,16 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
 }
 
 // ============================================================================
-// HOOK PERSONALIZADO
+// HOOK
 // ============================================================================
 
 export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
-  
+
   if (context === undefined) {
-    throw new Error('useAuth deve ser usado dentro de um AuthProvider');
+    throw new Error('useAuth must be used within an AuthProvider');
   }
-  
+
   return context;
 }
 

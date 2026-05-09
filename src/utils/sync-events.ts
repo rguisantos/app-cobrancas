@@ -1,39 +1,35 @@
 /**
  * sync-events.ts
- * Event emitter simples para notificar contextos quando o sync conclui.
- * Quando SyncService.pullChanges() escreve dados no SQLite, os contextos
- * (ClienteContext, ProdutoContext, etc.) precisam ser notificados para
- * recarregar seus dados. Sem isso, a UI fica vazia mesmo com dados no banco.
+ *
+ * DEPRECATED: This file is no longer used by SyncService or SyncContext.
+ * The ONLY notification mechanism for data reload is now `syncVersion` in SyncContext.
+ *
+ * This file exports a no-op stub for backward compatibility with any
+ * remaining consumers (e.g., ClienteContext, SyncStatusScreen) that
+ * still import from this module. Those consumers should be migrated
+ * to use `syncVersion` from `useSync()` instead.
+ *
+ * TODO: Remove this file and migrate remaining consumers to use syncVersion.
  */
 
 type Listener = () => void;
 
-class SyncEventEmitter {
-  private listeners: Listener[] = [];
-
+class SyncEventEmitterStub {
   /**
-   * Registra um listener que será chamado quando o sync concluir com sucesso.
+   * No-op — does nothing. Use syncVersion from useSync() instead.
    */
-  onSyncComplete(listener: Listener): () => void {
-    this.listeners.push(listener);
-    return () => {
-      this.listeners = this.listeners.filter(l => l !== listener);
-    };
+  onSyncComplete(_listener: Listener): () => void {
+    // Return a no-op unsubscribe function
+    return () => {};
   }
 
   /**
-   * Emite evento de sync completo — todos os contextos devem recarregar dados.
+   * No-op — does nothing. SyncContext increments syncVersion instead.
    */
   emitSyncComplete(): void {
-    for (const listener of this.listeners) {
-      try {
-        listener();
-      } catch (error) {
-        console.error('[SyncEvents] Erro no listener de sync:', error);
-      }
-    }
+    // No-op
   }
 }
 
-export const syncEvents = new SyncEventEmitter();
+export const syncEvents = new SyncEventEmitterStub();
 export default syncEvents;
