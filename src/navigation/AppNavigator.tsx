@@ -636,6 +636,9 @@ export function AppNavigator() {
   // Ref para rastrear se o dispositivo foi explicitamente ativado nesta sessão
   // pelo fluxo de ativação (não por verificação com servidor)
   const explicitlyActivatedRef = useRef(false);
+  // Ref para rastrear rechecks que foram bloqueados por isCheckingRef
+  // e precisam ser re-executados após a verificação atual completar
+  const pendingRecheckRef = useRef(false);
 
   // Chave para persistir validação do servidor (sobrevive a remounts e restarts)
   const SERVER_VALIDATION_KEY = '@cobrancas:serverDeviceValidation';
@@ -655,6 +658,10 @@ export function AppNavigator() {
         if (mounted && persisted === 'active') {
           logger.info('[AppNavigator] Validação persistida: ativo — acesso otimista até re-verificação');
           setDeviceActivated(true);
+          // Se a validação persistida é 'active', o dispositivo foi explicitamente
+          // ativado numa sessão anterior — marcar como tal para evitar re-verificação
+          // desnecessária que poderia causar flicker da tela de ativação.
+          explicitlyActivatedRef.current = true;
         }
       } catch (e) {
         // Ignorar erro de leitura
@@ -684,8 +691,10 @@ export function AppNavigator() {
       lastAuthStateRef.current = currentAuthState;
     }
 
-    // Evitar re-entrância
+    // Evitar re-entrância — se uma verificação já está em andamento,
+    // marcar que há um recheck pendente para executar após a atual completar.
     if (isCheckingRef.current) {
+      pendingRecheckRef.current = true;
       return;
     }
 
@@ -709,6 +718,9 @@ export function AppNavigator() {
 
       const isRecheck = isRecheckRef.current;
       logger.info(`[AppNavigator] Verificando ativação do dispositivo...${isRecheck ? ' (recheck - só downgrade)' : ' (verificação inicial)'}`);
+
+      // Mostrar loading durante a verificação (evita flicker de tela errada)
+      setCheckingDevice(true);
 
       try {
         const metadata = await databaseService.getSyncMetadata();
@@ -738,10 +750,13 @@ export function AppNavigator() {
           logger.info('[AppNavigator] Resposta do servidor:', response.data);
 
           if (response.success && response.data?.needsActivation === true) {
+            // Servidor confirmou que o dispositivo PRECISA de ativação
             logger.warn('[AppNavigator] Dispositivo precisa ativação (servidor)');
             setDeviceActivated(false);
+            explicitlyActivatedRef.current = false;
             try { await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'inactive'); } catch {}
-          } else {
+          } else if (response.success && response.data?.needsActivation === false) {
+            // Servidor confirmou que o dispositivo ESTÁ ativo
             // CORREÇÃO: Em rechecks (background→foreground), NÃO fazer upgrade.
             // Só setar deviceActivated=true na verificação inicial.
             // Isso evita que a tela de ativação desapareça ao voltar do background.
@@ -750,8 +765,17 @@ export function AppNavigator() {
             } else {
               logger.info('[AppNavigator] Dispositivo confirmado ativo pelo servidor (verificação inicial)');
               setDeviceActivated(true);
+              explicitlyActivatedRef.current = true;
               try { await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'active'); } catch {}
             }
+          } else {
+            // Resposta ambígua do servidor (success=false, needsActivation ausente, etc.)
+            // NÃO assumir que o dispositivo está ativo — manter o estado atual.
+            // Se o estado atual é 'não ativado', continuar mostrando a tela de ativação.
+            logger.warn('[AppNavigator] Resposta ambígua do servidor — mantendo estado de ativação atual', {
+              success: response.success,
+              needsActivation: response.data?.needsActivation,
+            });
           }
         } catch (serverError) {
           // SERVIDOR INDISPONÍVEL — NÃO mudar deviceActivated!
@@ -770,6 +794,15 @@ export function AppNavigator() {
         setCheckingDevice(false);
         isCheckingRef.current = false;
         isRecheckRef.current = false; // Resetar flag de recheck
+
+        // Se um recheck foi bloqueado enquanto esta verificação estava em andamento,
+        // executá-lo agora.
+        if (pendingRecheckRef.current) {
+          pendingRecheckRef.current = false;
+          logger.info('[AppNavigator] Executando recheck pendente após verificação completar');
+          isRecheckRef.current = true;
+          setRecheckTrigger(prev => prev + 1);
+        }
       }
     };
 

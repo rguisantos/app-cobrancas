@@ -106,6 +106,11 @@ export interface SyncContextData extends SyncState {
     manutencoes: number;
     metas: number;
   };
+
+  // Controle de versão — incrementado após cada sync bem-sucedido.
+  // Usado como dependência em useEffect nos contexts de dados para
+  // recarregar dados do SQLite após sync.
+  syncVersion: number;
 }
 
 export interface SyncConfig {
@@ -173,6 +178,11 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   const [dispositivo, setDispositivo] = useState<SyncState['dispositivo']>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [ultimoErro, setUltimoErro] = useState<string | null>(null);
+
+  // Contador de versão de sync — incrementado após cada sync bem-sucedido.
+  // Os contexts de dados usam isso como dependência de useEffect para
+  // recarregar dados do SQLite após a sincronização.
+  const [syncVersion, setSyncVersion] = useState(0);
   
   // Estados para ativação de dispositivo
   const [needsDeviceActivation, setNeedsDeviceActivation] = useState(false);
@@ -332,11 +342,31 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       // na memória mesmo após o sync ter escrito novos dados no banco.
       syncEvents.emitSyncComplete();
 
+      // Incrementar syncVersion para que useEffects nos contexts de dados
+      // disparem e recarreguem os dados do SQLite.
+      setSyncVersion(v => v + 1);
+
       // Limpar progresso após 2 segundos
       setTimeout(() => setProgress(null), 2000);
 
     } catch (error) {
-      const mensagem = error instanceof Error ? error.message : 'Erro durante sincronização';
+      // Serialização robusta de erros — evita "Erro: {}" quando o objeto
+      // tem propriedades não-enumeráveis (comum em erros de rede/API)
+      let mensagem = 'Erro durante sincronização';
+      if (error instanceof Error) {
+        mensagem = error.message;
+      } else if (typeof error === 'string') {
+        mensagem = error;
+      } else if (error && typeof error === 'object') {
+        // Tenta extrair message/status/data de objetos de erro HTTP
+        const errObj = error as any;
+        mensagem = errObj.message || errObj.error || errObj.statusText
+          || (errObj.data?.error) || (errObj.data?.message)
+          || JSON.stringify(error);
+        if (mensagem === '{}' || mensagem === '') {
+          mensagem = `Erro inesperado: ${String(error)}`;
+        }
+      }
       setErro(mensagem);
       setUltimoErro(mensagem);
       setStatus('error');
@@ -807,6 +837,9 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     // Propriedades adicionais para compatibilidade
     lastSync: lastSyncAt,
     pendingItems: pendingItemsState,
+
+    // Controle de versão para reload dos contexts
+    syncVersion,
   };
 
   return (

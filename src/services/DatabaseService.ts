@@ -544,6 +544,7 @@ class DatabaseService {
       TABLES.ESTABELECIMENTOS,
       TABLES.METAS,
       'manutencoes',
+      TABLES.HISTORICO_RELOGIO,
     ];
 
     // Lista de migrations a executar
@@ -997,12 +998,13 @@ class DatabaseService {
     if (!this.db) throw new Error('Database não inicializado');
 
     const tableName = this.getTableName(entityType);
+    const softDelete = this.hasSoftDelete(entityType);
 
     try {
-      const result = await this.db.getFirstAsync<T>(
-        `SELECT * FROM ${tableName} WHERE id = ? AND deletedAt IS NULL`,
-        [id]
-      );
+      const query = softDelete
+        ? `SELECT * FROM ${tableName} WHERE id = ? AND deletedAt IS NULL`
+        : `SELECT * FROM ${tableName} WHERE id = ?`;
+      const result = await this.db.getFirstAsync<T>(query, [id]);
 
       return result || null;
     } catch (error) {
@@ -1026,10 +1028,13 @@ class DatabaseService {
     if (!this.db) throw new Error('Database não inicializado');
 
     const tableName = this.getTableName(entityType);
-    let query = `SELECT * FROM ${tableName} WHERE deletedAt IS NULL`;
+    const softDelete = this.hasSoftDelete(entityType);
+    let query = softDelete
+      ? `SELECT * FROM ${tableName} WHERE deletedAt IS NULL`
+      : `SELECT * FROM ${tableName}`;
 
     if (where) {
-      query += ` AND ${where}`;
+      query += softDelete ? ` AND ${where}` : ` WHERE ${where}`;
   
   }
 
@@ -1383,6 +1388,11 @@ class DatabaseService {
 
   /**
    * Upsert de entidade recebida do servidor (SEM criar ChangeLog)
+   *
+   * IMPORTANTE: Verifica existência SEM o filtro deletedAt IS NULL,
+   * pois o servidor pode enviar um registro que foi reativado
+   * (localmente soft-deletado mas ativo no servidor).
+   * Nesse caso, faz UPDATE limpando o deletedAt.
    */
   private async upsertFromSync(entityType: EntityType, entity: any): Promise<void> {
     if (!this.db) throw new Error('Database não inicializado');
@@ -1401,12 +1411,26 @@ class DatabaseService {
       delete data.tipo;
     }
 
-    // Verificar se existe
-    const existing = await this.getById<any>(entityType, entity.id);
+    // Verificar se o registro existe NO BANCO (sem filtro de deletedAt).
+    // getById usa deletedAt IS NULL, o que faria INSERT falhar se o registro
+    // existe mas está soft-deletado. Query direta resolve isso.
+    let existing: any = null;
+    try {
+      existing = await this.db.getFirstAsync(
+        `SELECT id, deletedAt FROM ${tableName} WHERE id = ?`,
+        [entity.id]
+      );
+    } catch {
+      // Tabela pode não ter id — ignorar e tentar INSERT
+    }
 
     try {
       if (existing) {
-        // UPDATE - não incrementar version se veio do servidor
+        // Se o registro existe (mesmo soft-deletado), fazer UPDATE.
+        // Garantir que deletedAt seja limpo se o servidor diz que está ativo.
+        if (data.deletedAt === undefined || data.deletedAt === null) {
+          data.deletedAt = null;
+        }
         const serialized = serializeForDB(data);
         const fields = Object.keys(serialized);
         const setClause = fields.map((field) => `${field} = ?`).join(', ');
@@ -2055,6 +2079,19 @@ class DatabaseService {
 
     return tableMap[entityType];
 
+  }
+
+  /**
+   * Verifica se a tabela do EntityType possui coluna deletedAt (soft delete).
+   * Tabelas de metadata (change_log, sync_metadata) NÃO são EntityType,
+   * mas historicoRelogio pode não ter a coluna antes da migration.
+   * Sempre retorna true após a migration rodar.
+   */
+  private hasSoftDelete(entityType: EntityType): boolean {
+    // Todas as tabelas mapeadas por EntityType têm deletedAt após a migration.
+    // As únicas tabelas SEM deletedAt são change_log e sync_metadata,
+    // que não são acessadas via EntityType.
+    return true;
   }
 
   private getUpdateFields(entity: any): string {

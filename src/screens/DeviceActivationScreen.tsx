@@ -32,7 +32,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { databaseService } from '../services/DatabaseService';
 
 const { width } = Dimensions.get('window');
-const DEVICE_ACTIVATED_KEY = '@cobrancas:deviceActivated';
 const SERVER_VALIDATION_KEY = '@cobrancas:serverDeviceValidation';
 
 export default function DeviceActivationScreen() {
@@ -181,11 +180,11 @@ export default function DeviceActivationScreen() {
         // Fonte única de verdade: SyncMetadata (SQLite) para todo o app
         await databaseService.setDeviceId(serverDeviceId, deviceName, finalKey, finalChave);
         
-        // Persistir estado de ativação no AsyncStorage (sobrevive a reinícios do app)
+        // Persistir validação do servidor como 'active' — isso evita
+        // que o AppNavigator tente re-validar offline e use o fallback errado.
+        // O AppNavigator lê esta chave no mount para decidir otimisticamente
+        // qual tela mostrar antes da verificação com o servidor completar.
         try {
-          await AsyncStorage.setItem(DEVICE_ACTIVATED_KEY, JSON.stringify(true));
-          // CRUCIAL: Persistir validação do servidor como 'active' — isso evita
-          // que o AppNavigator tente re-validar offline e use o fallback errado
           await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'active');
         } catch (e) {
           console.warn('[DeviceActivation] Falha ao persistir estado de ativação:', e);
