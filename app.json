@@ -2,7 +2,7 @@
   "expo": {
     "name": "App Cobranças",
     "slug": "app-cobrancas",
-    "version": "1.0.1",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -28,7 +28,7 @@
         "backgroundColor": "#2563EB"
       },
       "package": "com.suaempresa.cobrancas",
-      "versionCode": 1,
+      "versionCode": 2,
       "permissions": [
         "CAMERA",
         "ACCESS_FINE_LOCATION",
@@ -67,7 +67,7 @@
     "extra": {
       "API_URL": "https://app-cobrancas-web.vercel.app",
       "USE_MOCK": "false",
-      "APP_VERSION": "1.0.1",
+      "APP_VERSION": "2.0.0",
       "APP_NAME": "App Cobranças",
       "DEBUG": "false",
       "SYNC_INTERVAL": "15",
