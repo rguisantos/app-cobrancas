@@ -100,30 +100,37 @@ export default function HistoricoPagamentoScreen() {
 
   // ─── carregar histórico ───────────────────────────────────────────────────
   const carregar = useCallback(async () => {
-    try {
-      setErro(null);
-      setOffline(false);
-      const response = await apiService.getHistoricoPagamentos(cobrancaId);
-      if (response.success && response.data) {
-        const data = response.data as any;
-        // Suporta resposta como array direto ou objeto com eventos
-        const lista = Array.isArray(data) ? data : data.eventos || [];
-        setEventos(lista);
+    setErro(null);
 
-        // Tenta extrair resumo da cobrança da resposta
-        if (!Array.isArray(data) && data.cobranca) {
-          setResumo(prev => ({ ...prev, ...data.cobranca }));
+    // OFFLINE-FIRST: carregar local imediatamente
+    await carregarOffline();
+    setCarregando(false);
+
+    // Tentar API em background
+    apiService.getHistoricoPagamentos(cobrancaId)
+      .then(response => {
+        if (response.success && response.data) {
+          const data = response.data as any;
+          // Suporta resposta como array direto ou objeto com eventos
+          const lista = Array.isArray(data) ? data : data.eventos || [];
+          setEventos(lista);
+
+          // Tenta extrair resumo da cobrança da resposta
+          if (!Array.isArray(data) && data.cobranca) {
+            setResumo(prev => ({ ...prev, ...data.cobranca }));
+          }
+
+          setOffline(false);
+          setErro(null);
         }
-      } else {
-        // Tentar offline
-        await carregarOffline();
-      }
-    } catch (err) {
-      await carregarOffline(err instanceof Error ? err.message : 'Erro inesperado');
-    } finally {
-      setCarregando(false);
-      setRefreshing(false);
-    }
+      })
+      .catch(() => {
+        // Mantém dados locais
+      })
+      .finally(() => {
+        setCarregando(false);
+        setRefreshing(false);
+      });
   }, [cobrancaId]);
 
   // ─── carregar offline ─────────────────────────────────────────────────────

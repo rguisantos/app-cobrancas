@@ -77,45 +77,48 @@ export default function MapaClientesScreen() {
   // ==========================================================================
 
   const carregarDados = useCallback(async () => {
-    try {
-      // Carregar rotas
-      const rotasData = await rotaRepository.getAll();
-      const rotasOpcoes: RotaOpcao[] = rotasData.map((r: any, i: number) => ({
-        id: r.id,
-        nome: r.descricao || `Rota ${i + 1}`,
-        cor: ROTA_CORES[i % ROTA_CORES.length],
-      }));
-      setRotas(rotasOpcoes);
+    // Carregar rotas (sempre local)
+    const rotasData = await rotaRepository.getAll();
+    const rotasOpcoes: RotaOpcao[] = rotasData.map((r: any, i: number) => ({
+      id: r.id,
+      nome: r.descricao || `Rota ${i + 1}`,
+      cor: ROTA_CORES[i % ROTA_CORES.length],
+    }));
+    setRotas(rotasOpcoes);
 
-      // Tentar API primeiro
-      const response = await apiService.getMapaData();
-      if (response.success && response.data) {
-        const data = response.data as any;
-        const items = Array.isArray(data) ? data : data.clientes || data.data || [];
-        const clientesMapa: ClienteMapa[] = items.map((c: any) => ({
-          id: c.id || c.clienteId,
-          nome: c.nome || c.nomeExibicao || '',
-          endereco: [c.logradouro, c.numero, c.bairro].filter(Boolean).join(', '),
-          cidade: c.cidade || '',
-          rotaId: c.rotaId || '',
-          rotaNome: c.rotaNome || 'Sem rota',
-          latitude: c.latitude,
-          longitude: c.longitude,
-          status: c.status || 'Ativo',
-        }));
-        setClientes(clientesMapa);
-        setOffline(false);
-      } else {
-        // Fallback local
-        await carregarLocal(rotasOpcoes);
-        setOffline(true);
-      }
-    } catch {
-      await carregarLocal(rotas);
-      setOffline(true);
-    } finally {
-      setCarregando(false);
-    }
+    // OFFLINE-FIRST: carregar local imediatamente
+    await carregarLocal(rotasOpcoes);
+    setOffline(true);
+    setCarregando(false);
+
+    // Tentar API em background
+    apiService.getMapaData()
+      .then(response => {
+        if (response.success && response.data) {
+          const data = response.data as any;
+          const items = Array.isArray(data) ? data : data.clientes || data.data || [];
+          const clientesMapa: ClienteMapa[] = items.map((c: any) => ({
+            id: c.id || c.clienteId,
+            nome: c.nome || c.nomeExibicao || '',
+            endereco: [c.logradouro, c.numero, c.bairro].filter(Boolean).join(', '),
+            cidade: c.cidade || '',
+            rotaId: c.rotaId || '',
+            rotaNome: c.rotaNome || 'Sem rota',
+            latitude: c.latitude,
+            longitude: c.longitude,
+            status: c.status || 'Ativo',
+          }));
+          setClientes(clientesMapa);
+          setOffline(false);
+        }
+      })
+      .catch(() => {
+        // Mantém dados locais
+      })
+      .finally(() => {
+        setCarregando(false);
+        setRefreshing(false);
+      });
   }, []);
 
   const carregarLocal = useCallback(async (rotasOpcoes: RotaOpcao[]) => {

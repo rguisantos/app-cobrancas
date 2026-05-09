@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useSync } from '../contexts/SyncContext';
 import { useAuth } from '../contexts/AuthContext';
 import { syncService } from '../services/SyncService';
@@ -139,7 +140,7 @@ export default function SyncStatusScreen() {
       const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
       if (msg.includes('[Sync') || msg.includes('[Database]') || msg.includes('applyRemoteChanges') || msg.includes('upsertFromSync')) {
         const level: LogLevel = msg.includes('ERRO') || msg.includes('❌') ? 'error' : msg.includes('warn') ? 'warn' : 'info';
-        addLog(level, msg.substring(0, 200));
+        addLog(level, msg.substring(0, 500));
       }
     };
 
@@ -147,7 +148,7 @@ export default function SyncStatusScreen() {
       originalError(...args);
       const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
       if (msg.includes('[Sync') || msg.includes('[Database]') || msg.includes('[Api')) {
-        addLog('error', msg.substring(0, 200));
+        addLog('error', msg.substring(0, 500));
       }
     };
 
@@ -155,7 +156,7 @@ export default function SyncStatusScreen() {
       originalWarn(...args);
       const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
       if (msg.includes('[Sync') || msg.includes('[Database]')) {
-        addLog('warn', msg.substring(0, 200));
+        addLog('warn', msg.substring(0, 500));
       }
     };
 
@@ -374,6 +375,16 @@ export default function SyncStatusScreen() {
     setLogs([]);
   }, []);
 
+  const copyAllLogs = useCallback(async () => {
+    if (logs.length === 0) {
+      Alert.alert('Terminal', 'Nenhum log para copiar.');
+      return;
+    }
+    const text = logs.map(l => `${l.timestamp} [${l.level.toUpperCase()}] ${l.message}`).join('\n');
+    await Clipboard.setStringAsync(text);
+    Alert.alert('Copiado!', `${logs.length} logs copiados para a área de transferência.`);
+  }, [logs]);
+
   // ─── Carregar ao iniciar ────────────────────────────────────────────────
   useEffect(() => {
     loadInfo();
@@ -411,7 +422,7 @@ export default function SyncStatusScreen() {
         color={LEVEL_COLORS[item.level]}
         style={t.logIcon}
       />
-      <Text style={[t.logMsg, { color: LEVEL_COLORS[item.level] }]} numberOfLines={3}>
+      <Text style={[t.logMsg, { color: LEVEL_COLORS[item.level] }]} selectable={true}>
         {item.message}
       </Text>
     </View>
@@ -535,6 +546,9 @@ export default function SyncStatusScreen() {
           </View>
           <Text style={t.terminalTitle}>TERMINAL — LOGS</Text>
           <View style={t.terminalActions}>
+            <TouchableOpacity onPress={copyAllLogs} style={t.terminalAction}>
+              <Ionicons name="copy" size={14} color="#64748B" />
+            </TouchableOpacity>
             <TouchableOpacity onPress={clearLogs} style={t.terminalAction}>
               <Ionicons name="trash" size={14} color="#64748B" />
             </TouchableOpacity>

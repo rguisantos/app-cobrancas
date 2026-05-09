@@ -17,7 +17,8 @@
       "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "Este app precisa de acesso à câmera para escanear códigos.",
-        "NSLocationWhenInUseUsageDescription": "Este app precisa de acesso à localização para mostrar endereços no mapa."
+        "NSLocationWhenInUseUsageDescription": "Este app precisa de acesso à localização para mostrar endereços no mapa.",
+        "NSFaceIDUsageDescription": "Este app usa Face ID para permitir login rápido e seguro."
       }
     },
     "android": {
@@ -34,7 +35,8 @@
         "ACCESS_COARSE_LOCATION",
         "BLUETOOTH",
         "BLUETOOTH_CONNECT",
-        "BLUETOOTH_SCAN"
+        "BLUETOOTH_SCAN",
+        "USE_BIOMETRIC"
       ]
     },
     "web": {
@@ -44,6 +46,7 @@
     "plugins": [
       "expo-sqlite",
       "expo-updates",
+      "expo-local-authentication",
       [
         "expo-build-properties",
         {

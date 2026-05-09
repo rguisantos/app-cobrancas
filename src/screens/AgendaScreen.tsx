@@ -117,59 +117,63 @@ export default function AgendaScreen() {
   // ─── carregar agenda ──────────────────────────────────────────────────────
   const carregar = useCallback(async (date?: Date) => {
     const targetDate = date || selectedDate;
-    try {
-      setErro(null);
-      setOffline(false);
-      const dataParam = formatDateParam(targetDate);
-      const response = await apiService.getAgenda(dataParam);
-      if (response.success && response.data) {
-        // Suporta resposta como array direto ou objeto com cobrancas
-        const raw = response.data as any;
-        const entries: AgendaEntry[] = [];
+    setErro(null);
 
-        // Processar cobranças
-        const cobrancas = Array.isArray(raw) ? raw : raw.cobrancas || [];
-        for (const c of cobrancas) {
-          const statusStr = c.status || 'Pendente';
-          const isVencimento = statusStr === 'Pendente' || statusStr === 'Atrasado';
-          entries.push({
-            id: c.id,
-            tipo: isVencimento ? 'vencimento' : 'recebimento',
-            clienteNome: c.clienteNome || '',
-            produtoIdentificador: c.produtoIdentificador || '',
-            valor: c.valor,
-            status: statusStr,
-            dataVencimento: c.dataVencimento,
-            locacaoId: c.locacaoId,
-            cobrancaId: c.id,
-          });
+    // OFFLINE-FIRST: carregar local imediatamente
+    await carregarOffline(targetDate);
+    setCarregando(false);
+
+    // Tentar API em background
+    const dataParam = formatDateParam(targetDate);
+    apiService.getAgenda(dataParam)
+      .then(response => {
+        if (response.success && response.data) {
+          const raw = response.data as any;
+          const entries: AgendaEntry[] = [];
+
+          // Processar cobranças
+          const cobrancas = Array.isArray(raw) ? raw : raw.cobrancas || [];
+          for (const c of cobrancas) {
+            const statusStr = c.status || 'Pendente';
+            const isVencimento = statusStr === 'Pendente' || statusStr === 'Atrasado';
+            entries.push({
+              id: c.id,
+              tipo: isVencimento ? 'vencimento' : 'recebimento',
+              clienteNome: c.clienteNome || '',
+              produtoIdentificador: c.produtoIdentificador || '',
+              valor: c.valor,
+              status: statusStr,
+              dataVencimento: c.dataVencimento,
+              locacaoId: c.locacaoId,
+              cobrancaId: c.id,
+            });
+          }
+
+          // Processar manutenções
+          const manutencoes = raw.manutencoes || [];
+          for (const m of manutencoes) {
+            entries.push({
+              id: m.id,
+              tipo: 'manutencao',
+              clienteNome: m.clienteNome || '',
+              produtoIdentificador: m.produtoIdentificador || '',
+              descricao: m.descricao || m.tipo || 'Manutenção',
+              manutencaoId: m.id,
+            });
+          }
+
+          setAgendaData(entries);
+          setOffline(false);
+          setErro(null);
         }
-
-        // Processar manutenções
-        const manutencoes = raw.manutencoes || [];
-        for (const m of manutencoes) {
-          entries.push({
-            id: m.id,
-            tipo: 'manutencao',
-            clienteNome: m.clienteNome || '',
-            produtoIdentificador: m.produtoIdentificador || '',
-            descricao: m.descricao || m.tipo || 'Manutenção',
-            manutencaoId: m.id,
-          });
-        }
-
-        setAgendaData(entries);
-      } else {
-        // Tentar carregar do cache local (offline)
-        await carregarOffline(targetDate, response.error);
-      }
-    } catch (err) {
-      // Tentar carregar do cache local (offline)
-      await carregarOffline(targetDate, err instanceof Error ? err.message : 'Erro inesperado');
-    } finally {
-      setCarregando(false);
-      setRefreshing(false);
-    }
+      })
+      .catch(() => {
+        // Mantém dados locais
+      })
+      .finally(() => {
+        setCarregando(false);
+        setRefreshing(false);
+      });
   }, [selectedDate]);
 
   // ─── carregar offline ─────────────────────────────────────────────────────

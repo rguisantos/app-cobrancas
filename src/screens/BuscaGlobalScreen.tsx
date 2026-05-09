@@ -255,30 +255,28 @@ export default function BuscaGlobalScreen() {
       return;
     }
 
-    setBuscando(true);
     setBuscou(true);
 
-    try {
-      // Tentar API primeiro
-      const apiResultados = await buscaApi(q);
+    // OFFLINE-FIRST: buscar local imediatamente
+    const locaisResultados = await buscaLocal(q);
+    setResultados(locaisResultados);
+    setOffline(locaisResultados.length > 0);
 
-      if (apiResultados.length > 0) {
-        setResultados(apiResultados);
-        setOffline(false);
-      } else {
-        // API retornou vazio ou falhou — tentar busca local
-        const locaisResultados = await buscaLocal(q);
-        setResultados(locaisResultados);
-        setOffline(locaisResultados.length > 0);
-      }
-    } catch {
-      // Fallback para busca local
-      setOffline(true);
-      const locaisResultados = await buscaLocal(q);
-      setResultados(locaisResultados);
-    } finally {
-      setBuscando(false);
-    }
+    // Tentar API em background
+    setBuscando(true);
+    buscaApi(q)
+      .then(apiResultados => {
+        if (apiResultados.length > 0) {
+          setResultados(apiResultados);
+          setOffline(false);
+        }
+      })
+      .catch(() => {
+        // Mantém resultados locais
+      })
+      .finally(() => {
+        setBuscando(false);
+      });
   }, [buscaApi, buscaLocal]);
 
   const handleBusca = useCallback((texto: string) => {

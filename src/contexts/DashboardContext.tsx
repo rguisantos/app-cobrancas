@@ -299,42 +299,44 @@ export function DashboardProvider({
 
   /**
    * Carrega dashboard mobile
-   * Estratégia: tenta API /api/dashboard/mobile primeiro (online);
-   * em caso de falha, calcula localmente do SQLite (offline-first fallback).
+   * Estratégia OFFLINE-FIRST:
+   * 1) Carrega IMEDIATAMENTE do SQLite (sem esperar API)
+   * 2) Tenta API em background para atualizar dados (não bloqueia UI)
    */
   const carregarDashboardMobile = useCallback(async () => {
     setCarregando(true);
     setErro(null);
 
     try {
-      // 1) Tentar buscar da API primeiro
-      const response = await apiService.getDashboardMobile();
+      // 1) IMMEDIATAMENTE carregar do SQLite (offline-first)
+      const metricasCalculadas = await calcularMetricasMobile();
 
-      if (response.success && response.data) {
-        const data = response.data as DashboardMobileData;
-        console.log('[DashboardContext] Dashboard mobile carregado da API');
+      const dashboardMobile: DashboardMobileData = {
+        usuarioNome,
+        usuarioTipo,
+        saudacao: getSaudacao(),
+        metricas: metricasCalculadas,
+        dataAtualizacao: new Date().toISOString(),
+      };
 
-        setMobile(data);
-        setMetricas(data.metricas);
-        setUltimaAtualizacao(data.dataAtualizacao || new Date().toISOString());
-      } else {
-        // 2) Fallback: calcular métricas localmente do SQLite
-        console.log('[DashboardContext] API indisponível — calculando métricas do SQLite local...');
-        const metricasCalculadas = await calcularMetricasMobile();
+      setMobile(dashboardMobile);
+      setMetricas(metricasCalculadas);
+      setUltimaAtualizacao(new Date().toISOString());
+      console.log('[DashboardContext] Dashboard mobile carregado do SQLite local');
 
-        const dashboardMobile: DashboardMobileData = {
-          usuarioNome,
-          usuarioTipo,
-          saudacao: getSaudacao(),
-          metricas: metricasCalculadas,
-          dataAtualizacao: new Date().toISOString(),
-        };
-
-        setMobile(dashboardMobile);
-        setMetricas(metricasCalculadas);
-        setUltimaAtualizacao(new Date().toISOString());
-        console.log('[DashboardContext] Dashboard mobile carregado com dados locais');
-      }
+      // 2) Tentar API em background para atualizar (não bloqueia UI)
+      apiService.getDashboardMobile().then(response => {
+        if (response.success && response.data) {
+          const data = response.data as DashboardMobileData;
+          setMobile(data);
+          setMetricas(data.metricas);
+          setUltimaAtualizacao(data.dataAtualizacao || new Date().toISOString());
+          console.log('[DashboardContext] Dashboard mobile atualizado da API (background)');
+        }
+      }).catch(() => {
+        // Silenciosamente ignorar — já temos dados locais
+        console.log('[DashboardContext] API indisponível — usando dados locais');
+      });
     } catch (error) {
       console.error('[DashboardContext] Erro ao carregar dashboard mobile:', error);
 
@@ -361,48 +363,52 @@ export function DashboardProvider({
 
   /**
    * Carrega dashboard web
+   * Estratégia OFFLINE-FIRST: SQLite primeiro, API em background
    */
   const carregarDashboardWeb = useCallback(async () => {
     setCarregando(true);
     setErro(null);
 
-    try {      // Tentar buscar da API primeiro
-      const response = await apiService.getDashboardWeb();
-      
-      if (response.success && response.data) {
-        setWeb(response.data);
-      } else {
-        // Fallback: calcular localmente
-        const [ganhos, clientesNaoCobrados, produtosLocadosEstoque] = await Promise.all([
-          calcularGanhosMes(),
-          getClientesNaoCobrados(),
-          getProdutosLocadosEstoque(),
-        ]);
+    try {
+      // 1) IMMEDIATAMENTE carregar do SQLite (offline-first)
+      const [ganhos, clientesNaoCobrados, produtosLocadosEstoque] = await Promise.all([
+        calcularGanhosMes(),
+        getClientesNaoCobrados(),
+        getProdutosLocadosEstoque(),
+      ]);
 
-        const hoje = new Date();
-        const dashboardWeb: DashboardWebData = {
-          ganhos,
-          clientesNaoCobrados,
-          totalClientesNaoCobrados: clientesNaoCobrados.length,
-          produtosLocadosEstoque,
-          dataReferencia: hoje.toISOString(),
-          mesReferencia: formatarMesReferencia(hoje),
-        };
+      const hoje = new Date();
+      const dashboardWeb: DashboardWebData = {
+        ganhos,
+        clientesNaoCobrados,
+        totalClientesNaoCobrados: clientesNaoCobrados.length,
+        produtosLocadosEstoque,
+        dataReferencia: hoje.toISOString(),
+        mesReferencia: formatarMesReferencia(hoje),
+      };
 
-        setWeb(dashboardWeb);
-    
-  }
-
+      setWeb(dashboardWeb);
       setUltimaAtualizacao(new Date().toISOString());
-      console.log('[DashboardContext] Dashboard web carregado');
+      console.log('[DashboardContext] Dashboard web carregado do SQLite local');
+
+      // 2) Tentar API em background para atualizar (não bloqueia UI)
+      apiService.getDashboardWeb().then(response => {
+        if (response.success && response.data) {
+          setWeb(response.data);
+          setUltimaAtualizacao(new Date().toISOString());
+          console.log('[DashboardContext] Dashboard web atualizado da API (background)');
+        }
+      }).catch(() => {
+        // Silenciosamente ignorar — já temos dados locais
+        console.log('[DashboardContext] API indisponível — usando dados locais');
+      });
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao carregar dashboard web';
       setErro(mensagem);
       console.error('[DashboardContext] Erro ao carregar dashboard web:', error);
     } finally {
       setCarregando(false);
-  
-  }
+    }
   }, [calcularGanhosMes, getClientesNaoCobrados, getProdutosLocadosEstoque]);
 
   /**

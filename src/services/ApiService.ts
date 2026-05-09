@@ -41,9 +41,9 @@ const getApiUrl = (): string => {
 
 const API_CONFIG = {
   baseURL: getApiUrl(),
-  timeout: 30000, // 30 segundos
-  retries: 3,
-  retryDelay: 1000, // 1 segundo
+  timeout: 10000, // 10 segundos (reduzido de 30 — app é offline-first, API é secundária)
+  retries: 1,     // 1 retry apenas (reduzido de 3 — sem rede = sem rede, retry não ajuda)
+  retryDelay: 500, // 0.5 segundo
 };
 
 // ============================================================================

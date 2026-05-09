@@ -58,7 +58,7 @@ interface FormErrors {
 
 export default function LoginScreen() {
   const navigation = useNavigation<AuthStackNavigationProp>();
-  const { login, isLoading, lockoutInfo, biometricLogin, isBiometricAvailable } = useAuth();
+  const { login, isLoading, lockoutInfo, biometricLogin, isBiometricAvailable, setBiometricEnabled } = useAuth();
 
   // Estado do formulário
   const [formData, setFormData] = useState<LoginForm>({
@@ -70,11 +70,13 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricEnabled, setBiometricEnabledState] = useState(false);
 
-  // Verificar biometria disponível
+  // Verificar biometria disponível e habilitada
   useEffect(() => {
-    isBiometricAvailable().then(({ available }) => {
+    isBiometricAvailable().then(({ available, enabled }) => {
       setBiometricAvailable(available);
+      setBiometricEnabledState(enabled);
     });
   }, []);
 
@@ -138,15 +140,41 @@ export default function LoginScreen() {
 
   const handleBiometricLogin = useCallback(async () => {
     try {
+      // Se biometria disponível mas não habilitada, oferecer para habilitar
+      if (biometricAvailable && !biometricEnabled) {
+        Alert.alert(
+          'Biometria',
+          'Deseja habilitar o login com biometria? Após habilitar, você poderá entrar rapidamente usando sua digital ou Face ID.',
+          [
+            { text: 'Agora não', style: 'cancel' },
+            {
+              text: 'Habilitar',
+              onPress: async () => {
+                try {
+                  // Habilitar biometria no SecureStorage
+                  await setBiometricEnabled(true);
+                  // Tentar autenticar com biometria
+                  const success = await biometricLogin();
+                  if (success) {
+                    setBiometricEnabledState(true);
+                  }
+                } catch {
+                  // Falha ao habilitar — ignorar
+                }
+              },
+            },
+          ]
+        );
+        return;
+      }
       const success = await biometricLogin();
       if (!success) {
         // Biometria falhou ou foi cancelada — não mostrar erro
-        // O usuário pode tentar novamente ou usar senha
       }
     } catch {
       // Falha na biometria — usuário volta para login com senha
     }
-  }, [biometricLogin]);
+  }, [biometricLogin, biometricAvailable, biometricEnabled, setBiometricEnabled]);
 
   const handleRecoverPassword = useCallback(() => {
     navigation.navigate('RecoverPassword');
@@ -198,7 +226,9 @@ export default function LoginScreen() {
               activeOpacity={0.7}
             >
               <Ionicons name="finger-print-outline" size={28} color="#2563EB" />
-              <Text style={styles.biometricText}>Entrar com biometria</Text>
+              <Text style={styles.biometricText}>
+                {biometricEnabled ? 'Entrar com biometria' : 'Habilitar biometria'}
+              </Text>
             </TouchableOpacity>
           )}
 
