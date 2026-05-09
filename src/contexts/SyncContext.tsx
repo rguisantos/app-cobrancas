@@ -2,10 +2,19 @@
  * SyncContext.tsx
  * Contexto para gerenciamento de sincronização offline-first
  * Integração: DatabaseService + ApiService + Tipos
+ *
+ * OFFLINE-FIRST PRINCIPLES:
+ * - verificarAtivacao() trusts local device data first; API is only a
+ *   background verification (and only when online).
+ * - sincronizar() silently skips when offline (no error state).
+ * - inicializar() loads local state and sets 'synced' without auto-sync
+ *   if offline.
+ * - AppState resume sync only fires when online.
  */
 
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { 
   SyncMetadata, 
   SyncStatus, 
@@ -22,6 +31,13 @@ import { syncService } from '../services/SyncService';
 import { secureStorage } from '../services/SecureStorage';
 import logger from '../utils/logger';
 import syncEvents from '../utils/sync-events';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Interval (ms) after which we re-verify device activation with the server. */
+const ACTIVATION_RECHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // ============================================================================
 // INTERFACES E TIPOS
@@ -61,6 +77,9 @@ export interface SyncState {
   needsDeviceActivation: boolean;
   dispositivoPendenteId: string | null;
   ativacaoErro: string | null;
+  
+  // Conectividade
+  isOnline: boolean;
   
   // Erros
   erro: string | null;
@@ -189,9 +208,30 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   const [dispositivoPendenteId, setDispositivoPendenteId] = useState<string | null>(null);
   const [ativacaoErro, setAtivacaoErro] = useState<string | null>(null);
 
+  // Conectividade — rastreada via NetInfo
+  const [isOnline, setIsOnline] = useState(true);
+
   // Timer para auto sync — useRef para evitar memory leak
   // (useState causaria re-render e não limparia o interval anterior corretamente)
   const autoSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ==========================================================================
+  // NETINFO — CONECTIVIDADE
+  // ==========================================================================
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      const online = state.isConnected === true && state.isInternetReachable !== false;
+      setIsOnline(online);
+      if (online) {
+        logger.info('[SyncContext] Conexão restabelecida — online');
+      } else {
+        logger.info('[SyncContext] Sem conexão — offline');
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // ==========================================================================
   // INICIALIZAÇÃO
@@ -231,11 +271,13 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       
       console.log('[SyncContext] Inicializado com sucesso');
       
-      // Sync automático ao iniciar (se configurado)
-      if (syncConfig.syncOnAppStart && metadata.deviceId) {
+      // Sync automático ao iniciar (se configurado) — apenas se online
+      if (syncConfig.syncOnAppStart && metadata.deviceId && isOnline) {
+        console.log('[SyncContext] Online — iniciando sync automático');
         await sincronizar();
-    
-  }
+      } else if (syncConfig.syncOnAppStart && metadata.deviceId && !isOnline) {
+        console.log('[SyncContext] Offline — pulando sync automático ao iniciar');
+      }
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao inicializar sync';
       setErro(mensagem);
@@ -244,7 +286,7 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       console.error('[SyncContext] Erro na inicialização:', error);
   
   }
-  }, [syncConfig.syncOnAppStart]);
+  }, [syncConfig.syncOnAppStart, isOnline]);
 
   // ==========================================================================
   // SINCRONIZAÇÃO
@@ -256,8 +298,16 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
    * version updates, paginação e snapshot recovery. Antes este método
    * duplicava toda a lógica de push/pull diretamente via ApiService,
    * causando race conditions e perda de dados.
+   *
+   * OFFLINE-FIRST: Se offline, retorna silenciosamente sem alterar o status.
    */
   const sincronizar = useCallback(async (forca: boolean = false) => {
+    // OFFLINE-FIRST: Se não há conectividade, pular silenciosamente
+    if (!isOnline) {
+      console.log('[SyncContext] Offline — sincronização pulada');
+      return;
+    }
+
     if (isSyncing) {
       console.log('[SyncContext] Sincronização já em andamento');
       return;
@@ -375,7 +425,7 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     } finally {
       setIsSyncing(false);
     }
-  }, [isSyncing, dispositivo, lastSyncAt]);
+  }, [isSyncing, dispositivo, lastSyncAt, isOnline]);
 
   /**
    * Cancela sincronização em andamento
@@ -417,8 +467,16 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
   // ==========================================================================
 
   /**
-   * Verifica se o dispositivo precisa de ativação
-   * Deve ser chamado após o login bem-sucedido
+   * Verifica se o dispositivo precisa de ativação.
+   *
+   * OFFLINE-FIRST STRATEGY:
+   * 1. If we have deviceId + deviceKey in local sync metadata, trust it.
+   *    The device was previously activated — set needsDeviceActivation=false
+   *    immediately without requiring an API call.
+   * 2. If no local device data exists, the device truly needs activation.
+   * 3. If online AND we have local data, optionally verify with the API
+   *    but ONLY if it's been more than 24 hours since the last check.
+   *    This is a background check — failures don't override local state.
    */
   const verificarAtivacao = useCallback(async () => {
     console.log('[SyncContext] Verificando necessidade de ativação...');
@@ -426,19 +484,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     try {
       const metadata = await databaseService.getSyncMetadata();
       
-      // Se já tem deviceId e deviceKey, verificar se está ativo no servidor
+      // ── 1. If we have local device data, trust it (offline-first) ──
       if (metadata.deviceId && metadata.deviceKey) {
-        const response = await apiService.verificarStatusDispositivo(metadata.deviceKey);
-        
-        if (response.success && response.data?.needsActivation) {
-          // Dispositivo existe mas precisa de ativação
-          setNeedsDeviceActivation(true);
-          setDispositivoPendenteId(response.data.dispositivoId || metadata.deviceId);
-          console.log('[SyncContext] Dispositivo precisa de ativação');
-          return;
-        }
-        
-        // Dispositivo já ativo
         setNeedsDeviceActivation(false);
         setDispositivo({
           id: metadata.deviceId,
@@ -446,20 +493,57 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
           chave: metadata.deviceKey,
           registrado: true,
         });
-        console.log('[SyncContext] Dispositivo já está ativo');
+        console.log('[SyncContext] Device already activated locally — trusting local state');
+
+        // ── 3. Optional background API check (only if online & >24h since last check) ──
+        if (isOnline) {
+          const lastCheck = (metadata as any).lastActivationCheck as string | undefined;
+          const timeSinceLastCheck = lastCheck
+            ? Date.now() - new Date(lastCheck).getTime()
+            : Infinity;
+
+          if (!lastCheck || timeSinceLastCheck > ACTIVATION_RECHECK_INTERVAL_MS) {
+            console.log('[SyncContext] Online & >24h since last API check — verifying with server');
+            try {
+              const response = await apiService.verificarStatusDispositivo(metadata.deviceKey);
+
+              // Persist the timestamp of this check (stored as extra key in sync_metadata)
+              await databaseService.updateSyncMetadata({
+                lastActivationCheck: new Date().toISOString(),
+              } as any);
+
+              if (response.success && response.data?.needsActivation) {
+                // Server says device needs re-activation — honor it
+                setNeedsDeviceActivation(true);
+                setDispositivoPendenteId(response.data.dispositivoId || metadata.deviceId);
+                console.log('[SyncContext] Server reports device needs activation — overriding local');
+              } else {
+                console.log('[SyncContext] Server confirmed device is active');
+              }
+            } catch {
+              // API error — trust local state, don't change anything
+              console.log('[SyncContext] API verification failed — trusting local state');
+            }
+          } else {
+            console.log('[SyncContext] Recently verified (<24h) — skipping API check');
+          }
+        } else {
+          console.log('[SyncContext] Offline — skipping API verification, trusting local state');
+        }
+
         return;
       }
-      
-      // Não tem deviceId - precisa cadastrar novo dispositivo
-      // Mas primeiro precisa que o admin cadastre no web e forneça a senha
+
+      // ── 2. No local device data — needs activation regardless ──
       setNeedsDeviceActivation(true);
-      console.log('[SyncContext] Nenhum dispositivo registrado localmente');
+      console.log('[SyncContext] No device registered locally — activation required');
       
     } catch (error) {
       console.error('[SyncContext] Erro ao verificar ativação:', error);
-      setNeedsDeviceActivation(true);
+      // Don't set needsDeviceActivation on error — trust local state
+      // (avoid blocking the user when the DB read itself fails)
     }
-  }, []);
+  }, [isOnline]);
 
   /**
    * Ativa dispositivo com senha de 6 dígitos
@@ -505,6 +589,12 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
         serverDeviceKey,
         serverChave
       );
+
+      // Persist activation check timestamp so verificarAtivacao won't
+      // immediately re-verify with the server after activation.
+      await databaseService.updateSyncMetadata({
+        lastActivationCheck: new Date().toISOString(),
+      } as any);
       
       // Atualizar estado
       setDispositivo({
@@ -757,6 +847,7 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
 
   // Sync automático ao voltar do background (AppState: background → active)
   // IMPORTANTE: Não sincronizar se o dispositivo não está registrado/ativado
+  // OFFLINE-FIRST: Não sincronizar se offline
   useEffect(() => {
     if (!syncConfig.syncOnAppResume) return;
 
@@ -767,6 +858,12 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
       appStateRef.current = nextState;
 
       if ((prev === 'background' || prev === 'inactive') && nextState === 'active') {
+        // OFFLINE-FIRST: Skip sync if offline
+        if (!isOnline) {
+          logger.info('[SyncContext] App voltou ao foreground mas offline — ignorando sync');
+          return;
+        }
+
         const token = await secureStorage.getAccessToken();
         if (!token) {
           logger.info('[SyncContext] App voltou ao foreground mas sem token — ignorando sync');
@@ -783,7 +880,7 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     });
 
     return () => subscription.remove();
-  }, [syncConfig.syncOnAppResume, sincronizar, dispositivo?.registrado]);
+  }, [syncConfig.syncOnAppResume, sincronizar, dispositivo?.registrado, isOnline]);
 
   // ==========================================================================
   // ESTADO DO CONTEXT
@@ -802,6 +899,8 @@ export function SyncProvider({ children, config }: SyncProviderProps) {
     dispositivo,
     erro,
     ultimoErro,
+    // Conectividade
+    isOnline,
     // Ativação
     needsDeviceActivation,
     dispositivoPendenteId,

@@ -65,6 +65,7 @@ export default function NotificacoesScreen() {
     carregando,
     erro,
     totalNotificacoes,
+    isOffline,
     isOperacao,
     carregar,
     marcarComoLida,
@@ -200,13 +201,26 @@ export default function NotificacoesScreen() {
         }
         ListEmptyComponent={() => (
           <View style={s.empty}>
-            <Ionicons name="notifications-off-outline" size={56} color="#CBD5E1" />
-            <Text style={s.emptyTitle}>Nenhuma notificação</Text>
-            <Text style={s.emptyText}>
-              {filtro === 'naoLidas' ? 'Todas as notificações foram lidas' :
-               filtro === 'lidas' ? 'Nenhuma notificação lida' :
-               'Você não tem notificações no momento'}
-            </Text>
+            {isOffline ? (
+              <>
+                <Ionicons name="cloud-offline-outline" size={56} color="#CBD5E1" />
+                <Text style={s.emptyTitle}>Sem conexão</Text>
+                <Text style={s.emptyText}>
+                  As notificações não estão disponíveis offline.{'\n'}
+                  Conecte-se à internet para carregar.
+                </Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="notifications-off-outline" size={56} color="#CBD5E1" />
+                <Text style={s.emptyTitle}>Nenhuma notificação</Text>
+                <Text style={s.emptyText}>
+                  {filtro === 'naoLidas' ? 'Todas as notificações foram lidas' :
+                   filtro === 'lidas' ? 'Nenhuma notificação lida' :
+                   'Você não tem notificações no momento'}
+                </Text>
+              </>
+            )}
           </View>
         )}
         renderItem={({ item }) => (

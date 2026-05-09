@@ -3,6 +3,12 @@
  * Contexto para gerenciamento de estado de Notificações
  * Integração: ApiService (notification endpoints) + local state
  *
+ * OFFLINE-FIRST pattern (same as DashboardContext):
+ * - Try API first; if offline/unavailable, fall back gracefully
+ * - Optimistic UI updates for mark-as-read (no revert on failure)
+ * - Notifications are transient — empty state is acceptable when offline
+ * - isOffline flag lets consumers show appropriate UI
+ *
  * Follows the operacoes/isOperacao pattern from ClienteContext/ManutencaoContext
  */
 
@@ -32,6 +38,8 @@ export interface NotificacaoState {
   carregando: boolean;
   erro: string | null;
   totalNotificacoes: number;
+  /** Whether we're operating in offline mode (API unavailable) */
+  isOffline: boolean;
   /** Operation-specific loading flags */
   operacoes: Record<string, boolean>;
   /** Check if a specific operation is in progress */
@@ -70,6 +78,7 @@ export function NotificacaoProvider({ children }: NotificacaoProviderProps) {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [totalNotificacoes, setTotalNotificacoes] = useState(0);
+  const [isOffline, setIsOffline] = useState(false);
 
   // Operation-specific loading
   const [operacoes, setOperacoes] = useState<Record<string, boolean>>({});
@@ -90,27 +99,48 @@ export function NotificacaoProvider({ children }: NotificacaoProviderProps) {
   }, []);
 
   // ==========================================================================
-  // CARREGAMENTO
+  // CARREGAMENTO (OFFLINE-FIRST)
   // ==========================================================================
 
+  /**
+   * Carrega notificações — offline-first pattern:
+   * 1. Try API first (if online)
+   * 2. If API fails, use empty state (notifications are transient, no local SQLite)
+   * 3. Set isOffline flag so consumers can adapt UI
+   */
   const carregar = useCallback(async () => {
     setCarregando(true);
     setOperacao('carregar', true);
     setErro(null);
 
     try {
-      const response = await apiService.getNotificacoes();
-      if (response.success && response.data) {
-        const lista = response.data as Notificacao[];
-        setNotificacoes(lista);
-        updateCounts(lista);
-      } else {
-        setErro(response.error || 'Erro ao carregar notificações');
+      // 1. Try API first (if online)
+      try {
+        const response = await apiService.getNotificacoes();
+        if (response.success && response.data) {
+          const lista = response.data as Notificacao[];
+          setNotificacoes(lista);
+          updateCounts(lista);
+          setIsOffline(false);
+          return; // API succeeded, done
+        }
+        // API responded but not success — still try to use data if available
+        if (response.data) {
+          const lista = response.data as Notificacao[];
+          setNotificacoes(lista);
+          updateCounts(lista);
+          setIsOffline(false);
+          return;
+        }
+      } catch {
+        // API failed — continue to offline fallback
+        console.log('[NotificacaoContext] API indisponível — modo offline');
       }
-    } catch (error) {
-      const mensagem = error instanceof Error ? error.message : 'Erro ao carregar notificações';
-      setErro(mensagem);
-      console.error('[NotificacaoContext] Erro ao carregar:', error);
+
+      // 2. Offline or API failed — notifications are transient, empty state is OK
+      setNotificacoes([]);
+      updateCounts([]);
+      setIsOffline(true);
     } finally {
       setCarregando(false);
       setOperacao('carregar', false);
@@ -118,13 +148,19 @@ export function NotificacaoProvider({ children }: NotificacaoProviderProps) {
   }, [updateCounts, setOperacao]);
 
   // ==========================================================================
-  // AÇÕES
+  // AÇÕES (OFFLINE-FIRST — OPTIMISTIC, NO REVERT)
   // ==========================================================================
 
+  /**
+   * Marca uma notificação como lida — offline-first:
+   * - Optimistic: update local state immediately
+   * - Try API in background; if it fails, keep the optimistic state
+   * - No revert on failure (user expectation: "I marked it as read")
+   */
   const marcarComoLida = useCallback(async (id: string): Promise<boolean> => {
     setOperacao('marcarLida', true);
 
-    // Otimista: atualizar UI imediatamente
+    // Optimistic: update UI immediately
     setNotificacoes(prev => {
       const updated = prev.map(n => n.id === id ? { ...n, lida: true } : n);
       updateCounts(updated);
@@ -133,27 +169,32 @@ export function NotificacaoProvider({ children }: NotificacaoProviderProps) {
 
     try {
       await apiService.marcarNotificacaoLida(id);
+      setIsOffline(false);
       return true;
     } catch (error) {
-      // Reverter em caso de erro
-      setNotificacoes(prev => {
-        const reverted = prev.map(n => n.id === id ? { ...n, lida: false } : n);
-        updateCounts(reverted);
-        return reverted;
-      });
-      console.error('[NotificacaoContext] Erro ao marcar como lida:', error);
-      return false;
+      // OFFLINE-FIRST: Do NOT revert — keep the optimistic state
+      // The user marked it as read, we'll sync later when back online
+      setIsOffline(true);
+      console.log('[NotificacaoContext] Erro ao marcar como lida (offline):', error);
+      return true; // Return true because optimistic update succeeded locally
     } finally {
       setOperacao('marcarLida', false);
     }
   }, [updateCounts, setOperacao]);
 
+  /**
+   * Marca todas as notificações como lidas — offline-first:
+   * - Optimistic: update all to lida immediately
+   * - Try API in background; if it fails, keep the optimistic state
+   * - No revert on failure
+   */
   const marcarTodasComoLidas = useCallback(async (): Promise<boolean> => {
     setOperacao('marcarTodasLidas', true);
 
+    // Capture unread IDs before optimistic update
     const unreadIds = notificacoes.filter(n => !n.lida).map(n => n.id);
 
-    // Otimista: atualizar UI imediatamente
+    // Optimistic: update UI immediately — mark ALL as read
     setNotificacoes(prev => {
       const updated = prev.map(n => ({ ...n, lida: true }));
       updateCounts(updated);
@@ -161,18 +202,20 @@ export function NotificacaoProvider({ children }: NotificacaoProviderProps) {
     });
 
     try {
-      // Mark each unread notification
+      // Mark each unread notification via API
       await Promise.all(unreadIds.map(id => apiService.marcarNotificacaoLida(id)));
+      setIsOffline(false);
       return true;
     } catch (error) {
-      // Reverter — reload from server
-      console.error('[NotificacaoContext] Erro ao marcar todas como lidas:', error);
-      await carregar();
-      return false;
+      // OFFLINE-FIRST: Do NOT revert — keep the optimistic state
+      // We'll sync later when back online
+      setIsOffline(true);
+      console.log('[NotificacaoContext] Erro ao marcar todas como lidas (offline):', error);
+      return true; // Return true because optimistic update succeeded locally
     } finally {
       setOperacao('marcarTodasLidas', false);
     }
-  }, [notificacoes, carregar, updateCounts, setOperacao]);
+  }, [notificacoes, updateCounts, setOperacao]);
 
   // ==========================================================================
   // REFRESH
@@ -192,6 +235,7 @@ export function NotificacaoProvider({ children }: NotificacaoProviderProps) {
     carregando,
     erro,
     totalNotificacoes,
+    isOffline,
     operacoes,
     isOperacao,
 

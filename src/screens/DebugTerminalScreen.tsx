@@ -6,7 +6,9 @@
  * - Filtros por nível de log
  * - Estilo terminal com fundo escuro e fonte monospace
  * - Contagem de registros no SQLite local
- * - Botão para exportar logs
+ * - Botão para exportar logs (Share)
+ * - Long press para copiar log individual
+ * - Botão "Copy All" para copiar todos os logs filtrados
  */
 
 import React, { useCallback, useState, useEffect, useRef } from 'react';
@@ -16,6 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import logger, { LogEntry } from '../utils/logger';
 import { databaseService } from '../services/DatabaseService';
 import { useSync } from '../contexts/SyncContext';
@@ -27,6 +30,18 @@ import { useSync } from '../contexts/SyncContext';
 type FilterLevel = 'all' | 'info' | 'warn' | 'error' | 'debug';
 
 // ============================================================================
+// HELPERS
+// ============================================================================
+
+/** Formata um log entry como texto completo para cópia */
+function formatLogText(log: LogEntry): string {
+  const dataStr = log.data
+    ? ` ${typeof log.data === 'string' ? log.data : JSON.stringify(log.data)}`
+    : '';
+  return `${log.timestamp} [${log.level.toUpperCase()}] ${log.message}${dataStr}`;
+}
+
+// ============================================================================
 // COMPONENTE PRINCIPAL
 // ============================================================================
 
@@ -36,7 +51,9 @@ export default function DebugTerminalScreen() {
   const [filter, setFilter] = useState<FilterLevel>('all');
   const [dbCounts, setDbCounts] = useState<Record<string, number>>({});
   const [autoScroll, setAutoScroll] = useState(true);
+  const [copiedFeedback, setCopiedFeedback] = useState<string | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
+  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─── Carregar logs existentes + listener em tempo real ────────────────
   useEffect(() => {
@@ -59,6 +76,15 @@ export default function DebugTerminalScreen() {
       }, 50);
     }
   }, [logs.length, autoScroll]);
+
+  // ─── Cleanup feedback timer ──────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (feedbackTimerRef.current) {
+        clearTimeout(feedbackTimerRef.current);
+      }
+    };
+  }, []);
 
   // ─── Carregar contagem do banco local ────────────────────────────────
   const loadDbCounts = useCallback(async () => {
@@ -92,13 +118,50 @@ export default function DebugTerminalScreen() {
   // ─── Filtrar logs ────────────────────────────────────────────────────
   const filteredLogs = filter === 'all' ? logs : logs.filter(l => l.level === filter);
 
+  // ─── Feedback de cópia (toast breve inline) ──────────────────────────
+  const showCopiedFeedback = useCallback((message: string) => {
+    setCopiedFeedback(message);
+    if (feedbackTimerRef.current) {
+      clearTimeout(feedbackTimerRef.current);
+    }
+    feedbackTimerRef.current = setTimeout(() => {
+      setCopiedFeedback(null);
+    }, 1500);
+  }, []);
+
+  // ─── Copiar log individual (long press) ──────────────────────────────
+  const handleCopyLog = useCallback(async (log: LogEntry) => {
+    try {
+      const text = formatLogText(log);
+      await Clipboard.setStringAsync(text);
+      showCopiedFeedback('Log copiado!');
+    } catch {
+      Alert.alert('Erro', 'Não foi possível copiar o log');
+    }
+  }, [showCopiedFeedback]);
+
+  // ─── Copiar todos os logs filtrados ──────────────────────────────────
+  const handleCopyAll = useCallback(async () => {
+    if (filteredLogs.length === 0) {
+      Alert.alert('Aviso', 'Nenhum log para copiar');
+      return;
+    }
+    try {
+      const text = filteredLogs.map(formatLogText).join('\n');
+      await Clipboard.setStringAsync(text);
+      showCopiedFeedback(`${filteredLogs.length} logs copiados!`);
+    } catch {
+      Alert.alert('Erro', 'Não foi possível copiar os logs');
+    }
+  }, [filteredLogs, showCopiedFeedback]);
+
   // ─── Limpar logs ─────────────────────────────────────────────────────
   const handleClear = useCallback(() => {
     logger.clearLogs();
     setLogs([]);
   }, []);
 
-  // ─── Exportar logs ───────────────────────────────────────────────────
+  // ─── Exportar logs (Share) ───────────────────────────────────────────
   const handleExport = useCallback(async () => {
     try {
       const text = logger.exportLogs();
@@ -163,6 +226,9 @@ export default function DebugTerminalScreen() {
           <TouchableOpacity onPress={() => setAutoScroll(!autoScroll)} style={s.iconBtn}>
             <Ionicons name={autoScroll ? 'arrow-down-circle' : 'arrow-down-circle-outline'} size={20} color={autoScroll ? '#3B82F6' : '#64748B'} />
           </TouchableOpacity>
+          <TouchableOpacity onPress={handleCopyAll} style={s.iconBtn}>
+            <Ionicons name="copy-outline" size={20} color="#94A3B8" />
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleExport} style={s.iconBtn}>
             <Ionicons name="share-outline" size={20} color="#94A3B8" />
           </TouchableOpacity>
@@ -185,6 +251,14 @@ export default function DebugTerminalScreen() {
         ))}
       </ScrollView>
 
+      {/* Copied feedback toast */}
+      {copiedFeedback ? (
+        <View style={s.copiedToast}>
+          <Ionicons name="checkmark-circle" size={14} color="#34D399" />
+          <Text style={s.copiedToastText}>{copiedFeedback}</Text>
+        </View>
+      ) : null}
+
       {/* Terminal de logs */}
       <ScrollView
         ref={scrollViewRef}
@@ -200,18 +274,25 @@ export default function DebugTerminalScreen() {
           <Text style={s.emptyText}>Nenhum log registrado ainda.{"\n"}Faça uma sincronização para ver os logs aqui.</Text>
         ) : (
           filteredLogs.map((log, i) => (
-            <View key={i} style={[s.logLine, { backgroundColor: levelBg[log.level] || 'transparent' }]}>
-              <Text style={s.logTimestamp}>
-                {log.timestamp.substring(11, 19)}
-              </Text>
-              <Text style={[s.logLevel, { color: levelColors[log.level] || '#94A3B8' }]}>
-                {log.level.toUpperCase().padEnd(5)}
-              </Text>
-              <Text style={s.logMessage} numberOfLines={3}>
-                {log.message}
-                {log.data ? ` ${typeof log.data === 'string' ? log.data : JSON.stringify(log.data).substring(0, 120)}` : ''}
-              </Text>
-            </View>
+            <TouchableOpacity
+              key={i}
+              activeOpacity={0.7}
+              onLongPress={() => handleCopyLog(log)}
+              delayLongPress={400}
+            >
+              <View style={[s.logLine, { backgroundColor: levelBg[log.level] || 'transparent' }]}>
+                <Text style={s.logTimestamp}>
+                  {log.timestamp.substring(11, 19)}
+                </Text>
+                <Text style={[s.logLevel, { color: levelColors[log.level] || '#94A3B8' }]}>
+                  {log.level.toUpperCase().padEnd(5)}
+                </Text>
+                <Text style={s.logMessage} numberOfLines={3}>
+                  {log.message}
+                  {log.data ? ` ${typeof log.data === 'string' ? log.data : JSON.stringify(log.data).substring(0, 120)}` : ''}
+                </Text>
+              </View>
+            </TouchableOpacity>
           ))
         )}
       </ScrollView>
@@ -268,6 +349,16 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: '#334155', backgroundColor: '#1E293B',
   },
   filterText: { fontSize: 12, color: '#94A3B8', fontFamily: 'monospace' },
+
+  copiedToast: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: 'rgba(52,211,153,0.15)',
+    paddingVertical: 6, paddingHorizontal: 12,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(52,211,153,0.3)',
+  },
+  copiedToastText: {
+    color: '#34D399', fontSize: 12, fontWeight: '600', fontFamily: 'monospace',
+  },
 
   terminal: { flex: 1, backgroundColor: '#0F172A' },
   terminalContent: { paddingHorizontal: 8, paddingVertical: 4 },

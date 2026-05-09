@@ -8,6 +8,7 @@
  * - Usar endpoint de refresh token
  * - Suportar autenticação biométrica
  * - Feedback de lockout e rate limiting
+ * - Offline-first: funciona sem rede usando dados locais
  */
 
 import React, { createContext, useState, useCallback, useEffect, useContext, ReactNode } from 'react';
@@ -52,6 +53,7 @@ export interface AuthContextType {
   isSignout: boolean;
   isAuthenticated: boolean;
   lockoutInfo: LockoutInfo | null;
+  isOffline: boolean;
   
   // Ações
   login: (email: string, password: string) => Promise<void>;
@@ -60,6 +62,7 @@ export interface AuthContextType {
   biometricLogin: () => Promise<boolean>;
   setBiometricEnabled: (enabled: boolean) => Promise<void>;
   isBiometricAvailable: () => Promise<{ available: boolean; enabled: boolean }>;
+  setUser: (user: Usuario | null) => void;
   
   // Utilitários
   hasPermission: (module: keyof PermissoesUsuario['web'] | keyof PermissoesUsuario['mobile'], platform: 'web' | 'mobile') => boolean;
@@ -103,6 +106,19 @@ const toUsuario = (
   deviceId: '',
 });
 
+/**
+ * Verifica se há conectividade com a API.
+ * Tenta um health check leve; se falhar com erro de rede, considera offline.
+ */
+async function checkConnectivity(): Promise<boolean> {
+  try {
+    const response = await apiService.healthCheck();
+    return response.ok === true;
+  } catch {
+    return false;
+  }
+}
+
 // ============================================================================
 // PROVIDER
 // ============================================================================
@@ -113,11 +129,25 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
-  const [user, setUser] = useState<Usuario | null>(null);
+  const [user, setUserState] = useState<Usuario | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSignout, setIsSignout] = useState(false);
   const [lockoutInfo, setLockoutInfo] = useState<LockoutInfo | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
+
+  // ==========================================================================
+  // setUser — permite que serviços externos (sync) atualizem o usuário
+  // ==========================================================================
+
+  const setUser = useCallback((newUser: Usuario | null) => {
+    setUserState(newUser);
+    if (newUser) {
+      secureStorage.saveUser(JSON.stringify(newUser)).catch(err => {
+        logger.warn('[Auth] Falha ao salvar usuário no SecureStorage via setUser', err);
+      });
+    }
+  }, []);
 
   // ==========================================================================
   // BOOTSTRAP - Restaurar sessão ao iniciar
@@ -143,16 +173,22 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
         logger.info('[Auth] Token sincronizado com ApiService no bootstrap');
         
         setToken(savedToken);
-        setUser(parsedUser);
+        setUserState(parsedUser);
         setIsSignout(false);
         
         logger.info('[Auth] Sessão restaurada', { user: parsedUser.nome, role: parsedUser.tipoPermissao });
         
         onAuthChange?.(parsedUser);
 
-        // Tentar refresh proativo do token para evitar sessão expirada
-        // após o app ficar em background por muito tempo
-        if (!savedToken.startsWith('LOCAL_') && !savedToken.startsWith('local.')) {
+        // OFFLINE-FIRST: Verificar conectividade antes de tentar refresh proativo.
+        // Se offline, pular refresh — a sessão local é suficiente para trabalhar.
+        // O refresh será tentado quando a rede estiver disponível (veja o useEffect abaixo).
+        const hasNetwork = await checkConnectivity();
+        setIsOffline(!hasNetwork);
+
+        if (!hasNetwork) {
+          logger.info('[Auth] Sem conectividade no bootstrap — sessão local mantida, refresh adiado');
+        } else if (!savedToken.startsWith('LOCAL_') && !savedToken.startsWith('local.')) {
           try {
             logger.info('[Auth] Tentando refresh proativo no bootstrap...');
             const newToken = await authService.refreshToken();
@@ -183,27 +219,78 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   }, [bootstrap]);
 
   // ==========================================================================
+  // MONITORAMENTO DE CONECTIVIDADE — tentar refresh quando voltar online
+  // ==========================================================================
+
+  useEffect(() => {
+    if (!token || isSignout) return;
+
+    // Verificar conectividade periodicamente e tentar refresh quando voltar online
+    const connectivityInterval = setInterval(async () => {
+      try {
+        const hasNetwork = await checkConnectivity();
+        const wasOffline = isOffline;
+        setIsOffline(!hasNetwork);
+
+        // Se acabou de voltar online e temos um token JWT real, tentar refresh
+        if (wasOffline && hasNetwork && token && !token.startsWith('LOCAL_') && !token.startsWith('local.')) {
+          logger.info('[Auth] Conectividade restaurada — tentando refresh do token...');
+          try {
+            const newToken = await authService.refreshToken();
+            if (newToken) {
+              setToken(newToken);
+              apiService.setToken(newToken);
+              logger.info('[Auth] Token refreshed após reconexão');
+            }
+          } catch (refreshError) {
+            logger.warn('[Auth] Falha no refresh após reconexão:', refreshError);
+          }
+        }
+      } catch {
+        // Silently ignore — connectivity check failed
+      }
+    }, 30 * 1000); // Verificar a cada 30 segundos
+
+    return () => clearInterval(connectivityInterval);
+  }, [token, isOffline, isSignout]);
+
+  // ==========================================================================
   // REFRESH TOKEN PROATIVO
   // ==========================================================================
 
   useEffect(() => {
     // Only refresh real JWTs (not local tokens). Local tokens start with LOCAL_ or local.
-    if (!token || token.startsWith('LOCAL_') || token.startsWith('local.')) return;
+    // Skip entirely if offline.
+    if (!token || token.startsWith('LOCAL_') || token.startsWith('local.') || isOffline) return;
 
     const interval = setInterval(async () => {
       try {
+        // Verificar conectividade antes de tentar refresh
+        const hasNetwork = await checkConnectivity();
+        setIsOffline(!hasNetwork);
+        
+        if (!hasNetwork) {
+          logger.info('[Auth] Sem conectividade — refresh proativo adiado');
+          return;
+        }
+
         logger.info('[Auth] Refresh proativo do token...');
         const newToken = await authService.refreshToken();
         setToken(newToken);
       } catch (error) {
         logger.warn('[Auth] Falha no refresh proativo:', error);
+        
+        // Se o erro for de rede, marcar como offline
+        if (error instanceof TypeError) {
+          setIsOffline(true);
+        }
         // Se o refresh falhar, a sessão pode estar expirada
         // O interceptor do ApiService vai lidar com isso na próxima requisição
       }
     }, REFRESH_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [token]);
+  }, [token, isOffline]);
 
   // ==========================================================================
   // LOGIN
@@ -231,8 +318,11 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       // Atualizar estado
       setToken(newToken);
       const usuarioContexto = toUsuario(usuarioLogado);
-      setUser(usuarioContexto);
+      setUserState(usuarioContexto);
       setIsSignout(false);
+
+      // Após login bem-sucedido, marcar como online
+      setIsOffline(false);
 
       logger.info('[Auth] Login completo', { email, role: usuarioLogado.tipoPermissao });
       
@@ -252,12 +342,19 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   }, [onAuthChange]);
 
   // ==========================================================================
-  // BIOMETRIC LOGIN
+  // BIOMETRIC LOGIN — offline-first, sem chamadas de API
   // ==========================================================================
 
   const biometricLogin = useCallback(async (): Promise<boolean> => {
     try {
       setIsLoading(true);
+
+      // O fluxo biométrico é inteiramente local:
+      // 1. Verificar se biometria está habilitada
+      // 2. Autenticar via hardware biométrico
+      // 3. Restaurar sessão do SecureStore
+      // 4. Carregar dados frescos do SQLite local
+      // Nenhuma chamada de API é feita.
       const success = await authService.authenticateWithBiometrics();
       
       if (success) {
@@ -268,10 +365,15 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
           const parsedUser = JSON.parse(savedUserJson) as Usuario;
           apiService.setToken(savedToken);
           setToken(savedToken);
-          setUser(parsedUser);
+          setUserState(parsedUser);
           setIsSignout(false);
           onAuthChange?.(parsedUser);
           logger.info('[Auth] Login biométrico bem-sucedido');
+
+          // Verificar conectividade em background (não bloquear o login)
+          checkConnectivity().then(hasNetwork => {
+            setIsOffline(!hasNetwork);
+          });
         }
       }
       
@@ -305,9 +407,10 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
 
       // Limpar estado
       setToken(null);
-      setUser(null);
+      setUserState(null);
       setIsSignout(true);
       setLockoutInfo(null);
+      setIsOffline(false);
 
       logger.info('[Auth] Logout realizado (dispositivo permanece ativado)');
       
@@ -316,7 +419,7 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
     } catch (error) {
       logger.error('[Auth] Erro no logout', error);
       setToken(null);
-      setUser(null);
+      setUserState(null);
       setIsSignout(true);
     } finally {
       setIsLoading(false);
@@ -324,7 +427,7 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   }, [onAuthChange]);
 
   // ==========================================================================
-  // REFRESH DE DADOS DO USUÁRIO
+  // REFRESH DE DADOS DO USUÁRIO — offline-first
   // ==========================================================================
 
   const refreshUser = useCallback(async () => {
@@ -332,14 +435,24 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
 
     try {
       let usuarioServidor: any = null;
-      try {
-        const response = await apiService.getUsuarioAtual();
-        if (response.success && response.data) {
-          usuarioServidor = response.data;
-          logger.info('[Auth] Dados do usuário atualizados do servidor');
+
+      // Tentar buscar do servidor apenas se houver conectividade
+      const hasNetwork = await checkConnectivity();
+      setIsOffline(!hasNetwork);
+
+      if (hasNetwork) {
+        try {
+          const response = await apiService.getUsuarioAtual();
+          if (response.success && response.data) {
+            usuarioServidor = response.data;
+            logger.info('[Auth] Dados do usuário atualizados do servidor');
+          }
+        } catch {
+          logger.warn('[Auth] Erro ao buscar dados do servidor — usando dados locais');
+          setIsOffline(true);
         }
-      } catch {
-        logger.warn('[Auth] Sem conexão ao atualizar usuário — usando dados locais');
+      } else {
+        logger.info('[Auth] Offline — usando dados locais do usuário');
       }
 
       if (usuarioServidor) {
@@ -352,7 +465,7 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
           rotasPermitidas: usuarioServidor.rotasPermitidas,
           status: usuarioServidor.status,
         });
-        setUser(usuarioAtualizado);
+        setUserState(usuarioAtualizado);
         await secureStorage.saveUser(JSON.stringify(usuarioAtualizado));
 
         if (usuarioServidor.status !== 'Ativo' || usuarioServidor.bloqueado) {
@@ -361,16 +474,20 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
           return;
         }
       } else {
+        // OFFLINE-FIRST: Usar dados do SQLite local como fallback
+        // Isso garante que o refreshUser() não falhe quando offline
         const usuarioLocal = await authService.getUsuarioLogado();
         if (usuarioLocal) {
-          setUser(toUsuario(usuarioLocal));
-          logger.info('[Auth] Usuário atualizado do cache local');
+          const usuarioAtualizado = toUsuario(usuarioLocal);
+          setUserState(usuarioAtualizado);
+          logger.info('[Auth] Usuário atualizado do cache local (offline)');
         }
       }
     } catch (error) {
       logger.error('[Auth] Erro ao atualizar usuário', error);
+      // Não propagar erro — em modo offline-first, refreshUser não deve falhar
     }
-  }, [user]);
+  }, [user, logout]);
 
   // ==========================================================================
   // VERIFICAÇÃO DE PERMISSÕES
@@ -419,12 +536,14 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
     isSignout,
     isAuthenticated,
     lockoutInfo,
+    isOffline,
     login,
     logout,
     refreshUser,
     biometricLogin,
     setBiometricEnabled: handleSetBiometricEnabled,
     isBiometricAvailable: handleIsBiometricAvailable,
+    setUser,
     hasPermission,
     canAccessRota,
     isAdmin,

@@ -33,6 +33,7 @@ import { databaseService } from '../services/DatabaseService';
 
 const { width } = Dimensions.get('window');
 const SERVER_VALIDATION_KEY = '@cobrancas:serverDeviceValidation';
+const DEVICE_ACTIVATED_KEY = '@cobrancas:device_activated';
 
 export default function DeviceActivationScreen() {
   const { user, logout } = useAuth();
@@ -186,6 +187,7 @@ export default function DeviceActivationScreen() {
         // qual tela mostrar antes da verificação com o servidor completar.
         try {
           await AsyncStorage.setItem(SERVER_VALIDATION_KEY, 'active');
+          await AsyncStorage.setItem(DEVICE_ACTIVATED_KEY, 'true');
         } catch (e) {
           console.warn('[DeviceActivation] Falha ao persistir estado de ativação:', e);
         }

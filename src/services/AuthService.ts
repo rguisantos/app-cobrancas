@@ -8,6 +8,7 @@
  * - Usar endpoint de refresh token para renovação
  * - Suportar autenticação biométrica
  * - Feedback de lockout e rate limiting
+ * - Offline-first: funciona sem rede, sem lançar erros desnecessários
  */
 
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -417,23 +418,28 @@ class AuthService {
 
   /**
    * Valida token:
+   * - Token local (LOCAL_* ou local.*): sempre válido se houver usuário no SecureStore.
+   *   Nenhuma chamada de API é necessária — é um token offline por definição.
    * - Token real (Bearer JWT): confirma com /api/auth/me; offline → fallback SecureStore.
-   * - Token local (ey*.*.*): válido apenas se houver usuário no armazenamento.
    */
   async validateToken(token: string): Promise<boolean> {
     try {
       logger.info('Validando token');
 
+      // OFFLINE-FIRST: Tokens locais são sempre válidos se há dados de usuário salvos.
+      // Não há servidor para validar — o token existe apenas para manter a sessão local.
       if (token && this.isLocalToken(token)) {
         const userJson = await secureStorage.getUser();
         return !!userJson;
       }
 
+      // Para tokens JWT reais, tentar validar com o servidor
       try {
         const response = await apiService.getUsuarioAtual();
         return !!(response.success && response.data);
       } catch {
         // Sem conectividade — fallback offline
+        // Se temos um usuário salvo localmente, considerar o token válido
         logger.warn('Sem conexão ao validar token, usando fallback local');
         const userJson = await secureStorage.getUser();
         return !!userJson;
@@ -447,7 +453,10 @@ class AuthService {
   /**
    * Refresh de token via endpoint dedicado.
    * Usa o refresh token armazenado no SecureStore para obter novos tokens.
-   * Se o refresh falhar (expirado/revogado), força re-login.
+   * 
+   * OFFLINE-FIRST: Se offline e o token é um JWT real, não lançar erro — 
+   * apenas retornar o token atual. O app deve funcionar com o token que tem
+   * até que possa renovar quando a conectividade for restaurada.
    */
   async refreshToken(): Promise<string> {
     const currentToken = await secureStorage.getAccessToken();
@@ -470,6 +479,12 @@ class AuthService {
     const storedRefreshToken = await secureStorage.getRefreshToken();
     
     if (!storedRefreshToken) {
+      // OFFLINE-FIRST: Se temos um token JWT atual, podemos continuar trabalhando
+      // offline com ele. Não forçar re-login imediatamente.
+      if (currentToken) {
+        logger.warn('[Auth] Sem refresh token, mas access token existe — mantendo sessão offline');
+        return currentToken;
+      }
       throw new Error('Sessão expirada. Faça login novamente.');
     }
 
@@ -477,9 +492,17 @@ class AuthService {
       const response = await apiService.refreshToken(storedRefreshToken);
 
       if (!response.success || !response.data?.token) {
-        // Refresh token inválido ou expirado — limpar e forçar re-login
+        // Refresh token inválido ou expirado
         if (response.statusCode === 401 || response.statusCode === 400) {
+          // Apenas limpar se o servidor confirmou que o token é inválido
+          // (não é um erro de rede)
           await secureStorage.clearAuthData();
+          throw new Error('Sessão expirada. Faça login novamente.');
+        }
+        // Para outros erros (ex: 500), manter o token atual
+        if (currentToken) {
+          logger.warn('[Auth] Refresh falhou com status não-401 — mantendo token atual');
+          return currentToken;
         }
         throw new Error('Sessão expirada. Faça login novamente.');
       }
@@ -502,30 +525,42 @@ class AuthService {
       return data.token;
     } catch (error) {
       if (error instanceof TypeError) {
-        // Erro de rede — não podemos renovar, mas a sessão local ainda é válida
-        logger.warn('[Auth] Sem conexão ao renovar token — sessão local mantida');
-        return currentToken || '';
+        // Erro de rede — não podemos renovar, mas a sessão local ainda é válida.
+        // OFFLINE-FIRST: Retornar o token atual em vez de lançar erro.
+        // O app continuará funcionando offline e tentará renovar depois.
+        if (currentToken) {
+          logger.warn('[Auth] Sem conexão ao renovar token — sessão local mantida');
+          return currentToken;
+        }
       }
       throw error;
     }
   }
 
   /**
-   * Autenticação biométrica.
+   * Autenticação biométrica — OFFLINE-FIRST.
    * Verifica se o dispositivo suporta biometria e se o usuário habilitou.
-   * Retorna true se a autenticação foi bem-sucedida.
+   * Após autenticação biométrica bem-sucedida:
+   * 1. Restaura sessão do SecureStore (token + dados do usuário)
+   * 2. Carrega dados frescos do SQLite local via usuarioRepository
+   * 3. Atualiza o SecureStore com dados atualizados do SQLite
+   * Nenhuma chamada de API é feita — funciona 100% offline.
    */
   async authenticateWithBiometrics(): Promise<boolean> {
     try {
+      // 1. Verificar se biometria está habilitada
       const biometricEnabled = await secureStorage.isBiometricEnabled();
       if (!biometricEnabled) return false;
 
+      // 2. Verificar hardware biométrico
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       if (!hasHardware) return false;
 
+      // 3. Verificar se há biometria cadastrada
       const isEnrolled = await LocalAuthentication.isEnrolledAsync();
       if (!isEnrolled) return false;
 
+      // 4. Autenticar via biometria
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Autenticar no App Cobranças',
         cancelLabel: 'Usar senha',
@@ -533,12 +568,40 @@ class AuthService {
       });
 
       if (result.success) {
-        // Restaurar sessão do SecureStore
+        // 5. Restaurar sessão do SecureStore
         const token = await secureStorage.getAccessToken();
         const userJson = await secureStorage.getUser();
         
         if (token && userJson) {
           apiService.setToken(token);
+
+          // 6. Carregar dados frescos do SQLite local para garantir que
+          //    dados do usuário estão atualizados mesmo offline.
+          //    Isso é importante porque a sincronização pode ter atualizado
+          //    o SQLite enquanto o app estava em background.
+          try {
+            const parsedUser = JSON.parse(userJson);
+            const usuarioLocal = await usuarioRepository.getById(parsedUser.id);
+            if (usuarioLocal) {
+              // Atualizar SecureStore com dados frescos do SQLite
+              const freshUserData: LoginResponse['user'] = {
+                id: usuarioLocal.id,
+                email: usuarioLocal.email,
+                nome: usuarioLocal.nome,
+                role: usuarioLocal.tipoPermissao,
+                tipoPermissao: usuarioLocal.tipoPermissao,
+                permissoes: usuarioLocal.permissoes,
+                rotasPermitidas: usuarioLocal.rotasPermitidas,
+                status: usuarioLocal.status,
+              };
+              await secureStorage.saveUser(JSON.stringify(freshUserData));
+              logger.info('[Auth] Dados do usuário atualizados do SQLite local após biometria');
+            }
+          } catch (dbError) {
+            // Se não conseguir ler do SQLite, os dados do SecureStore são usados como fallback
+            logger.warn('[Auth] Não foi possível carregar dados do SQLite após biometria — usando SecureStore', dbError);
+          }
+
           logger.info('[Auth] Autenticação biométrica bem-sucedida');
           return true;
         }
@@ -610,8 +673,33 @@ class AuthService {
 
   async getUsuarioLogado(): Promise<LoginResponse['user'] | null> {
     try {
+      // OFFLINE-FIRST: Primeiro tentar SecureStore (rápido, sempre disponível)
       const userStr = await secureStorage.getUser();
-      return userStr ? JSON.parse(userStr) : null;
+      if (!userStr) return null;
+
+      const secureStoreUser = JSON.parse(userStr) as LoginResponse['user'];
+
+      // Tentar obter dados mais recentes do SQLite local para garantir que
+      // permissões e status estejam atualizados após sincronização
+      try {
+        const usuarioLocal = await usuarioRepository.getById(secureStoreUser.id);
+        if (usuarioLocal) {
+          return {
+            id: usuarioLocal.id,
+            email: usuarioLocal.email,
+            nome: usuarioLocal.nome,
+            role: usuarioLocal.tipoPermissao,
+            tipoPermissao: usuarioLocal.tipoPermissao,
+            permissoes: usuarioLocal.permissoes,
+            rotasPermitidas: usuarioLocal.rotasPermitidas,
+            status: usuarioLocal.status,
+          };
+        }
+      } catch (dbError) {
+        logger.warn('[Auth] Não foi possível ler do SQLite — usando SecureStore', dbError);
+      }
+
+      return secureStoreUser;
     } catch (error) {
       logger.error('Erro ao buscar usuário logado', error);
       return null;

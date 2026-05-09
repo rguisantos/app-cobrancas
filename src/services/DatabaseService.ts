@@ -1270,8 +1270,8 @@ class DatabaseService {
     
     // Always log for debug terminal (not just ENV.DEBUG)
     const total = (changes.clientes || []).length + (changes.produtos || []).length +
-      (changes.locacoes || []).length + (changes.cobranca || []).length +
-      (changes.cobrancas || []).length + (changes.rotas || []).length +
+      (changes.locacoes || []).length + (changes.cobrancas || []).length +
+      (changes.rotas || []).length +
       (changes.usuarios || []).length + (changes.manutencoes || []).length +
       (changes.metas || []).length;
     logger.info(`[Database] Aplicando ${total} mudanças remotas — lastSyncAt: ${response.lastSyncAt?.substring(0, 19)}`);

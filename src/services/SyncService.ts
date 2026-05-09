@@ -123,6 +123,10 @@ const ALLOWED_FIELDS: Record<string, Set<string>> = {
   ]),
 };
 
+// Pull pagination limits
+const MAX_PULL_ROUNDS = 20;
+const ABSOLUTE_MAX_ROUNDS = 30; // Hard cap — if hit, something is very wrong
+
 /**
  * Filter change fields to only include allowed fields for the given entity type.
  * Removes fields like 'id', 'createdAt', 'cpfCnpj', 'rgIe', 'locacaoAtiva', 'estaLocado'
@@ -469,9 +473,7 @@ class SyncService {
     const errors: string[] = [];
     const allConflicts: SyncConflict[] = [];
     let pulled = 0;
-    // FIX #2: Increased max rounds from 10 to 20 with explicit infinite-loop guard
-    const MAX_PULL_ROUNDS = 20;
-    const ABSOLUTE_MAX_ROUNDS = 30; // Hard cap — if hit, something is very wrong
+    // MAX_PULL_ROUNDS and ABSOLUTE_MAX_ROUNDS defined at module level
 
     try {
       const metadata = await databaseService.getSyncMetadata();
