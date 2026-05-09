@@ -1489,6 +1489,11 @@
   dependencies:
     invariant "^2.2.4"
 
+"@react-native-community/netinfo@11.5.2":
+  version "11.5.2"
+  resolved "https://registry.npmjs.org/@react-native-community/netinfo/-/netinfo-11.5.2.tgz"
+  integrity sha512-/g0m65BtX9HU+bPiCH2517bOHpEIUsGrWFXDzi1a5nNKn5KujQgm04WhL7/OSXWKHyrT8VVtUoJA0XKRxueBpQ==
+
 "@react-native/assets-registry@0.83.4":
   version "0.83.4"
   resolved "https://registry.npmjs.org/@react-native/assets-registry/-/assets-registry-0.83.4.tgz"
@@ -3117,6 +3122,11 @@ expo-build-properties@~55.0.13:
     "@expo/schema-utils" "^55.0.3"
     resolve-from "^5.0.0"
     semver "^7.6.0"
+
+expo-clipboard@~55.0.13:
+  version "55.0.13"
+  resolved "https://registry.npmjs.org/expo-clipboard/-/expo-clipboard-55.0.13.tgz"
+  integrity sha512-PrOmmuVsGW4bAkNQmGKtxMXj3invsfN+jfIKmQxHwE/dn7ODqwFWviUTa+PMUjP3XZmYCDLyu/i0GLeu7HF9Ew==
 
 expo-constants@~55.0.13, expo-constants@~55.0.7:
   version "55.0.13"
